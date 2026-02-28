@@ -134,7 +134,13 @@ Future<void> main() async {
               recipient: envelope.chatId,
               message: 'Something went wrong. Please try again.',
             );
-          } on Exception catch (_) {}
+          } on Exception catch (sendErr) {
+            developer.log(
+              'Failed to send error message: $sendErr',
+              name: 'main',
+              level: 900,
+            );
+          }
         }
       }
     } on Exception catch (e) {
