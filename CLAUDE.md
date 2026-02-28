@@ -18,7 +18,7 @@ API, no message editing, no inline keyboards, and stricter rate limiting.
 | ----------------- | ------------------------------------------------ |
 | Runtime           | Node.js 22+ / TypeScript 5.x                    |
 | Messaging         | Signal (framework TBD — see README)              |
-| LLM               | Claude Sonnet 4.6 (Anthropic SDK)                |
+| LLM               | Claude Sonnet 4.6 (Anthropic API)                |
 | Database          | SQLite via Drizzle ORM                           |
 | MCP Tools         | Kan.bn, Outline, Radicale, Playwright            |
 | Deployment        | Docker on GCP                                    |
