@@ -1,6 +1,6 @@
 # Figment — imagineering-pm-bot
 
-> *"One little spark of inspiration is at the heart of all creation."*
+> _"One little spark of inspiration is at the heart of all creation."_
 
 An AI-powered project management bot for Signal, built for the Imagineering organization. Named after the beloved purple dragon from EPCOT's Journey Into Imagination — the mascot of Walt Disney Imagineering — **Figment** turns sparks of ideas into organized tasks, docs, and team coordination.
 
@@ -61,6 +61,7 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 ## Features (Planned)
 
 ### Task Management (via Kan.bn)
+
 - Create, update, and close tasks through natural conversation
 - List tasks by board, list, assignee, or label
 - Manage checklists, comments, and labels
@@ -68,21 +69,25 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 - Automatic reminders for overdue and stale tasks
 
 ### Knowledge Base (via Outline)
+
 - Search and retrieve documents
 - Create and update wiki pages from chat
 - Browse collections and recent documents
 
 ### Calendar (via Radicale)
+
 - View upcoming events and deadlines
 - Create and manage calendar events
 - Todo list management
 
 ### Team Coordination
+
 - Async daily standups — bot prompts team members and collects responses
 - Standup summaries posted to group
 - User identity mapping (Signal UUID to Kan.bn user)
 
 ### Bot Intelligence
+
 - Full natural language understanding — no slash commands needed
 - Conversation history with 20-message window and 30-minute TTL
 - Rate limiting in group chats to avoid noise
@@ -90,6 +95,7 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 - Bot personality/identity customization
 
 ### Reminders (Cron-based)
+
 - Overdue task alerts
 - Stale task nudges
 - Unassigned task notifications
@@ -97,19 +103,19 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 
 ## Tech Stack
 
-| Component         | Technology                                        |
-| ----------------- | ------------------------------------------------- |
-| Language          | TypeScript 5.x                                    |
-| Runtime           | Node.js 22+                                       |
-| Messaging         | Signal (via signal-cli-rest-api or signal-sdk)     |
-| LLM               | Claude Sonnet 4.6 (Anthropic API)                 |
-| Database          | SQLite + Drizzle ORM                              |
-| Task Management   | Kan.bn (MCP)                                      |
-| Knowledge Base    | Outline (MCP)                                     |
-| Calendar          | Radicale (MCP)                                    |
-| Web Automation    | Playwright (MCP)                                  |
-| Deployment        | Docker + Docker Compose on GCP                    |
-| Package Manager   | pnpm                                              |
+| Component       | Technology                                     |
+| --------------- | ---------------------------------------------- |
+| Language        | TypeScript 5.x                                 |
+| Runtime         | Node.js 22+                                    |
+| Messaging       | Signal (via signal-cli-rest-api or signal-sdk) |
+| LLM             | Claude Sonnet 4.6 (Anthropic API)              |
+| Database        | SQLite + Drizzle ORM                           |
+| Task Management | Kan.bn (MCP)                                   |
+| Knowledge Base  | Outline (MCP)                                  |
+| Calendar        | Radicale (MCP)                                 |
+| Web Automation  | Playwright (MCP)                               |
+| Deployment      | Docker + Docker Compose on GCP                 |
+| Package Manager | pnpm                                           |
 
 ## Getting Started
 
@@ -194,7 +200,7 @@ services:
     volumes:
       - ./signal-cli-config:/home/.local/share/signal-cli
     environment:
-      - MODE=json-rpc  # Fastest mode
+      - MODE=json-rpc # Fastest mode
 
   bot:
     build: .
@@ -216,11 +222,11 @@ indirect communication.
 that bundles signal-cli binaries and provides an event-driven bot framework.
 
 ```typescript
-import { SignalBot } from 'signal-sdk';
+import { SignalBot } from "signal-sdk";
 
-const bot = new SignalBot({ phoneNumber: '+1234567890' });
+const bot = new SignalBot({ phoneNumber: "+1234567890" });
 
-bot.on('message', async (message) => {
+bot.on("message", async (message) => {
   // Process through agent loop
   const response = await agentLoop(message);
   await bot.sendMessage(message.sender, response);
@@ -255,13 +261,13 @@ git submodule update --init --recursive
 
 ### Available Tool Sets (~75 tools total)
 
-| Server     | Tools | Examples                                              |
-| ---------- | ----- | ----------------------------------------------------- |
-| Kan.bn     | ~15   | List boards, create card, update card, manage labels   |
-| Outline    | ~15   | Search docs, create document, list collections         |
-| Radicale   | ~15   | List events, create todo, manage contacts              |
-| Playwright | ~20   | Navigate, screenshot, fill form, click element         |
-| Custom     | ~10   | Chat config, user mapping, sprint info, standups       |
+| Server     | Tools | Examples                                             |
+| ---------- | ----- | ---------------------------------------------------- |
+| Kan.bn     | ~15   | List boards, create card, update card, manage labels |
+| Outline    | ~15   | Search docs, create document, list collections       |
+| Radicale   | ~15   | List events, create todo, manage contacts            |
+| Playwright | ~20   | Navigate, screenshot, fill form, click element       |
+| Custom     | ~10   | Chat config, user mapping, sprint info, standups     |
 
 ### Custom Tools
 
@@ -341,6 +347,7 @@ docker compose restart bot
 ```
 
 The Docker Compose setup includes:
+
 - **bot** — The Node.js application
 - **signal-api** — signal-cli-rest-api container (if using Option A)
 
@@ -356,15 +363,15 @@ model.
 This project is a direct adaptation of **xdeca-pm-bot** (private repo), a production
 Telegram bot serving the xDeca organization. The core architecture is identical:
 
-| Aspect             | xdeca-pm-bot           | imagineering-pm-bot     |
-| ------------------ | ---------------------- | ----------------------- |
-| Messaging          | Telegram (grammY)      | Signal (TBD)            |
-| Organization       | xDeca                  | Imagineering            |
-| LLM                | Claude Sonnet 4.6      | Claude Sonnet 4.6       |
-| MCP Tools          | Kan, Outline, Radicale | Kan, Outline, Radicale  |
-| Database           | SQLite + Drizzle       | SQLite + Drizzle        |
-| Agent Architecture | Same                   | Same                    |
-| Deployment         | Docker on GCP          | Docker on GCP           |
+| Aspect             | xdeca-pm-bot           | imagineering-pm-bot    |
+| ------------------ | ---------------------- | ---------------------- |
+| Messaging          | Telegram (grammY)      | Signal (TBD)           |
+| Organization       | xDeca                  | Imagineering           |
+| LLM                | Claude Sonnet 4.6      | Claude Sonnet 4.6      |
+| MCP Tools          | Kan, Outline, Radicale | Kan, Outline, Radicale |
+| Database           | SQLite + Drizzle       | SQLite + Drizzle       |
+| Agent Architecture | Same                   | Same                   |
+| Deployment         | Docker on GCP          | Docker on GCP          |
 
 ### Key Differences from Telegram
 

@@ -10,19 +10,22 @@ Playwright) plus custom tools. No slash commands — natural language only.
 Adapted from **xdeca-pm-bot** (Telegram). Key difference: Signal has no official bot
 API, no message editing, no inline keyboards, and stricter rate limiting.
 
-**Status**: Early-stage planning. No source code yet — only docs.
+**Status**: Active sprint — speed is a primary concern. Prefer working code over
+perfect abstractions. Skip plan mode for straightforward tasks, minimize
+over-engineering, and keep momentum high. Still respect correctness and type safety,
+but bias toward shipping.
 
 ## Tech Stack
 
-| Layer             | Technology                                       |
-| ----------------- | ------------------------------------------------ |
-| Runtime           | Node.js 22+ / TypeScript 5.x                    |
-| Messaging         | Signal (framework TBD — see README)              |
-| LLM               | Claude Sonnet 4.6 (Anthropic API)                |
-| Database          | SQLite via Drizzle ORM                           |
-| MCP Tools         | Kan.bn, Outline, Radicale, Playwright            |
-| Deployment        | Docker on GCP                                    |
-| Package Manager   | pnpm                                             |
+| Layer           | Technology                            |
+| --------------- | ------------------------------------- |
+| Runtime         | Node.js 22+ / TypeScript 5.x          |
+| Messaging       | Signal (framework TBD — see README)   |
+| LLM             | Claude Sonnet 4.6 (Anthropic API)     |
+| Database        | SQLite via Drizzle ORM                |
+| MCP Tools       | Kan.bn, Outline, Radicale, Playwright |
+| Deployment      | Docker on GCP                         |
+| Package Manager | pnpm                                  |
 
 ## Project Structure
 
@@ -82,6 +85,7 @@ NODE_ENV=                     # production | development
 ## Coding Rules
 
 ### TypeScript
+
 - **Strict mode**, no `any` — prefer `unknown` and narrow with type guards.
 - Use **branded types** for domain IDs (e.g., `type CardId = string & { __brand: 'CardId' }`).
 - **Zod schemas** for all external input validation (Signal messages, API responses,
@@ -91,6 +95,7 @@ NODE_ENV=                     # production | development
 - Prefer `const` assertions and discriminated unions over enums.
 
 ### Error Handling
+
 - Wrap external calls (Signal API, MCP servers, Anthropic API) in try/catch with
   structured error logging. Never swallow errors silently.
 - Use custom error classes extending `Error` for domain-specific failures.
@@ -98,18 +103,21 @@ NODE_ENV=                     # production | development
   operation fails mid-way, send a clear error message to the user.
 
 ### Testing (ATDD)
+
 - **Write acceptance tests first**, then implement to make them pass.
 - Tests mirror the `src/` directory structure inside `tests/`.
 - Integration tests for MCP tools use recorded fixtures — never hit live services.
 - Unit test business logic in isolation; mock external boundaries (Signal, MCP, DB).
 
 ### Imports & Modules
+
 - Use `import type` for type-only imports.
 - Relative imports within a module; barrel imports across modules
   (e.g., `import { AgentLoop } from '../agent'`).
 - No circular dependencies — enforce with ESLint rules.
 
 ### Database (Drizzle)
+
 - Schema changes go in `src/db/schema.ts`, then run `pnpm db:generate`.
 - Never modify generated migration files in `drizzle/`.
 - Use Drizzle's query builder — no raw SQL strings.

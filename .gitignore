@@ -4,16 +4,27 @@ node_modules/
 # Build
 dist/
 
-# Environment
-.env
-.env.local
-
 # Database
 data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment
+.env
 
 # OS
 .DS_Store
 
-# IDE
-.idea/
-.vscode/
+# Signal
+signal-cli-config/
+
+# MCP servers (submodule deps)
+mcp-servers/*/node_modules/
+
+# Playwright
+.playwright-mcp/
+
+# Claude Code
+.claude/worktrees/
