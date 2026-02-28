@@ -6,7 +6,7 @@ An AI-powered project management bot for Signal, built for the Imagineering orga
 
 The bot processes every message through a Claude LLM agent loop with access to ~75 tools across task management (Kan.bn), knowledge base (Outline), calendar (Radicale), web automation (Playwright), and custom bot tools. No slash commands — just natural language.
 
-> **Status**: Early-stage planning. No source code yet — docs and architecture only. Adapted from xdeca-pm-bot, a production Telegram bot with the same architecture.
+> **Status**: Core architecture scaffolded in Dart — Signal client, agent loop, conversation history, tool registry, MCP manager, and system prompt are implemented. Custom tools, database layer, cron scheduler, and bot message handler are not yet built. Adapted from xdeca-pm-bot, a production Telegram bot with the same architecture.
 
 ## Architecture
 
@@ -19,8 +19,8 @@ The bot processes every message through a Claude LLM agent loop with access to ~
                            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     Signal Bridge                                   │
-│           signal-cli-rest-api  OR  signal-sdk                       │
-│         (Dockerized REST API)    (TypeScript SDK)                   │
+│                  signal-cli-rest-api                                 │
+│                (Dockerized REST API)                                 │
 └──────────────────────────┬──────────────────────────────────────────┘
                            │
                            ▼
@@ -52,7 +52,7 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 │  └────────────────────────────────────────────────────────────────┘  │
 │                                                                     │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  SQLite + Drizzle ORM                                         │  │
+│  │  SQLite (ORM TBD)                                              │  │
 │  │  Conversations, config, user mappings, standups, bot state    │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
@@ -105,24 +105,24 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 
 | Component       | Technology                                     |
 | --------------- | ---------------------------------------------- |
-| Language        | TypeScript 5.x                                 |
-| Runtime         | Node.js 22+                                    |
-| Messaging       | Signal (via signal-cli-rest-api or signal-sdk) |
-| LLM             | Claude Sonnet 4.6 (Anthropic API)              |
-| Database        | SQLite + Drizzle ORM                           |
+| Language        | Dart 3.6+                                      |
+| Runtime         | Dart VM                                        |
+| Messaging       | Signal (via signal-cli-rest-api)               |
+| LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart)         |
+| MCP             | dart_mcp ^0.4.1                                |
+| Database        | SQLite (ORM TBD)                               |
 | Task Management | Kan.bn (MCP)                                   |
 | Knowledge Base  | Outline (MCP)                                  |
 | Calendar        | Radicale (MCP)                                 |
 | Web Automation  | Playwright (MCP)                               |
 | Deployment      | Docker + Docker Compose on GCP                 |
-| Package Manager | pnpm                                           |
+| Package Manager | dart pub                                       |
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 22+
-- pnpm 9+
+- Dart SDK 3.6+
 - Docker and Docker Compose (for Signal bridge and deployment)
 - A dedicated phone number for the bot's Signal account
 - Anthropic API key
@@ -130,39 +130,32 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 
 ### Installation
 
-> **Note**: The project is in early planning. These steps will work once scaffolding
-> is complete.
-
 ```bash
-# Clone with submodules (MCP servers)
-git clone --recurse-submodules git@github.com:enspyrco/imagineering-pm-bot.git
+# Clone the repo
+git clone git@github.com:enspyrco/imagineering-pm-bot.git
 cd imagineering-pm-bot
 
 # Install dependencies
-pnpm install
+dart pub get
 
 # Set up environment
 cp .env.example .env
 # Edit .env with your credentials
 
-# Generate database
-pnpm db:generate
-pnpm db:migrate
-
-# Start in development mode
-pnpm dev
+# Run the bot
+dart run bin/main.dart
 ```
 
 ### Environment Configuration
 
-All environment variables (will be documented in `.env.example` once scaffolding is
-complete):
+All environment variables are documented in `.env.example`:
 
 ```bash
 # Required
 ANTHROPIC_API_KEY=            # Claude API key
 SIGNAL_PHONE_NUMBER=          # Bot's registered Signal phone number
-SIGNAL_API_URL=               # signal-cli-rest-api base URL (if using REST approach)
+SIGNAL_API_URL=               # signal-cli-rest-api base URL
+
 KAN_BASE_URL=                 # Kan.bn instance URL
 KAN_API_KEY=                  # Kan.bn API key
 OUTLINE_BASE_URL=             # Outline instance URL
@@ -177,18 +170,14 @@ RADICALE_PASSWORD=            # Radicale auth password
 BOT_NAME=                     # Display name (default: "Figment")
 DATABASE_PATH=                # SQLite path (default: ./data/bot.db)
 LOG_LEVEL=                    # Logging level (default: info)
-NODE_ENV=                     # production | development
 ```
 
-## Signal Bot Setup (TBD)
+## Signal Bot Setup
 
-Signal does not have an official bot API. We are evaluating two approaches:
-
-### Option A: signal-cli-rest-api (Sidecar Container)
-
-[signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) is the most
-mature solution — actively maintained with a large community. It wraps signal-cli in a
-Docker container exposing REST endpoints.
+Signal does not have an official bot API. Figment uses
+[signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) — the most
+mature community solution. It wraps signal-cli in a Docker container exposing REST
+endpoints that `SignalClient` (in Dart) consumes via HTTP polling.
 
 ```yaml
 # docker-compose.yml (simplified)
@@ -216,48 +205,11 @@ concern.
 **Cons**: Extra container to manage, polling-based message receipt (or webhook setup),
 indirect communication.
 
-### Option B: signal-sdk (Native TypeScript)
-
-[signal-sdk](https://github.com/benoitpetit/signal-sdk) is a TypeScript-native SDK
-that bundles signal-cli binaries and provides an event-driven bot framework.
-
-```typescript
-import { SignalBot } from "signal-sdk";
-
-const bot = new SignalBot({ phoneNumber: "+1234567890" });
-
-bot.on("message", async (message) => {
-  // Process through agent loop
-  const response = await agentLoop(message);
-  await bot.sendMessage(message.sender, response);
-});
-
-bot.start();
-```
-
-**Pros**: Native TypeScript, event-driven, built-in bot framework, no sidecar needed.
-
-**Cons**: Newer project, smaller community, bundles JVM binaries (large).
-
-### Decision Criteria
-
-- Group message handling (mentions, reactions, replies)
-- Reliability and error recovery
-- Attachment support (images, files)
-- Long-term maintenance and community
-- Docker deployment ergonomics
-- Message delivery guarantees
-
 ## MCP Integration
 
-MCP (Model Context Protocol) servers will run as child processes and expose tools that
-Claude can invoke during the agent loop. They will be included as a git submodule at
-`mcp-servers/` (not yet set up).
-
-```bash
-# Initialize MCP servers (once submodule is added)
-git submodule update --init --recursive
-```
+MCP (Model Context Protocol) servers run as child processes managed by `McpManager`.
+The `dart_mcp` package provides the Dart client for MCP protocol communication — STDIO
+transport wiring is in progress.
 
 ### Available Tool Sets (~75 tools total)
 
@@ -271,7 +223,8 @@ git submodule update --init --recursive
 
 ### Custom Tools
 
-In addition to MCP server tools, the bot defines its own tools in `src/tools/`:
+In addition to MCP server tools, the bot defines its own tools in `lib/src/tools/`
+(not yet scaffolded):
 
 - **chat_config** — Per-chat settings (enabled features, response style, timezone)
 - **user_mapping** — Map Signal UUIDs to Kan.bn users and display names
@@ -286,36 +239,31 @@ In addition to MCP server tools, the bot defines its own tools in `src/tools/`:
 ### Project Structure
 
 ```
-src/
-  bot/            # Signal bot setup, message handling, rate limiting
-  agent/          # Claude agent loop, system prompt, tool orchestration
-  tools/          # Custom MCP tool definitions
-  db/             # Drizzle schema, migrations, queries
-  cron/           # Scheduled jobs (reminders, standups)
-  config/         # Environment config, constants
-  types/          # Shared TypeScript types
-  utils/          # Shared utilities
-mcp-servers/      # Git submodule: Kan, Outline, Radicale MCP servers
-data/             # SQLite database (gitignored)
-drizzle/          # Generated migrations
-tests/            # Test files mirroring src/ structure
-docker/           # Dockerfiles and compose configs
+lib/
+  src/
+    signal/         # Signal client, message models
+    agent/          # Agent loop, system prompt, tool registry, conversation history
+    mcp/            # MCP subprocess manager
+    config/         # Environment config (not yet scaffolded)
+    tools/          # Custom tool definitions (not yet scaffolded)
+    db/             # Database layer (not yet scaffolded)
+    cron/           # Scheduled jobs (not yet scaffolded)
+    bot/            # Message handler, rate limiting (not yet scaffolded)
+bin/                # Entry point (not yet scaffolded)
+test/               # Tests mirroring lib/src/ structure (not yet scaffolded)
+data/               # SQLite database (gitignored)
+docker/             # Dockerfiles and compose configs
 ```
 
 ### Commands
 
 ```bash
-pnpm dev              # Development with watch mode
-pnpm build            # Production build
-pnpm start            # Run production build
-pnpm test             # Run tests
-pnpm test:watch       # Run tests in watch mode
-pnpm lint             # ESLint
-pnpm format           # Prettier
-pnpm typecheck        # tsc --noEmit
-pnpm db:generate      # Generate migration from schema
-pnpm db:migrate       # Apply migrations
-pnpm db:studio        # Drizzle Studio GUI
+dart pub get                    # Install dependencies
+dart run bin/main.dart          # Run the bot
+dart test                       # Run tests
+dart analyze                    # Static analysis
+dart format .                   # Format code
+dart compile exe bin/main.dart  # Compile for production
 ```
 
 ### Testing
@@ -328,8 +276,9 @@ We follow **ATDD** (Acceptance Test-Driven Development):
 4. Watch the test pass
 5. Refactor
 
-Tests are organized to mirror the `src/` directory structure. Integration tests
-for MCP tools use recorded fixtures to avoid hitting live services.
+Tests are organized to mirror the `lib/src/` directory structure inside `test/`.
+Integration tests for MCP tools use recorded fixtures to avoid hitting live services.
+We use `mocktail` for mocking.
 
 ## Deployment
 
@@ -348,8 +297,8 @@ docker compose restart bot
 
 The Docker Compose setup includes:
 
-- **bot** — The Node.js application
-- **signal-api** — signal-cli-rest-api container (if using Option A)
+- **bot** — The Dart application
+- **signal-api** — signal-cli-rest-api container
 
 ### GCP
 
@@ -363,15 +312,16 @@ model.
 This project is a direct adaptation of **xdeca-pm-bot** (private repo), a production
 Telegram bot serving the xDeca organization. The core architecture is identical:
 
-| Aspect             | xdeca-pm-bot           | imagineering-pm-bot    |
-| ------------------ | ---------------------- | ---------------------- |
-| Messaging          | Telegram (grammY)      | Signal (TBD)           |
-| Organization       | xDeca                  | Imagineering           |
-| LLM                | Claude Sonnet 4.6      | Claude Sonnet 4.6      |
-| MCP Tools          | Kan, Outline, Radicale | Kan, Outline, Radicale |
-| Database           | SQLite + Drizzle       | SQLite + Drizzle       |
-| Agent Architecture | Same                   | Same                   |
-| Deployment         | Docker on GCP          | Docker on GCP          |
+| Aspect             | xdeca-pm-bot           | imagineering-pm-bot       |
+| ------------------ | ---------------------- | ------------------------- |
+| Language           | TypeScript             | Dart                      |
+| Messaging          | Telegram (grammY)      | Signal (signal-cli-rest-api) |
+| Organization       | xDeca                  | Imagineering              |
+| LLM                | Claude Sonnet 4.6      | Claude Sonnet 4.6         |
+| MCP Tools          | Kan, Outline, Radicale | Kan, Outline, Radicale    |
+| Database           | SQLite + Drizzle       | SQLite (ORM TBD)          |
+| Agent Architecture | Same                   | Same                      |
+| Deployment         | Docker on GCP          | Docker on GCP             |
 
 ### Key Differences from Telegram
 
