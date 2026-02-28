@@ -166,9 +166,7 @@ class McpManager {
       );
 
       // Log stderr from the MCP server for debugging.
-      process.stderr
-          .transform(const SystemEncoding().decoder)
-          .listen((line) {
+      process.stderr.transform(const SystemEncoding().decoder).listen((line) {
         developer.log(
           '${config.name} stderr: $line',
           name: 'McpManager',

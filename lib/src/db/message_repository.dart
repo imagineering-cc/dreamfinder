@@ -94,7 +94,8 @@ class MessageRepository {
         PersistedMessage(
           id: row['id'] as int,
           chatId: row['chat_id'] as String,
-          role: row['role'] == 'user' ? MessageRole.user : MessageRole.assistant,
+          role:
+              row['role'] == 'user' ? MessageRole.user : MessageRole.assistant,
           content: row['content'] as String,
           senderUuid: row['sender_uuid'] as String?,
           senderName: row['sender_name'] as String?,

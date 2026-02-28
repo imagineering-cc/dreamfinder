@@ -6,10 +6,15 @@ class Env {
     required this.anthropicApiKey,
     required this.signalApiUrl,
     required this.signalPhoneNumber,
-    this.kanBaseUrl, this.kanApiKey,
-    this.outlineBaseUrl, this.outlineApiKey,
-    this.radicaleBaseUrl, this.radicaleUsername, this.radicalePassword,
+    this.kanBaseUrl,
+    this.kanApiKey,
+    this.outlineBaseUrl,
+    this.outlineApiKey,
+    this.radicaleBaseUrl,
+    this.radicaleUsername,
+    this.radicalePassword,
     this.botName = 'Figment',
+    this.databasePath = './data/bot.db',
     this.logLevel = 'info',
   });
 
@@ -39,6 +44,7 @@ class Env {
       radicaleUsername: dotEnv['RADICALE_USERNAME'],
       radicalePassword: dotEnv['RADICALE_PASSWORD'],
       botName: dotEnv['BOT_NAME'] ?? 'Figment',
+      databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
     );
   }
@@ -47,20 +53,32 @@ class Env {
     String anthropicApiKey = 'test-key',
     String signalApiUrl = 'http://localhost:8080',
     String signalPhoneNumber = '+1234567890',
-    String? kanBaseUrl, String? kanApiKey,
-    String? outlineBaseUrl, String? outlineApiKey,
-    String? radicaleBaseUrl, String? radicaleUsername, String? radicalePassword,
+    String? kanBaseUrl,
+    String? kanApiKey,
+    String? outlineBaseUrl,
+    String? outlineApiKey,
+    String? radicaleBaseUrl,
+    String? radicaleUsername,
+    String? radicalePassword,
     String botName = 'Figment',
+    String databasePath = './data/bot.db',
     String logLevel = 'info',
-  }) => Env._(
-    anthropicApiKey: anthropicApiKey, signalApiUrl: signalApiUrl,
-    signalPhoneNumber: signalPhoneNumber,
-    kanBaseUrl: kanBaseUrl, kanApiKey: kanApiKey,
-    outlineBaseUrl: outlineBaseUrl, outlineApiKey: outlineApiKey,
-    radicaleBaseUrl: radicaleBaseUrl, radicaleUsername: radicaleUsername,
-    radicalePassword: radicalePassword,
-    botName: botName, logLevel: logLevel,
-  );
+  }) =>
+      Env._(
+        anthropicApiKey: anthropicApiKey,
+        signalApiUrl: signalApiUrl,
+        signalPhoneNumber: signalPhoneNumber,
+        kanBaseUrl: kanBaseUrl,
+        kanApiKey: kanApiKey,
+        outlineBaseUrl: outlineBaseUrl,
+        outlineApiKey: outlineApiKey,
+        radicaleBaseUrl: radicaleBaseUrl,
+        radicaleUsername: radicaleUsername,
+        radicalePassword: radicalePassword,
+        botName: botName,
+        databasePath: databasePath,
+        logLevel: logLevel,
+      );
 
   final String anthropicApiKey;
   final String signalApiUrl;
@@ -73,9 +91,11 @@ class Env {
   final String? radicaleUsername;
   final String? radicalePassword;
   final String botName;
+  final String databasePath;
   final String logLevel;
 
   bool get kanEnabled => kanApiKey != null && kanApiKey!.isNotEmpty;
   bool get outlineEnabled => outlineApiKey != null && outlineApiKey!.isNotEmpty;
-  bool get radicaleEnabled => radicalePassword != null && radicalePassword!.isNotEmpty;
+  bool get radicaleEnabled =>
+      radicalePassword != null && radicalePassword!.isNotEmpty;
 }
