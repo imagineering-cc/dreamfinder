@@ -114,9 +114,18 @@ Future<void> main() async {
   ProcessSignal.sigint.watch().listen((_) => shutdown());
   ProcessSignal.sigterm.watch().listen((_) => shutdown());
 
-  // Resolve the bot's identity name for mention detection in groups.
-  String botNameLower() =>
+  // Cache the bot name for mention detection — avoids a DB hit per message.
+  // Refreshed when `set_bot_identity` fires via the onIdentityChanged callback.
+  var cachedBotName =
       (queries.getBotIdentity()?.name ?? env.botName).toLowerCase();
+  void refreshBotName() {
+    cachedBotName =
+        (queries.getBotIdentity()?.name ?? env.botName).toLowerCase();
+    _log('Bot name cache refreshed: $cachedBotName');
+  }
+
+  // Wire up identity change callback so the cache stays warm.
+  registerBotIdentityOnChanged(refreshBotName);
 
   _log('Figment is running! Polling every ${_pollIntervalSeconds}s...');
 
@@ -129,8 +138,12 @@ Future<void> main() async {
         final text = envelope.dataMessage!.message!;
         final isGroup = envelope.isGroupMessage;
 
-        // In group chats, only respond when the bot name is mentioned.
-        if (isGroup && !text.toLowerCase().contains(botNameLower())) {
+        // In group chats, only respond when the bot name is mentioned as a
+        // whole word — prevents "Art" from matching "Start", etc.
+        if (isGroup &&
+            !RegExp('\\b${RegExp.escape(cachedBotName)}\\b',
+                    caseSensitive: false)
+                .hasMatch(text)) {
           continue;
         }
 

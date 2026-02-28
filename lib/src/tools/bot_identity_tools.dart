@@ -14,6 +14,15 @@ const defaultBotName = 'Figment';
 const defaultPronouns = 'they/them';
 const defaultTone = 'Playful, imaginative, and helpful';
 
+/// Callback invoked after a successful `set_bot_identity` so callers can
+/// refresh caches (e.g., the bot-name mention regex in the main loop).
+void Function()? _onIdentityChanged;
+
+/// Registers a callback that fires whenever the bot identity changes.
+void registerBotIdentityOnChanged(void Function() callback) {
+  _onIdentityChanged = callback;
+}
+
 /// Registers bot identity tools with the [ToolRegistry].
 void registerBotIdentityTools(ToolRegistry registry, Queries queries) {
   registry.registerCustomTool(_getIdentityTool(queries));
@@ -91,6 +100,8 @@ CustomToolDef _setIdentityTool(Queries queries) {
         toneDescription: toneDescription,
         chosenInGroupId: chosenInGroupId,
       );
+
+      _onIdentityChanged?.call();
 
       return jsonEncode(<String, dynamic>{
         'success': true,
