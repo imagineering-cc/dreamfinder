@@ -19,7 +19,7 @@ services:
     volumes:
       - signal-data:/home/.local/share/signal-cli
     environment:
-      - MODE=json-rpc
+      - MODE=normal
     restart: unless-stopped
 
   bot:

@@ -3,7 +3,12 @@
 /// Keeps the last [maxMessages] messages per chat ID, evicting oldest
 /// user/assistant pairs when the window overflows. Entries expire after
 /// [ttl] of inactivity to avoid unbounded memory growth.
+///
+/// When a [MessageRepository] is provided, messages are persisted to SQLite
+/// and reloaded on cache miss — so conversations survive restarts.
 library;
+
+import '../db/message_repository.dart' as db;
 
 /// Role of a message in the conversation.
 enum MessageRole { user, assistant }
@@ -24,24 +29,50 @@ class _ChatEntry {
 }
 
 /// In-memory conversation history with sliding window and TTL expiry.
+///
+/// Optionally backed by a [db.MessageRepository] for persistence.
 class ConversationHistory {
   ConversationHistory({
     this.maxMessages = 20,
     this.ttl = const Duration(minutes: 30),
-  });
+    db.MessageRepository? repository,
+  }) : _repository = repository;
 
   final int maxMessages;
   final Duration ttl;
+  final db.MessageRepository? _repository;
   final Map<String, _ChatEntry> _histories = {};
 
   List<ChatMessage> getHistory(String chatId) {
     final entry = _histories[chatId];
-    if (entry == null) return [];
-    if (_isExpired(entry)) {
-      _histories.remove(chatId);
-      return [];
+    if (entry != null && !_isExpired(entry)) {
+      return List.unmodifiable(entry.messages);
     }
-    return List.unmodifiable(entry.messages);
+
+    // Cache miss or expired — try loading from DB.
+    _histories.remove(chatId);
+    if (_repository != null) {
+      final persisted =
+          _repository.getMessages(chatId: chatId, limit: maxMessages);
+      if (persisted.isNotEmpty) {
+        final messages = <ChatMessage>[
+          for (final m in persisted)
+            ChatMessage(
+              role: m.role == db.MessageRole.user
+                  ? MessageRole.user
+                  : MessageRole.assistant,
+              content: m.content,
+            ),
+        ];
+        _histories[chatId] = _ChatEntry(
+          messages: messages,
+          lastActivity: DateTime.now(),
+        );
+        return List.unmodifiable(messages);
+      }
+    }
+
+    return [];
   }
 
   void appendToHistory(
@@ -49,6 +80,20 @@ class ConversationHistory {
     ChatMessage userMessage,
     ChatMessage assistantMessage,
   ) {
+    // Persist to DB first (if available).
+    if (_repository != null) {
+      _repository.saveMessage(
+        chatId: chatId,
+        role: db.MessageRole.user,
+        content: userMessage.content,
+      );
+      _repository.saveMessage(
+        chatId: chatId,
+        role: db.MessageRole.assistant,
+        content: assistantMessage.content,
+      );
+    }
+
     final now = DateTime.now();
     var entry = _histories[chatId];
     if (entry == null || _isExpired(entry)) {

@@ -38,16 +38,22 @@ class SignalClient {
     return list.cast<String>();
   }
 
-  /// Sends a text message. `POST /v2/send`
+  /// Sends a text message to a user or group. `POST /v2/send`
+  ///
+  /// If [recipient] looks like a phone number (starts with '+') it is sent
+  /// as-is. Otherwise it is treated as a base64 group ID and prefixed with
+  /// `group.` for the signal-cli-rest-api.
   Future<SendMessageResponse> sendMessage({
     required String recipient,
     required String message,
   }) async {
+    final formattedRecipient =
+        recipient.startsWith('+') ? recipient : 'group.$recipient';
     final body = <String, dynamic>{
       'message': message,
       'number': phoneNumber,
       'text_mode': 'normal',
-      'recipients': <String>[recipient],
+      'recipients': <String>[formattedRecipient],
     };
     final response = await _client.post(
       Uri.parse('$baseUrl/v2/send'),
@@ -57,6 +63,19 @@ class SignalClient {
     _ensureSuccess(response, expectedStatus: 201);
     final json = jsonDecode(response.body) as Map<String, dynamic>;
     return SendMessageResponse.fromJson(json);
+  }
+
+  /// Returns all groups the bot's number is a member of.
+  /// `GET /v1/groups/{number}`
+  Future<List<SignalGroup>> listGroups() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/v1/groups/$phoneNumber'),
+    );
+    _ensureSuccess(response);
+    final list = jsonDecode(response.body) as List<dynamic>;
+    return list
+        .map((e) => SignalGroup.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// Polls for new messages. `GET /v1/receive/{number}`

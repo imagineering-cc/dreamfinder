@@ -8,19 +8,38 @@ import 'package:imagineering_pm_bot/src/agent/conversation_history.dart';
 import 'package:imagineering_pm_bot/src/agent/system_prompt.dart';
 import 'package:imagineering_pm_bot/src/agent/tool_registry.dart';
 import 'package:imagineering_pm_bot/src/config/env.dart';
+import 'package:imagineering_pm_bot/src/db/database.dart';
+import 'package:imagineering_pm_bot/src/db/message_repository.dart';
+import 'package:imagineering_pm_bot/src/db/queries.dart';
 import 'package:imagineering_pm_bot/src/mcp/mcp_manager.dart';
 import 'package:imagineering_pm_bot/src/signal/signal_client.dart';
+import 'package:imagineering_pm_bot/src/tools/bot_identity_tools.dart';
+import 'package:imagineering_pm_bot/src/tools/chat_config_tools.dart';
 
 const _pollIntervalSeconds = 5;
 
+/// Logs to both stderr (visible in terminal) and Dart DevTools.
+void _log(String message, {String name = 'main', bool isError = false}) {
+  final timestamp = DateTime.now().toIso8601String().substring(11, 23);
+  stderr.writeln('[$timestamp] [$name] $message');
+  developer.log(message, name: name, level: isError ? 900 : 0);
+}
+
 Future<void> main() async {
-  developer.log('Starting Figment...', name: 'main');
+  _log('Starting Figment...');
 
   final env = Env.load();
-  developer.log(
-    'Config loaded: bot=${env.botName}, signal=${env.signalApiUrl}',
-    name: 'main',
-  );
+  _log('Config loaded: bot=${env.botName}, signal=${env.signalApiUrl}');
+
+  // Ensure the database directory exists and open the database.
+  final dbPath = env.databasePath;
+  final dbDir = File(dbPath).parent;
+  if (!dbDir.existsSync()) {
+    dbDir.createSync(recursive: true);
+  }
+  final database = BotDatabase.open(dbPath);
+  final messageRepo = MessageRepository(database);
+  _log('Database opened: $dbPath');
 
   final signalClient = SignalClient(
     baseUrl: env.signalApiUrl,
@@ -29,13 +48,9 @@ Future<void> main() async {
 
   try {
     final about = await signalClient.about();
-    developer.log(
-      'Signal API connected: versions=${about.versions}',
-      name: 'main',
-    );
+    _log('Signal API connected: versions=${about.versions}');
   } on Exception catch (e) {
-    developer.log('Failed to connect to Signal API: $e',
-        name: 'main', level: 1000);
+    _log('Failed to connect to Signal API: $e', isError: true);
     exit(1);
   }
 
@@ -64,15 +79,17 @@ Future<void> main() async {
   }
 
   final serverNames = mcpManager.getServerNames();
-  developer.log(
-    'MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}',
-    name: 'main',
-  );
+  _log(
+      'MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}');
+
+  final queries = Queries(database);
 
   final toolRegistry = ToolRegistry();
   toolRegistry.setMcpManager(mcpManager);
+  registerBotIdentityTools(toolRegistry, queries);
+  registerChatConfigTools(toolRegistry, queries);
 
-  final history = ConversationHistory();
+  final history = ConversationHistory(repository: messageRepo);
   final anthropicClient = anthropic.AnthropicClient(
     apiKey: env.anthropicApiKey,
   );
@@ -87,7 +104,8 @@ Future<void> main() async {
   );
 
   void shutdown() {
-    developer.log('Shutting down...', name: 'main');
+    _log('Shutting down...');
+    database.close();
     mcpManager.shutdown();
     anthropicClient.endSession();
     exit(0);
@@ -96,18 +114,40 @@ Future<void> main() async {
   ProcessSignal.sigint.watch().listen((_) => shutdown());
   ProcessSignal.sigterm.watch().listen((_) => shutdown());
 
-  developer.log(
-    'Figment is running! Polling every ${_pollIntervalSeconds}s...',
-    name: 'main',
-  );
+  // Cache the bot name for mention detection — avoids a DB hit per message.
+  // Refreshed when `set_bot_identity` fires via the onIdentityChanged callback.
+  var cachedBotName =
+      (queries.getBotIdentity()?.name ?? env.botName).toLowerCase();
+  void refreshBotName() {
+    cachedBotName =
+        (queries.getBotIdentity()?.name ?? env.botName).toLowerCase();
+    _log('Bot name cache refreshed: $cachedBotName');
+  }
+
+  // Wire up identity change callback so the cache stays warm.
+  registerBotIdentityOnChanged(refreshBotName);
+
+  _log('Figment is running! Polling every ${_pollIntervalSeconds}s...');
 
   while (true) {
     try {
       final envelopes = await signalClient.receiveMessages();
       for (final envelope in envelopes) {
         if (!envelope.hasTextMessage) continue;
+
         final text = envelope.dataMessage!.message!;
-        developer.log('Message from ${envelope.source}: $text', name: 'main');
+        final isGroup = envelope.isGroupMessage;
+
+        // In group chats, only respond when the bot name is mentioned as a
+        // whole word — prevents "Art" from matching "Start", etc.
+        if (isGroup &&
+            !RegExp('\\b${RegExp.escape(cachedBotName)}\\b',
+                    caseSensitive: false)
+                .hasMatch(text)) {
+          continue;
+        }
+
+        _log('${isGroup ? "[group] " : ""}Message from ${envelope.source}: $text');
 
         try {
           final input = AgentInput(
@@ -116,35 +156,42 @@ Future<void> main() async {
             senderUuid: envelope.sourceUuid,
             isAdmin: false,
           );
+          // Detect first contact: no workspace link for this group yet.
+          final isFirstContact =
+              queries.getWorkspaceLink(envelope.chatId) == null;
+
           final response = await agentLoop.processMessage(
             input,
-            systemPrompt: buildSystemPrompt(input, botName: env.botName),
+            systemPrompt: buildSystemPrompt(
+              input,
+              botName: env.botName,
+              identity: queries.getBotIdentity(),
+              isFirstContact: isFirstContact,
+            ),
           );
           if (response.isNotEmpty) {
+            _log('Responding to ${envelope.chatId}: '
+                '${response.length > 80 ? '${response.substring(0, 80)}...' : response}');
             await signalClient.sendMessage(
               recipient: envelope.chatId,
               message: response,
             );
+            _log('Response sent.');
           }
         } on Exception catch (e) {
-          developer.log('Error processing message: $e',
-              name: 'main', level: 900);
+          _log('Error processing message: $e', isError: true);
           try {
             await signalClient.sendMessage(
               recipient: envelope.chatId,
               message: 'Something went wrong. Please try again.',
             );
           } on Exception catch (sendErr) {
-            developer.log(
-              'Failed to send error message: $sendErr',
-              name: 'main',
-              level: 900,
-            );
+            _log('Failed to send error message: $sendErr', isError: true);
           }
         }
       }
     } on Exception catch (e) {
-      developer.log('Polling error: $e', name: 'main', level: 900);
+      _log('Polling error: $e', isError: true);
     }
 
     history.evictStale();

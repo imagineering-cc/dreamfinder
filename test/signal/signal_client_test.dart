@@ -32,7 +32,10 @@ void main() {
     test('about returns API version info', () async {
       when(() => mockClient.get(Uri.parse('$baseUrl/v1/about')))
           .thenAnswer((_) async => http.Response(
-                jsonEncode({'versions': ['v1', 'v2'], 'build': 42}),
+                jsonEncode({
+                  'versions': ['v1', 'v2'],
+                  'build': 42
+                }),
                 200,
               ));
       final about = await signalClient.about();
@@ -122,10 +125,9 @@ void main() {
           .thenAnswer((_) async => http.Response('', 204));
       await signalClient.sendTypingIndicator(recipient: '+0987654321');
       verify(() => mockClient.put(
-              Uri.parse('$baseUrl/v1/typing-indicator/$phoneNumber'),
-              headers: any(named: 'headers'),
-              body: any(named: 'body')))
-          .called(1);
+          Uri.parse('$baseUrl/v1/typing-indicator/$phoneNumber'),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'))).called(1);
     });
   });
 }

@@ -65,4 +65,27 @@ class SignalEnvelope {
       dataMessage != null &&
       dataMessage!.message != null &&
       dataMessage!.message!.isNotEmpty;
+
+  /// Whether this message came from a group chat.
+  bool get isGroupMessage => dataMessage?.isGroup ?? false;
+}
+
+/// A Signal group returned by `GET /v1/groups/{number}`.
+class SignalGroup {
+  const SignalGroup({
+    required this.id,
+    required this.name,
+    this.members = const [],
+  });
+
+  factory SignalGroup.fromJson(Map<String, dynamic> json) => SignalGroup(
+        id: json['id'] as String? ?? json['internal_id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        members: (json['members'] as List<dynamic>?)?.cast<String>() ??
+            const <String>[],
+      );
+
+  final String id;
+  final String name;
+  final List<String> members;
 }

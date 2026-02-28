@@ -28,7 +28,8 @@ void main() {
         history: history,
       );
       final result = await loop.processMessage(
-        const AgentInput(text: 'Hi', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
+        const AgentInput(
+            text: 'Hi', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
         systemPrompt: 'You are Figment.',
       );
       expect(result, equals('Hello! I am Figment.'));
@@ -40,7 +41,10 @@ void main() {
       toolRegistry.registerCustomTool(CustomToolDef(
         name: 'get_time',
         description: 'Gets time',
-        inputSchema: const <String, dynamic>{'type': 'object', 'properties': <String, dynamic>{}},
+        inputSchema: const <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{}
+        },
         handler: (args) async => '2026-02-28T12:00:00Z',
       ));
       final loop = AgentLoop(
@@ -49,7 +53,10 @@ void main() {
           if (callCount == 1) {
             return const AgentResponse(
               textBlocks: [],
-              toolUseBlocks: [ToolUseContent(id: 't1', name: 'get_time', input: <String, dynamic>{})],
+              toolUseBlocks: [
+                ToolUseContent(
+                    id: 't1', name: 'get_time', input: <String, dynamic>{})
+              ],
               stopReason: StopReason.toolUse,
             );
           }
@@ -63,7 +70,8 @@ void main() {
         history: history,
       );
       final result = await loop.processMessage(
-        const AgentInput(text: 'What time?', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
+        const AgentInput(
+            text: 'What time?', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
         systemPrompt: 'You are Figment.',
       );
       expect(result, contains('2026-02-28T12:00:00Z'));
@@ -75,7 +83,10 @@ void main() {
       toolRegistry.registerCustomTool(CustomToolDef(
         name: 'loop_tool',
         description: 'Loops',
-        inputSchema: const <String, dynamic>{'type': 'object', 'properties': <String, dynamic>{}},
+        inputSchema: const <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{}
+        },
         handler: (args) async => 'result',
       ));
       final loop = AgentLoop(
@@ -83,7 +94,12 @@ void main() {
           callCount++;
           return AgentResponse(
             textBlocks: const [TextContent(text: 'Working...')],
-            toolUseBlocks: [ToolUseContent(id: 't-$callCount', name: 'loop_tool', input: const <String, dynamic>{})],
+            toolUseBlocks: [
+              ToolUseContent(
+                  id: 't-$callCount',
+                  name: 'loop_tool',
+                  input: const <String, dynamic>{})
+            ],
             stopReason: StopReason.toolUse,
           );
         },
@@ -92,7 +108,8 @@ void main() {
         maxToolRounds: 3,
       );
       final result = await loop.processMessage(
-        const AgentInput(text: 'Do it', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
+        const AgentInput(
+            text: 'Do it', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
         systemPrompt: 'You are Figment.',
       );
       expect(callCount, equals(3));
@@ -104,7 +121,10 @@ void main() {
       toolRegistry.registerCustomTool(CustomToolDef(
         name: 'broken_tool',
         description: 'Breaks',
-        inputSchema: const <String, dynamic>{'type': 'object', 'properties': <String, dynamic>{}},
+        inputSchema: const <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{}
+        },
         handler: (args) async => throw Exception('Tool broken'),
       ));
       final loop = AgentLoop(
@@ -113,7 +133,10 @@ void main() {
           if (callCount == 1) {
             return const AgentResponse(
               textBlocks: [],
-              toolUseBlocks: [ToolUseContent(id: 't1', name: 'broken_tool', input: <String, dynamic>{})],
+              toolUseBlocks: [
+                ToolUseContent(
+                    id: 't1', name: 'broken_tool', input: <String, dynamic>{})
+              ],
               stopReason: StopReason.toolUse,
             );
           }
@@ -127,7 +150,8 @@ void main() {
         history: history,
       );
       final result = await loop.processMessage(
-        const AgentInput(text: 'Use it', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
+        const AgentInput(
+            text: 'Use it', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
         systemPrompt: 'You are Figment.',
       );
       expect(result, contains('not working'));

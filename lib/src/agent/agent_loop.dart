@@ -91,8 +91,7 @@ typedef CreateMessageFn = Future<AgentResponse> Function(
 typedef TypingIndicatorFn = Future<void> Function(String chatId);
 
 const _defaultMaxToolRounds = 10;
-const _fallbackMessage =
-    'I ran into too many steps trying to complete that. '
+const _fallbackMessage = 'I ran into too many steps trying to complete that. '
     'Could you try a simpler request?';
 
 /// The core agent loop: sends messages to Claude, executes tool calls,
@@ -210,9 +209,8 @@ class AgentLoop {
       ));
     }
 
-    final fallbackText = lastResponse != null
-        ? _extractText(lastResponse)
-        : _fallbackMessage;
+    final fallbackText =
+        lastResponse != null ? _extractText(lastResponse) : _fallbackMessage;
 
     _history.appendToHistory(
       input.chatId,
