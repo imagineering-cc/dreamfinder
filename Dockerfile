@@ -4,7 +4,7 @@
 # Stage 2: Minimal runtime with Node.js (for MCP server subprocesses)
 
 # --- Build stage ---
-FROM dart:3.6 AS build
+FROM dart:stable AS build
 
 WORKDIR /app
 
