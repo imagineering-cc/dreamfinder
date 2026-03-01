@@ -19,6 +19,9 @@ RUN dart compile exe bin/dreamfinder.dart -o bin/dreamfinder
 # --- Runtime stage ---
 FROM node:22-slim
 
+# Install native dependencies needed by Dart AOT binary.
+RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-0 && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install MCP server dependencies (if submodule exists).
