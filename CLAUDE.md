@@ -1,20 +1,22 @@
-# imagineering-pm-bot (Figment)
+# imagineering-pm-bot (Dreamfinder)
 
 > See [README.md](README.md) for full project documentation, architecture diagrams,
 > Signal integration details, MCP integration details, and deployment guide.
 
-**Figment** is a Signal-based PM bot for the Imagineering org. Every message flows
+**Dreamfinder** is a Signal-based PM bot for the Imagineering org. Every message flows
 through a Claude agent loop with access to MCP tools (Kan.bn, Outline, Radicale,
 Playwright) plus custom tools. No slash commands — natural language only.
 
 Adapted from **xdeca-pm-bot** (Telegram). Key difference: Signal has no official bot
 API, no message editing, no inline keyboards, and stricter rate limiting.
 
-**Status**: Active sprint — core agent architecture scaffolded (Signal client, agent
-loop, conversation history, tool registry, MCP manager, system prompt). Speed is a
-primary concern. Prefer working code over perfect abstractions. Skip plan mode for
-straightforward tasks, minimize over-engineering, and keep momentum high. Still respect
-correctness and type safety, but bias toward shipping.
+**Status**: Active sprint — end-to-end bot is runnable. Signal client, agent loop,
+conversation history (DB-backed), tool registry, MCP manager, system prompt, SQLite
+persistence (10 domain tables), and custom tools (identity + chat config) are
+implemented with 106+ tests. Cron scheduler, standup orchestration, and dedicated
+message handler are next. Speed is a primary concern. Prefer working code over perfect
+abstractions. Skip plan mode for straightforward tasks, minimize over-engineering, and
+keep momentum high. Still respect correctness and type safety, but bias toward shipping.
 
 ## Tech Stack
 
@@ -25,7 +27,7 @@ correctness and type safety, but bias toward shipping.
 | Messaging       | Signal (via signal-cli-rest-api)       |
 | LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart) |
 | MCP             | dart_mcp ^0.4.1                        |
-| Database        | SQLite (ORM TBD)                       |
+| Database        | SQLite (via sqlite3 package)            |
 | MCP Tools       | Kan.bn, Outline, Radicale, Playwright  |
 | Deployment      | Docker on GCP                          |
 | Package Manager | dart pub                               |
@@ -38,13 +40,13 @@ lib/
     signal/         # Signal client, message models
     agent/          # Agent loop, system prompt, tool registry, conversation history
     mcp/            # MCP subprocess manager
-    config/         # Environment config (not yet scaffolded)
-    tools/          # Custom tool definitions (not yet scaffolded)
-    db/             # Database layer (not yet scaffolded)
-    cron/           # Scheduled jobs (not yet scaffolded)
-    bot/            # Message handler, rate limiting (not yet scaffolded)
-bin/                # Entry point (not yet scaffolded)
-test/               # Tests mirroring lib/src/ structure (not yet scaffolded)
+    config/         # Environment config
+    tools/          # Custom tool definitions (identity, chat config)
+    db/             # SQLite database, schema, queries, message repository
+    cron/           # Scheduled jobs (not yet built)
+    bot/            # Message handler, rate limiting (not yet built)
+bin/                # Entry point (figment.dart)
+test/               # Tests mirroring lib/src/ structure
 data/               # SQLite database (gitignored)
 docker/             # Dockerfiles and compose configs
 ```
@@ -53,11 +55,11 @@ docker/             # Dockerfiles and compose configs
 
 ```bash
 dart pub get                    # Install dependencies
-dart run bin/main.dart          # Run the bot
+dart run bin/figment.dart        # Run the bot
 dart test                       # Run tests
 dart analyze                    # Static analysis
 dart format .                   # Format code
-dart compile exe bin/main.dart  # Compile for production
+dart compile exe bin/figment.dart # Compile for production
 ```
 
 ## Environment Variables
@@ -73,7 +75,7 @@ OUTLINE_API_KEY=              # Outline API key
 RADICALE_BASE_URL=            # Radicale CalDAV/CardDAV server URL
 RADICALE_USERNAME=            # Radicale auth username
 RADICALE_PASSWORD=            # Radicale auth password
-BOT_NAME=                     # Display name (default: "Figment")
+BOT_NAME=                     # Display name (default: "Dreamfinder")
 DATABASE_PATH=                # SQLite path (default: ./data/bot.db)
 LOG_LEVEL=                    # Logging level (default: info)
 ```
@@ -119,7 +121,10 @@ LOG_LEVEL=                    # Logging level (default: info)
 
 ### Database
 
-- Database layer TBD. SQLite for persistence, ORM not yet selected.
+- SQLite via the `sqlite3` package (synchronous API). No ORM — raw SQL with
+  parameterized queries in `Queries` class and `MessageRepository`.
+- Schema defined in `database.dart` via `CREATE TABLE IF NOT EXISTS`. No formal
+  migration system yet — add one before the first schema change on production data.
 - Never store secrets or API keys in SQLite.
 
 ## Git & Workflow

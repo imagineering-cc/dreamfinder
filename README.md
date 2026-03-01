@@ -1,12 +1,12 @@
-# Figment — imagineering-pm-bot
+# Dreamfinder — imagineering-pm-bot
 
 > _"One little spark of inspiration is at the heart of all creation."_
 
-An AI-powered project management bot for Signal, built for the Imagineering organization. Named after the beloved purple dragon from EPCOT's Journey Into Imagination — the mascot of Walt Disney Imagineering — **Figment** turns sparks of ideas into organized tasks, docs, and team coordination.
+An AI-powered project management bot for Signal, built for the Imagineering organization. Named after the Dreamfinder from EPCOT's Journey Into Imagination — the imaginative mentor who dreamed Figment into existence — **Dreamfinder** turns sparks of ideas into organized tasks, docs, and team coordination.
 
 The bot processes every message through a Claude LLM agent loop with access to ~75 tools across task management (Kan.bn), knowledge base (Outline), calendar (Radicale), web automation (Playwright), and custom bot tools. No slash commands — just natural language.
 
-> **Status**: Core architecture scaffolded in Dart — Signal client, agent loop, conversation history, tool registry, MCP manager, and system prompt are implemented. Custom tools, database layer, cron scheduler, and bot message handler are not yet built. Adapted from xdeca-pm-bot, a production Telegram bot with the same architecture.
+> **Status**: End-to-end bot is runnable. Signal client, agent loop, DB-backed conversation history, tool registry, MCP manager, system prompt, SQLite persistence (10 domain tables), and custom tools (identity + chat config, 10 tools) are implemented with 106+ tests. Cron scheduler, standup orchestration, and dedicated message handler are next. Adapted from xdeca-pm-bot, a production Telegram bot with the same architecture.
 
 ## Architecture
 
@@ -52,7 +52,7 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 │  └────────────────────────────────────────────────────────────────┘  │
 │                                                                     │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  SQLite (ORM TBD)                                              │  │
+│  │  SQLite (sqlite3 package)                                       │  │
 │  │  Conversations, config, user mappings, standups, bot state    │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
@@ -110,7 +110,7 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 | Messaging       | Signal (via signal-cli-rest-api)       |
 | LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart) |
 | MCP             | dart_mcp ^0.4.1                        |
-| Database        | SQLite (ORM TBD)                       |
+| Database        | SQLite (via sqlite3 package)            |
 | Task Management | Kan.bn (MCP)                           |
 | Knowledge Base  | Outline (MCP)                          |
 | Calendar        | Radicale (MCP)                         |
@@ -143,7 +143,7 @@ cp .env.example .env
 # Edit .env with your credentials
 
 # Run the bot
-dart run bin/main.dart
+dart run bin/figment.dart
 ```
 
 ### Environment Configuration
@@ -167,14 +167,14 @@ RADICALE_USERNAME=            # Radicale auth username
 RADICALE_PASSWORD=            # Radicale auth password
 
 # Bot Config (all optional, have defaults)
-BOT_NAME=                     # Display name (default: "Figment")
+BOT_NAME=                     # Display name (default: "Dreamfinder")
 DATABASE_PATH=                # SQLite path (default: ./data/bot.db)
 LOG_LEVEL=                    # Logging level (default: info)
 ```
 
 ## Signal Bot Setup
 
-Signal does not have an official bot API. Figment uses
+Signal does not have an official bot API. Dreamfinder uses
 [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) — the most
 mature community solution. It wraps signal-cli in a Docker container exposing REST
 endpoints that `SignalClient` (in Dart) consumes via HTTP polling.
@@ -189,7 +189,7 @@ services:
     volumes:
       - ./signal-cli-config:/home/.local/share/signal-cli
     environment:
-      - MODE=json-rpc # Fastest mode
+      - MODE=normal
 
   bot:
     build: .
@@ -223,16 +223,15 @@ transport wiring is in progress.
 
 ### Custom Tools
 
-In addition to MCP server tools, the bot defines its own tools in `lib/src/tools/`
-(not yet scaffolded):
+In addition to MCP server tools, the bot defines its own tools in `lib/src/tools/`:
 
-- **chat_config** — Per-chat settings (enabled features, response style, timezone)
+- **chat_config** — Workspace linking, default board/list config per group
 - **user_mapping** — Map Signal UUIDs to Kan.bn users and display names
-- **sprint_info** — Current sprint metadata (dates, goals, velocity)
-- **standup** — Collect and summarize daily standup responses
-- **bot_identity** — Bot name, personality, and response guidelines
-- **deploy_info** — Current deployment version, uptime, health
-- **server_ops** — Diagnostic tools (MCP server status, latency, connection health)
+- **bot_identity** — Get/set bot name, pronouns, and communication tone
+- **sprint_info** — Current sprint metadata (planned)
+- **standup** — Collect and summarize daily standup responses (planned)
+- **deploy_info** — Current deployment version, uptime, health (planned)
+- **server_ops** — Diagnostic tools (MCP server status, latency) (planned)
 
 ## Development
 
@@ -244,13 +243,13 @@ lib/
     signal/         # Signal client, message models
     agent/          # Agent loop, system prompt, tool registry, conversation history
     mcp/            # MCP subprocess manager
-    config/         # Environment config (not yet scaffolded)
-    tools/          # Custom tool definitions (not yet scaffolded)
-    db/             # Database layer (not yet scaffolded)
-    cron/           # Scheduled jobs (not yet scaffolded)
-    bot/            # Message handler, rate limiting (not yet scaffolded)
-bin/                # Entry point (not yet scaffolded)
-test/               # Tests mirroring lib/src/ structure (not yet scaffolded)
+    config/         # Environment config
+    tools/          # Custom tool definitions (identity, chat config)
+    db/             # SQLite database, schema, queries, message repository
+    cron/           # Scheduled jobs (not yet built)
+    bot/            # Message handler, rate limiting (not yet built)
+bin/                # Entry point (figment.dart)
+test/               # Tests mirroring lib/src/ structure
 data/               # SQLite database (gitignored)
 docker/             # Dockerfiles and compose configs
 ```
@@ -259,11 +258,11 @@ docker/             # Dockerfiles and compose configs
 
 ```bash
 dart pub get                    # Install dependencies
-dart run bin/main.dart          # Run the bot
+dart run bin/figment.dart          # Run the bot
 dart test                       # Run tests
 dart analyze                    # Static analysis
 dart format .                   # Format code
-dart compile exe bin/main.dart  # Compile for production
+dart compile exe bin/figment.dart  # Compile for production
 ```
 
 ### Testing
@@ -319,7 +318,7 @@ Telegram bot serving the xDeca organization. The core architecture is identical:
 | Organization       | xDeca                  | Imagineering                 |
 | LLM                | Claude Sonnet 4.6      | Claude Sonnet 4.6            |
 | MCP Tools          | Kan, Outline, Radicale | Kan, Outline, Radicale       |
-| Database           | SQLite + Drizzle       | SQLite (ORM TBD)             |
+| Database           | SQLite + Drizzle       | SQLite (sqlite3 package)     |
 | Agent Architecture | Same                   | Same                         |
 | Deployment         | Docker on GCP          | Docker on GCP                |
 
