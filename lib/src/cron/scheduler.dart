@@ -58,6 +58,9 @@ class Scheduler {
       final today = _dateString(now);
 
       // Check if it's prompt hour and no session exists yet today.
+      // TODO(timezone): Convert `now` to `config.timezone` before comparing.
+      // Currently uses server-local time; the timezone field is stored but
+      // not yet applied. Add the `timezone` package when needed.
       if (now.hour == config.promptHour) {
         final existingSession =
             queries.getActiveStandupSession(config.signalGroupId, today);

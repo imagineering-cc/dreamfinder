@@ -49,7 +49,9 @@ CustomToolDef _configureStandupTool(Queries queries) {
         'timezone': <String, dynamic>{
           'type': 'string',
           'description':
-              'IANA timezone for scheduling (default: Australia/Sydney).',
+              'IANA timezone for scheduling (default: Australia/Sydney). '
+              'Note: stored but not yet applied — prompts currently use '
+              'server-local time.',
         },
         'skip_weekends': <String, dynamic>{
           'type': 'boolean',
@@ -153,6 +155,11 @@ CustomToolDef _submitStandupResponseTool(Queries queries) {
         'blockers': <String, dynamic>{
           'type': 'string',
           'description': 'Any blockers or impediments.',
+        },
+        'raw_message': <String, dynamic>{
+          'type': 'string',
+          'description':
+              'The original message text before parsing into fields.',
         },
       },
       'required': <String>['signal_group_id', 'signal_uuid'],

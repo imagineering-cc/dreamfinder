@@ -14,6 +14,7 @@ class Env {
     this.radicaleUsername,
     this.radicalePassword,
     this.adminUuids = const [],
+    this.kanMcpPath,
     this.botName = 'Dreamfinder',
     this.databasePath = './data/bot.db',
     this.logLevel = 'info',
@@ -45,6 +46,7 @@ class Env {
       radicaleUsername: dotEnv['RADICALE_USERNAME'],
       radicalePassword: dotEnv['RADICALE_PASSWORD'],
       adminUuids: _parseList(dotEnv['ADMIN_UUIDS']),
+      kanMcpPath: dotEnv['KAN_MCP_PATH'],
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
       databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
@@ -63,6 +65,7 @@ class Env {
     String? radicaleUsername,
     String? radicalePassword,
     List<String> adminUuids = const [],
+    String? kanMcpPath,
     String botName = 'Dreamfinder',
     String databasePath = './data/bot.db',
     String logLevel = 'info',
@@ -79,6 +82,7 @@ class Env {
         radicaleUsername: radicaleUsername,
         radicalePassword: radicalePassword,
         adminUuids: adminUuids,
+        kanMcpPath: kanMcpPath,
         botName: botName,
         databasePath: databasePath,
         logLevel: logLevel,
@@ -96,6 +100,9 @@ class Env {
   final String? radicalePassword;
   /// Signal UUIDs that have admin privileges (from `ADMIN_UUIDS` env var).
   final List<String> adminUuids;
+
+  /// Path to the Kan MCP server entry point (from `KAN_MCP_PATH` env var).
+  final String? kanMcpPath;
   final String botName;
   final String databasePath;
   final String logLevel;

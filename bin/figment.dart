@@ -62,10 +62,11 @@ Future<void> main() async {
   final mcpManager = McpManager();
 
   if (env.kanEnabled) {
+    final kanPath = env.kanMcpPath ?? 'mcp-servers/kan/index.js';
     await mcpManager.startServer(McpServerConfig(
       name: 'kan',
       command: 'node',
-      args: const <String>['/Users/nick/.claude/mcp-servers/kan/index.js'],
+      args: <String>[kanPath],
       env: <String, String>{
         'KAN_BASE_URL': env.kanBaseUrl!,
         'KAN_API_KEY': env.kanApiKey!,
