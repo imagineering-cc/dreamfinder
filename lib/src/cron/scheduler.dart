@@ -1,0 +1,107 @@
+/// Timer-based scheduler for recurring tasks.
+///
+/// Currently handles:
+/// - **Standup prompts**: Sends a prompt message at the configured hour.
+/// - **Data cleanup**: Removes old reminders and calendar reminder records.
+///
+/// The scheduler checks all standup configs every minute and fires actions
+/// when the current time matches a configured hour. Idempotent — duplicate
+/// sends are prevented by checking for existing standup sessions.
+library;
+
+import 'dart:async';
+
+import '../db/queries.dart';
+import '../db/schema.dart';
+
+export '../db/schema.dart' show CalendarReminderWindow;
+
+/// Callback for sending a message to a Signal group.
+typedef SendMessageFn = Future<void> Function(String groupId, String message);
+
+/// Periodic scheduler for standup prompts and data cleanup.
+class Scheduler {
+  Scheduler({
+    required this.queries,
+    required this.sendMessage,
+  });
+
+  final Queries queries;
+  final SendMessageFn sendMessage;
+  Timer? _timer;
+
+  /// Starts the scheduler, ticking every 60 seconds.
+  void start() {
+    _timer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => tick(DateTime.now()),
+    );
+  }
+
+  /// Stops the scheduler.
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  /// Runs one scheduler cycle for the given [now] time.
+  ///
+  /// Public so tests can call it directly with a controlled timestamp.
+  Future<void> tick(DateTime now) async {
+    final configs = queries.getAllStandupConfigs();
+    for (final config in configs) {
+      if (!config.enabled) continue;
+
+      // Skip weekends if configured.
+      if (config.skipWeekends && _isWeekend(now)) continue;
+
+      final today = _dateString(now);
+
+      // Check if it's prompt hour and no session exists yet today.
+      if (now.hour == config.promptHour) {
+        final existingSession =
+            queries.getActiveStandupSession(config.signalGroupId, today);
+        if (existingSession == null) {
+          await _sendStandupPrompt(config, today);
+        }
+      }
+    }
+
+    // Run data cleanup once per day at 3 AM.
+    if (now.hour == 3 && now.minute == 0) {
+      cleanOldData();
+    }
+  }
+
+  /// Sends the standup prompt message and creates the session record.
+  Future<void> _sendStandupPrompt(
+    StandupConfigRecord config,
+    String date,
+  ) async {
+    final message = "Good morning! Time for today's standup.\n\n"
+        'Please share:\n'
+        '1. What did you work on yesterday?\n'
+        '2. What are you working on today?\n'
+        '3. Any blockers?\n\n'
+        'Just reply naturally — I\'ll record your update.';
+
+    await sendMessage(config.signalGroupId, message);
+
+    queries.createStandupSession(
+      signalGroupId: config.signalGroupId,
+      date: date,
+    );
+  }
+
+  /// Removes old reminders and calendar reminders from the database.
+  void cleanOldData() {
+    queries.cleanOldReminders(olderThanDays: 7);
+    queries.cleanOldCalendarReminders(olderThanDays: 7);
+  }
+
+  bool _isWeekend(DateTime dt) =>
+      dt.weekday == DateTime.saturday || dt.weekday == DateTime.sunday;
+
+  String _dateString(DateTime dt) => dt.toIso8601String().substring(0, 10);
+}
+
