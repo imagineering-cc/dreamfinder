@@ -6,7 +6,7 @@
 #
 # First-time setup:
 #   1. Start signal-api: docker compose -f docker-compose.dart.yml up -d signal-api
-#   2. Link device: curl -X POST 'http://localhost:8080/v1/qrcodelink?device_name=figment'
+#   2. Link device: curl -X POST 'http://localhost:8080/v1/qrcodelink?device_name=dreamfinder'
 #   3. Scan QR code with Signal on your phone
 #   4. Set SIGNAL_PHONE_NUMBER in .env
 #   5. Start bot: docker compose -f docker-compose.dart.yml up -d

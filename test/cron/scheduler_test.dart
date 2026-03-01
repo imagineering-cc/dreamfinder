@@ -151,5 +151,53 @@ void main() {
         isFalse,
       );
     });
+
+    test('tick triggers cleanup once per day after 3 AM', () async {
+      // Insert old data to verify cleanup runs.
+      queries.upsertReminder('card-old', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days')",
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+      );
+
+      // Tick at 3:15 AM — should trigger cleanup.
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+      expect(queries.getLastReminder('card-old', 'group-1'), isNull);
+
+      // Insert new old data.
+      queries.upsertReminder('card-old-2', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days') "
+        "WHERE card_public_id = 'card-old-2'",
+      );
+
+      // Tick again same day at 4 AM — should NOT re-run cleanup.
+      await scheduler.tick(DateTime(2026, 3, 2, 4, 0));
+      expect(queries.getLastReminder('card-old-2', 'group-1'), isNotNull);
+
+      // Tick next day at 3:00 AM — should trigger cleanup again.
+      await scheduler.tick(DateTime(2026, 3, 3, 3, 0));
+      expect(queries.getLastReminder('card-old-2', 'group-1'), isNull);
+    });
+
+    test('tick does not trigger cleanup before 3 AM', () async {
+      queries.upsertReminder('card-old', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days')",
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+      );
+
+      // Tick at 2:59 AM — too early, no cleanup.
+      await scheduler.tick(DateTime(2026, 3, 2, 2, 59));
+      expect(queries.getLastReminder('card-old', 'group-1'), isNotNull);
+    });
   });
 }

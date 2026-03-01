@@ -101,5 +101,27 @@ void main() {
       expect(limiter.shouldAllow(chatId: 'group-1', senderUuid: 'user-1'),
           isTrue);
     });
+
+    test('evictStale removes expired user and group entries', () async {
+      final limiter = RateLimiter(
+        perUserCooldown: const Duration(milliseconds: 50),
+        perGroupWindow: const Duration(milliseconds: 50),
+        maxGroupMessages: 10,
+      );
+
+      limiter.shouldAllow(chatId: 'group-1', senderUuid: 'user-1');
+      limiter.shouldAllow(chatId: 'group-2', senderUuid: 'user-2');
+
+      // Wait for everything to expire, then evict.
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      limiter.evictStale();
+
+      // After eviction, the same users/groups should be allowed again
+      // (entries were cleaned up, not just expired naturally).
+      expect(limiter.shouldAllow(chatId: 'group-1', senderUuid: 'user-1'),
+          isTrue);
+      expect(limiter.shouldAllow(chatId: 'group-2', senderUuid: 'user-2'),
+          isTrue);
+    });
   });
 }

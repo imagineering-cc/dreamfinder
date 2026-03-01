@@ -14,7 +14,7 @@ RUN dart pub get
 COPY lib/ lib/
 COPY bin/ bin/
 
-RUN dart compile exe bin/figment.dart -o bin/figment
+RUN dart compile exe bin/dreamfinder.dart -o bin/dreamfinder
 
 # --- Runtime stage ---
 FROM node:22-slim
@@ -35,8 +35,8 @@ COPY mcp-servers/packages/radicale/ mcp-servers/packages/radicale/
 RUN cd mcp-servers/packages/radicale && npm install --omit=dev 2>/dev/null || true
 
 # Copy compiled binary from build stage.
-COPY --from=build /app/bin/figment /app/bin/figment
+COPY --from=build /app/bin/dreamfinder /app/bin/dreamfinder
 
 RUN mkdir -p /app/data
 
-CMD ["/app/bin/figment"]
+CMD ["/app/bin/dreamfinder"]

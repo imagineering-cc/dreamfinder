@@ -274,6 +274,7 @@ Future<void> main() async {
     }
 
     history.evictStale();
+    rateLimiter.evictStale();
     await Future<void>.delayed(const Duration(seconds: _pollIntervalSeconds));
   }
 }

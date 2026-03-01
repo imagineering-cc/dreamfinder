@@ -30,6 +30,10 @@ class Scheduler {
   final SendMessageFn sendMessage;
   Timer? _timer;
 
+  /// Tracks the last date (YYYY-MM-DD) that data cleanup ran, to ensure
+  /// it fires exactly once per day regardless of timer drift.
+  String? _lastCleanupDate;
+
   /// Starts the scheduler, ticking every 60 seconds.
   void start() {
     _timer = Timer.periodic(
@@ -70,8 +74,11 @@ class Scheduler {
       }
     }
 
-    // Run data cleanup once per day at 3 AM.
-    if (now.hour == 3 && now.minute == 0) {
+    // Run data cleanup once per day after 3 AM. Uses a date guard instead
+    // of exact minute matching so timer drift or restarts can't skip a day.
+    final todayStr = _dateString(now);
+    if (now.hour >= 3 && _lastCleanupDate != todayStr) {
+      _lastCleanupDate = todayStr;
       cleanOldData();
     }
   }

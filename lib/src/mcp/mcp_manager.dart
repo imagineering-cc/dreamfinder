@@ -175,7 +175,7 @@ class McpManager {
 
       // Create MCP client (shared across all servers).
       _mcpClient ??= MCPClient(
-        Implementation(name: 'figment', version: '0.1.0'),
+        Implementation(name: 'dreamfinder', version: '0.1.0'),
       );
 
       // Connect via STDIO channel.

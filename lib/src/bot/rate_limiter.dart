@@ -64,4 +64,22 @@ class RateLimiter {
     _userLastMessage[senderUuid] = now;
     return true;
   }
+
+  /// Removes stale entries from internal maps to prevent unbounded growth.
+  ///
+  /// Evicts user cooldown records older than [perUserCooldown] and group
+  /// windows with no recent timestamps. Call periodically (e.g., from the
+  /// main polling loop).
+  void evictStale() {
+    final now = DateTime.now();
+
+    _userLastMessage.removeWhere(
+      (_, timestamp) => now.difference(timestamp) > perUserCooldown,
+    );
+
+    _groupMessages.removeWhere((_, timestamps) {
+      timestamps.removeWhere((t) => now.difference(t) > perGroupWindow);
+      return timestamps.isEmpty;
+    });
+  }
 }

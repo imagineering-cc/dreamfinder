@@ -143,7 +143,7 @@ cp .env.example .env
 # Edit .env with your credentials
 
 # Run the bot
-dart run bin/figment.dart
+dart run bin/dreamfinder.dart
 ```
 
 ### Environment Configuration
@@ -248,7 +248,7 @@ lib/
     db/             # SQLite database, schema, queries, message repository
     cron/           # Scheduled jobs (not yet built)
     bot/            # Message handler, rate limiting (not yet built)
-bin/                # Entry point (figment.dart)
+bin/                # Entry point (dreamfinder.dart)
 test/               # Tests mirroring lib/src/ structure
 data/               # SQLite database (gitignored)
 docker/             # Dockerfiles and compose configs
@@ -258,11 +258,11 @@ docker/             # Dockerfiles and compose configs
 
 ```bash
 dart pub get                    # Install dependencies
-dart run bin/figment.dart          # Run the bot
+dart run bin/dreamfinder.dart      # Run the bot
 dart test                       # Run tests
 dart analyze                    # Static analysis
 dart format .                   # Format code
-dart compile exe bin/figment.dart  # Compile for production
+dart compile exe bin/dreamfinder.dart # Compile for production
 ```
 
 ### Testing
