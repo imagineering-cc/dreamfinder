@@ -71,11 +71,31 @@ void main() {
       );
       final result = await loop.processMessage(
         const AgentInput(
-            text: 'What time?', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
+            text: 'What time?',
+            chatId: 'c1',
+            senderUuid: 'u1',
+            isAdmin: false),
         systemPrompt: 'You are Dreamfinder.',
       );
       expect(result, contains('2026-02-28T12:00:00Z'));
       expect(callCount, equals(2));
+
+      // Verify full turn was persisted (not just user+assistant text).
+      final msgs = history.getHistory('c1');
+      expect(msgs.length, greaterThanOrEqualTo(4));
+
+      // Turn structure: user_text, assistant+tool_use, tool_result, assistant_text
+      expect(msgs[0].content, equals('What time?'));
+      expect(msgs[0].role, equals(MessageRole.user));
+
+      expect(msgs[1].content, isA<Map>());
+      expect(msgs[1].role, equals(MessageRole.assistant));
+
+      expect(msgs[2].content, isA<List>());
+      expect(msgs[2].role, equals(MessageRole.user)); // tool_result stored as user
+
+      expect(msgs[3].content, contains('2026-02-28T12:00:00Z'));
+      expect(msgs[3].role, equals(MessageRole.assistant));
     });
 
     test('respects max tool rounds limit', () async {
@@ -156,6 +176,126 @@ void main() {
       );
       expect(result, contains('not working'));
       expect(callCount, equals(2));
+    });
+
+    test('follow-up request sees prior tool context', () async {
+      var callCount = 0;
+      toolRegistry.registerCustomTool(CustomToolDef(
+        name: 'create_card',
+        description: 'Creates a card',
+        inputSchema: const <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{}
+        },
+        handler: (args) async => '{"id": "card-1", "title": "Test"}',
+      ));
+      toolRegistry.registerCustomTool(CustomToolDef(
+        name: 'assign_card',
+        description: 'Assigns a card',
+        inputSchema: const <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{}
+        },
+        handler: (args) async => '{"id": "card-1", "assignee": "Paul"}',
+      ));
+
+      List<AgentMessage>? secondCallMessages;
+
+      final loop = AgentLoop(
+        createMessage: (m, t, s) async {
+          callCount++;
+          if (callCount == 1) {
+            // First request — tool call to create card.
+            return const AgentResponse(
+              textBlocks: [],
+              toolUseBlocks: [
+                ToolUseContent(
+                    id: 't1',
+                    name: 'create_card',
+                    input: <String, dynamic>{'title': 'Test'})
+              ],
+              stopReason: StopReason.toolUse,
+            );
+          } else if (callCount == 2) {
+            // First request — final response.
+            return const AgentResponse(
+              textBlocks: [
+                TextContent(text: 'Created card "Test" (card-1).')
+              ],
+              toolUseBlocks: [],
+              stopReason: StopReason.endTurn,
+            );
+          } else if (callCount == 3) {
+            // Second request — capture messages to verify context.
+            secondCallMessages = List.of(m);
+            return const AgentResponse(
+              textBlocks: [],
+              toolUseBlocks: [
+                ToolUseContent(
+                    id: 't2',
+                    name: 'assign_card',
+                    input: <String, dynamic>{
+                      'cardId': 'card-1',
+                      'assignee': 'Paul'
+                    })
+              ],
+              stopReason: StopReason.toolUse,
+            );
+          }
+          return const AgentResponse(
+            textBlocks: [TextContent(text: 'Assigned to Paul.')],
+            toolUseBlocks: [],
+            stopReason: StopReason.endTurn,
+          );
+        },
+        toolRegistry: toolRegistry,
+        history: history,
+      );
+
+      // First request — creates a card.
+      await loop.processMessage(
+        const AgentInput(
+            text: 'Create a card called Test',
+            chatId: 'c1',
+            senderUuid: 'u1',
+            isAdmin: false),
+        systemPrompt: 'You are Dreamfinder.',
+      );
+
+      // Second request — should see tool context from first turn.
+      await loop.processMessage(
+        const AgentInput(
+            text: 'Now assign it to Paul',
+            chatId: 'c1',
+            senderUuid: 'u1',
+            isAdmin: false),
+        systemPrompt: 'You are Dreamfinder.',
+      );
+
+      // Verify the second call to Claude included the full first turn.
+      expect(secondCallMessages, isNotNull);
+      // Messages should include: [first turn (4 msgs), second user text]
+      expect(secondCallMessages!.length, greaterThanOrEqualTo(5));
+
+      // First message is the original user text.
+      expect(secondCallMessages![0].role, equals('user'));
+      expect(secondCallMessages![0].content, equals('Create a card called Test'));
+
+      // Second message is assistant+tool_use.
+      expect(secondCallMessages![1].role, equals('assistant'));
+      expect(secondCallMessages![1].content, isA<Map>());
+
+      // Third message is tool_result.
+      expect(secondCallMessages![2].role, equals('tool_result'));
+      expect(secondCallMessages![2].content, isA<List>());
+
+      // Fourth message is assistant text.
+      expect(secondCallMessages![3].role, equals('assistant'));
+
+      // Fifth message is the new user text.
+      expect(secondCallMessages![4].role, equals('user'));
+      expect(secondCallMessages![4].content,
+          equals('Now assign it to Paul'));
     });
   });
 }

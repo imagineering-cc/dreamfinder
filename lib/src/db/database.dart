@@ -2,7 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// Current schema version. Bump this and add a migration block in
 /// [_runMigrations] whenever the schema changes.
-const schemaVersion = 1;
+const schemaVersion = 2;
 
 /// SQLite database wrapper for Dreamfinder.
 ///
@@ -86,7 +86,7 @@ class BotDatabase {
 
   void _runMigrations(int fromVersion) {
     if (fromVersion < 1) _migrateToV1();
-    // Future: if (fromVersion < 2) _migrateToV2();
+    if (fromVersion < 2) _migrateToV2();
 
     _setVersion(schemaVersion);
   }
@@ -251,6 +251,15 @@ class BotDatabase {
         sent_at         TEXT    NOT NULL,
         UNIQUE(event_uid, signal_group_id, reminder_window)
       )
+    ''');
+  }
+
+  /// Version 2: composite index for efficient window trimming in
+  /// [MessageRepository.trimToWindow].
+  void _migrateToV2() {
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_messages_chat_id_id
+      ON messages(chat_id, id DESC)
     ''');
   }
 }
