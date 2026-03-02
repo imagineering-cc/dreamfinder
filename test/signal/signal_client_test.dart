@@ -142,5 +142,35 @@ void main() {
           headers: any(named: 'headers'),
           body: any(named: 'body'))).called(1);
     });
+
+    test('sendTypingIndicator to group uses group ID', () async {
+      // Mock the listGroups endpoint that loadGroupMappings calls on cache miss.
+      when(() => mockClient.get(
+              Uri.parse('$baseUrl/v1/groups/$phoneNumber')))
+          .thenAnswer((_) async => http.Response(
+                jsonEncode([
+                  {
+                    'id': 'group.abc123==',
+                    'internal_id': 'abc123==',
+                    'name': 'Test Group',
+                  },
+                ]),
+                200,
+              ));
+      when(() => mockClient.put(
+              Uri.parse('$baseUrl/v1/typing-indicator/$phoneNumber'),
+              headers: any(named: 'headers'),
+              body: any(named: 'body')))
+          .thenAnswer((_) async => http.Response('', 204));
+
+      await signalClient.sendTypingIndicator(recipient: 'abc123==');
+
+      final captured = verify(() => mockClient.put(
+          Uri.parse('$baseUrl/v1/typing-indicator/$phoneNumber'),
+          headers: any(named: 'headers'),
+          body: captureAny(named: 'body'))).captured;
+      final body = jsonDecode(captured.single as String) as Map<String, dynamic>;
+      expect(body['recipient'], equals('group.abc123=='));
+    });
   });
 }

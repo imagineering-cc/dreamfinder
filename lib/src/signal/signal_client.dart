@@ -54,6 +54,23 @@ class SignalClient {
     }
   }
 
+  /// Resolves a chat ID to the format expected by signal-cli REST API.
+  ///
+  /// Phone numbers and UUIDs pass through unchanged. Group `internal_id`
+  /// values are resolved to the `group.<id>` format via [_groupIdMap],
+  /// refreshing the mapping on cache miss.
+  Future<String> _formatRecipient(String recipient) async {
+    if (recipient.startsWith('+') || _isUuid(recipient)) {
+      return recipient;
+    }
+    var groupId = _groupIdMap[recipient];
+    if (groupId == null) {
+      await loadGroupMappings();
+      groupId = _groupIdMap[recipient];
+    }
+    return groupId ?? 'group.$recipient';
+  }
+
   /// Sends a text message to a user or group. `POST /v2/send`
   ///
   /// [recipient] can be:
@@ -64,19 +81,7 @@ class SignalClient {
     required String recipient,
     required String message,
   }) async {
-    String formattedRecipient;
-    if (recipient.startsWith('+') || _isUuid(recipient)) {
-      // Phone number or UUID — send directly.
-      formattedRecipient = recipient;
-    } else {
-      // Resolve group internal_id → id. Refresh mapping on cache miss.
-      var groupId = _groupIdMap[recipient];
-      if (groupId == null) {
-        await loadGroupMappings();
-        groupId = _groupIdMap[recipient];
-      }
-      formattedRecipient = groupId ?? 'group.$recipient';
-    }
+    final formattedRecipient = await _formatRecipient(recipient);
 
     final body = <String, dynamic>{
       'message': message,
@@ -121,10 +126,11 @@ class SignalClient {
 
   /// Sends a typing indicator. `PUT /v1/typing-indicator/{number}`
   Future<void> sendTypingIndicator({required String recipient}) async {
+    final formattedRecipient = await _formatRecipient(recipient);
     await _client.put(
       Uri.parse('$baseUrl/v1/typing-indicator/$phoneNumber'),
       headers: _jsonHeaders,
-      body: jsonEncode(<String, String>{'recipient': recipient}),
+      body: jsonEncode(<String, String>{'recipient': formattedRecipient}),
     );
   }
 

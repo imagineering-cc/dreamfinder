@@ -96,6 +96,10 @@ const _fallbackMessage = 'I ran into too many steps trying to complete that. '
 
 /// The core agent loop: sends messages to Claude, executes tool calls,
 /// and iterates until a final text response (or max rounds exhausted).
+///
+/// Full turns (including intermediate tool_use / tool_result pairs) are
+/// persisted to [ConversationHistory] so follow-up requests retain tool
+/// context.
 class AgentLoop {
   AgentLoop({
     required CreateMessageFn createMessage,
@@ -123,13 +127,13 @@ class AgentLoop {
     final tools = _toolRegistry.getAllToolDefinitions();
     final historyMsgs = _history.getHistory(input.chatId);
     final messages = <AgentMessage>[
-      for (final msg in historyMsgs)
-        AgentMessage(
-          role: msg.role == MessageRole.user ? 'user' : 'assistant',
-          content: msg.content,
-        ),
+      for (final msg in historyMsgs) _historyToAgentMessage(msg),
       AgentMessage(role: 'user', content: input.text),
     ];
+
+    // Index of the new user message — everything from here onwards is the
+    // current turn that we'll persist.
+    final turnStartIndex = messages.length - 1;
 
     _sendTyping(input.chatId);
 
@@ -143,11 +147,9 @@ class AgentLoop {
       final toolUses = lastResponse.toolUseBlocks;
       if (toolUses.isEmpty) {
         final text = _extractText(lastResponse);
-        _history.appendToHistory(
-          input.chatId,
-          ChatMessage(role: MessageRole.user, content: input.text),
-          ChatMessage(role: MessageRole.assistant, content: text),
-        );
+        messages.add(AgentMessage(role: 'assistant', content: text));
+
+        _persistTurn(input.chatId, messages, turnStartIndex);
         return text;
       }
 
@@ -209,19 +211,57 @@ class AgentLoop {
       ));
     }
 
+    // Max rounds exceeded — persist whatever we have plus a fallback response.
     final fallbackText =
         lastResponse != null ? _extractText(lastResponse) : _fallbackMessage;
+    final responseText =
+        fallbackText.isNotEmpty ? fallbackText : _fallbackMessage;
 
-    _history.appendToHistory(
-      input.chatId,
-      ChatMessage(role: MessageRole.user, content: input.text),
-      ChatMessage(
-        role: MessageRole.assistant,
-        content: fallbackText.isNotEmpty ? fallbackText : _fallbackMessage,
-      ),
+    messages.add(AgentMessage(role: 'assistant', content: responseText));
+    _persistTurn(input.chatId, messages, turnStartIndex);
+
+    return responseText;
+  }
+
+  /// Extracts the turn slice from [messages] and persists it to history.
+  void _persistTurn(
+    String chatId,
+    List<AgentMessage> messages,
+    int turnStartIndex,
+  ) {
+    final turnMessages =
+        messages.sublist(turnStartIndex).map(_toHistoryMessage).toList();
+    _history.appendTurn(chatId, turnMessages);
+  }
+
+  /// Converts a [ChatMessage] from history into an [AgentMessage] with the
+  /// correct role.
+  ///
+  /// Tool-result blocks are stored with [MessageRole.user] in the DB
+  /// (matching the Anthropic API), but carry [List] content. This method
+  /// restores the `tool_result` role so [_callClaude] routes them correctly.
+  AgentMessage _historyToAgentMessage(ChatMessage msg) {
+    if (msg.role == MessageRole.user && msg.content is List) {
+      return AgentMessage(role: 'tool_result', content: msg.content);
+    }
+    return AgentMessage(
+      role: msg.role == MessageRole.user ? 'user' : 'assistant',
+      content: msg.content,
     );
+  }
 
-    return fallbackText.isNotEmpty ? fallbackText : _fallbackMessage;
+  /// Converts an [AgentMessage] to a [ChatMessage] for history storage.
+  ///
+  /// The `tool_result` role collapses to [MessageRole.user] — the structured
+  /// [List] content distinguishes it from plain text user messages.
+  ChatMessage _toHistoryMessage(AgentMessage msg) {
+    if (msg.role == 'tool_result') {
+      return ChatMessage(role: MessageRole.user, content: msg.content as Object);
+    }
+    return ChatMessage(
+      role: msg.role == 'user' ? MessageRole.user : MessageRole.assistant,
+      content: msg.content as Object,
+    );
   }
 
   String _extractText(AgentResponse response) {

@@ -25,6 +25,7 @@ void main() {
       final indexes = db.indexNames();
       expect(indexes, contains('idx_messages_chat_id'));
       expect(indexes, contains('idx_messages_created_at'));
+      expect(indexes, contains('idx_messages_chat_id_id'));
     });
 
     test('can open a file-based database', () {
