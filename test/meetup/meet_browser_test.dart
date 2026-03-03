@@ -1,3 +1,4 @@
+import 'package:imagineering_pm_bot/src/meetup/caption_entry.dart';
 import 'package:imagineering_pm_bot/src/meetup/meet_browser.dart';
 import 'package:test/test.dart';
 
@@ -113,6 +114,58 @@ void main() {
         'leaveMeet()',
       ]);
       expect(browser.spokenTexts, ['Welcome!', 'Sprint 1 begins now.']);
+    });
+
+    group('caption scraping', () {
+      test('startCaptionScraping records the call and sets flag', () async {
+        await browser.startCaptionScraping();
+
+        expect(browser.captionScrapingStarted, isTrue);
+        expect(browser.calls, contains('startCaptionScraping()'));
+      });
+
+      test('pollCaptions returns empty list when nothing enqueued', () async {
+        final captions = await browser.pollCaptions();
+
+        expect(captions, isEmpty);
+      });
+
+      test('pollCaptions drains enqueued captions', () async {
+        browser.enqueueCaptions([
+          const CaptionEntry(speaker: 'Alice', text: 'Hi', timestamp: 1),
+          const CaptionEntry(speaker: 'Bob', text: 'Hey', timestamp: 2),
+        ]);
+
+        final captions = await browser.pollCaptions();
+
+        expect(captions, hasLength(2));
+        expect(captions[0].speaker, 'Alice');
+        expect(captions[1].speaker, 'Bob');
+      });
+
+      test('pollCaptions clears buffer after drain', () async {
+        browser.enqueueCaptions([
+          const CaptionEntry(speaker: 'Alice', text: 'Hi', timestamp: 1),
+        ]);
+
+        await browser.pollCaptions();
+        final second = await browser.pollCaptions();
+
+        expect(second, isEmpty);
+      });
+
+      test('reset clears caption state', () async {
+        await browser.startCaptionScraping();
+        browser.enqueueCaptions([
+          const CaptionEntry(speaker: 'Alice', text: 'Hi', timestamp: 1),
+        ]);
+
+        browser.reset();
+
+        expect(browser.captionScrapingStarted, isFalse);
+        final captions = await browser.pollCaptions();
+        expect(captions, isEmpty);
+      });
     });
   });
 

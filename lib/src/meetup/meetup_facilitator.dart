@@ -5,6 +5,7 @@ library;
 import 'meet_browser.dart';
 import 'meetup_config.dart';
 import 'meetup_session.dart';
+import 'participant_tracker.dart';
 
 /// Facilitates a structured build-sprint meetup in Google Meet.
 ///
@@ -37,6 +38,12 @@ class MeetupFacilitator {
   bool _fiveMinWarned = false;
   bool _oneMinWarned = false;
 
+  /// Per-participant tracker for the intros phase.
+  ParticipantTracker? _introTracker;
+
+  /// Per-participant tracker for the demos phase.
+  ParticipantTracker? _demoTracker;
+
   /// Whether the facilitator is actively running (started and not done).
   bool get isRunning => _started && session.phase.isActive;
 
@@ -56,11 +63,26 @@ class MeetupFacilitator {
       displayName: config.displayName,
     );
     await browser.enableCaptions();
+    await browser.startCaptionScraping();
 
     session.start(now);
     _started = true;
 
     await browser.speak(_introAnnouncement());
+
+    // Start per-participant intro tracking if participants are configured.
+    if (config.participants.isNotEmpty) {
+      _introTracker = ParticipantTracker(
+        participants: config.participants,
+        perPersonDuration: config.introDuration,
+      );
+      _introTracker!.startCurrentParticipant(now);
+      await browser.speak(_participantPrompt(
+        _introTracker!.currentParticipant!,
+        isIntro: true,
+        isFirst: true,
+      ));
+    }
   }
 
   /// Check timing and take any needed actions (warnings, phase transitions).
@@ -69,6 +91,14 @@ class MeetupFacilitator {
   /// or if the session is complete.
   Future<void> tick(DateTime now) async {
     if (!isRunning) return;
+
+    // Per-participant tracking for intros and demos.
+    if (session.phase == MeetupPhase.intros && _introTracker != null) {
+      await _tickParticipantPhase(_introTracker!, now, isIntro: true);
+    }
+    if (session.phase == MeetupPhase.demos && _demoTracker != null) {
+      await _tickParticipantPhase(_demoTracker!, now, isIntro: false);
+    }
 
     final remaining = session.remaining(now);
 
@@ -125,10 +155,91 @@ class MeetupFacilitator {
       await browser.speak(announcement);
     }
 
+    // Start per-participant demo tracking when entering demos phase.
+    if (newPhase == MeetupPhase.demos && config.participants.isNotEmpty) {
+      _demoTracker = ParticipantTracker(
+        participants: config.participants,
+        perPersonDuration: config.demoDuration,
+      );
+      _demoTracker!.startCurrentParticipant(now);
+      await browser.speak(_participantPrompt(
+        _demoTracker!.currentParticipant!,
+        isIntro: false,
+        isFirst: true,
+      ));
+    }
+
     // Leave the call when the session is complete.
     if (newPhase == MeetupPhase.done) {
       await browser.leaveMeet();
     }
+  }
+
+  /// Handle per-participant timing within intros or demos.
+  Future<void> _tickParticipantPhase(
+    ParticipantTracker tracker,
+    DateTime now, {
+    required bool isIntro,
+  }) async {
+    if (tracker.isComplete) return;
+
+    final result = tracker.check(now);
+
+    switch (result.newTier) {
+      case InterruptTier.none:
+      case InterruptTier.listenForPause:
+        // No-op for now. Future: poll captions for pause detection.
+        break;
+
+      case InterruptTier.warningSpoken:
+        await browser.speak('15 seconds!');
+
+      case InterruptTier.cutoff:
+        await _advanceParticipant(tracker, now, isIntro: isIntro, firm: false);
+
+      case InterruptTier.firmCutoff:
+        await _advanceParticipant(tracker, now, isIntro: isIntro, firm: true);
+    }
+  }
+
+  /// Thank the current participant and prompt the next one (or wrap up).
+  Future<void> _advanceParticipant(
+    ParticipantTracker tracker,
+    DateTime now, {
+    required bool isIntro,
+    required bool firm,
+  }) async {
+    final current = tracker.currentParticipant ?? 'participant';
+    final next = tracker.nextParticipant;
+
+    if (firm) {
+      await browser.speak('We need to move on. Thanks, $current!');
+    } else {
+      await browser.speak('Thanks, $current!');
+    }
+
+    tracker.advance(now);
+
+    if (next != null) {
+      await browser.speak(_participantPrompt(next, isIntro: isIntro));
+    } else {
+      await browser.speak(
+        "That's everyone! Great ${isIntro ? 'intros' : 'demos'}.",
+      );
+    }
+  }
+
+  /// Prompt for a participant to start their turn.
+  String _participantPrompt(
+    String name, {
+    required bool isIntro,
+    bool isFirst = false,
+  }) {
+    final prefix = isFirst ? 'First up' : 'Next up';
+    if (isIntro) {
+      return '$prefix: $name! What are you building today?';
+    }
+    return "$prefix: $name! Show us what you've built.";
   }
 
   /// Opening announcement when the facilitator joins.

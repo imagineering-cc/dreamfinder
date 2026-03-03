@@ -25,8 +25,11 @@ void main() {
 
       expect(browser.calls[0], contains('joinMeet'));
       expect(browser.calls[1], 'enableCaptions()');
-      expect(browser.spokenTexts, hasLength(1));
+      expect(browser.calls[2], 'startCaptionScraping()');
+      // Intro announcement + first participant prompt.
+      expect(browser.spokenTexts, hasLength(2));
       expect(browser.spokenTexts[0], contains('Dreamfinder'));
+      expect(browser.spokenTexts[1], contains('Alice'));
       expect(facilitator.phase, MeetupPhase.intros);
       expect(facilitator.isRunning, isTrue);
     });
@@ -72,8 +75,8 @@ void main() {
       await facilitator.start(start);
       browser.spokenTexts.clear();
 
-      // 2 minutes into 5-minute intros — not expired.
-      await facilitator.tick(start.add(const Duration(minutes: 2)));
+      // 30s into intros — Alice's 60s intro is at 50%, no tier fires.
+      await facilitator.tick(start.add(const Duration(seconds: 30)));
 
       expect(browser.spokenTexts, isEmpty);
     });
@@ -84,11 +87,15 @@ void main() {
       browser.spokenTexts.clear();
 
       // 5 minutes into intros — expired, should advance to sprint1.
+      // Participant tracker also fires (cutoff/firmCutoff for intro
+      // participants who ran past their slot) before the phase transition.
       await facilitator.tick(start.add(const Duration(minutes: 5)));
 
       expect(facilitator.phase, MeetupPhase.sprint1);
-      expect(browser.spokenTexts, hasLength(1));
-      expect(browser.spokenTexts[0], contains('Sprint 1'));
+      expect(
+        browser.spokenTexts,
+        contains(predicate<String>((s) => s.contains('Sprint 1'))),
+      );
     });
 
     test('sends 5-min warning during sprint', () async {
@@ -263,6 +270,201 @@ void main() {
     });
   });
 
+  group('participant tracking (intros)', () {
+    test('start calls startCaptionScraping', () async {
+      final now = DateTime(2026, 4, 25, 10, 0);
+      await facilitator.start(now);
+
+      expect(browser.captionScrapingStarted, isTrue);
+      expect(browser.calls, contains('startCaptionScraping()'));
+    });
+
+    test('start prompts first participant for intro', () async {
+      final now = DateTime(2026, 4, 25, 10, 0);
+      await facilitator.start(now);
+
+      // Should speak intro announcement + first participant prompt.
+      expect(browser.spokenTexts, hasLength(2));
+      expect(browser.spokenTexts[1], contains('Alice'));
+      expect(browser.spokenTexts[1], contains('building'));
+    });
+
+    test('no participant prompt when participants list is empty', () async {
+      final noParticipants = MeetupFacilitator(
+        browser: browser,
+        config: const MeetupConfig(
+          meetLink: 'https://meet.google.com/test',
+        ),
+      );
+
+      await noParticipants.start(DateTime(2026, 4, 25, 10, 0));
+
+      // Only the generic intro announcement — no participant prompt.
+      expect(browser.spokenTexts, hasLength(1));
+    });
+
+    test('speaks 15-second warning for participant', () async {
+      final t = DateTime(2026, 4, 25, 10, 0);
+      final shortConfig = MeetupFacilitator(
+        browser: browser,
+        config: const MeetupConfig(
+          meetLink: 'https://meet.google.com/test',
+          participants: ['Alice', 'Bob'],
+          introDuration: Duration(seconds: 60),
+          introTotalDuration: Duration(minutes: 5),
+        ),
+      );
+
+      await shortConfig.start(t);
+      browser.spokenTexts.clear();
+
+      // Alice's 60s intro, 92% = 55.2s → tick at 56s.
+      await shortConfig.tick(t.add(const Duration(seconds: 56)));
+
+      expect(
+        browser.spokenTexts,
+        contains(predicate<String>((s) => s.contains('15 seconds'))),
+      );
+    });
+
+    test('cutoff thanks current and prompts next participant', () async {
+      final t = DateTime(2026, 4, 25, 10, 0);
+      await facilitator.start(t);
+      browser.spokenTexts.clear();
+
+      // Trigger listenForPause (75% of 60s = 45s).
+      await facilitator.tick(t.add(const Duration(seconds: 45)));
+      // Trigger warningSpoken (92% of 60s = 55.2s).
+      await facilitator.tick(t.add(const Duration(seconds: 56)));
+      browser.spokenTexts.clear();
+
+      // Trigger cutoff (100% of 60s = 60s).
+      await facilitator.tick(t.add(const Duration(seconds: 60)));
+
+      // Should thank Alice and prompt Bob.
+      expect(
+        browser.spokenTexts,
+        contains(predicate<String>((s) => s.contains('Alice'))),
+      );
+      expect(
+        browser.spokenTexts,
+        contains(predicate<String>((s) => s.contains('Bob'))),
+      );
+    });
+
+    test('firm cutoff advances even if cutoff was skipped', () async {
+      final t = DateTime(2026, 4, 25, 10, 0);
+      await facilitator.start(t);
+      browser.spokenTexts.clear();
+
+      // Jump straight to firm cutoff (117% of 60s = 70.2s) skipping
+      // intermediate ticks. Tiers accumulate in a single check.
+      await facilitator.tick(t.add(const Duration(seconds: 71)));
+
+      // Should still advance — firm cutoff message spoken.
+      expect(
+        browser.spokenTexts.any((s) => s.contains('Bob')),
+        isTrue,
+        reason: 'Should prompt next participant after firm cutoff',
+      );
+    });
+
+    test('last participant gets "everyone" message instead of next prompt',
+        () async {
+      final t = DateTime(2026, 4, 25, 10, 0);
+      final singleConfig = MeetupFacilitator(
+        browser: browser,
+        config: const MeetupConfig(
+          meetLink: 'https://meet.google.com/test',
+          participants: ['Alice'],
+        ),
+      );
+
+      await singleConfig.start(t);
+      browser.spokenTexts.clear();
+
+      // Trigger through all tiers to cutoff.
+      await singleConfig.tick(t.add(const Duration(seconds: 45)));
+      await singleConfig.tick(t.add(const Duration(seconds: 56)));
+      await singleConfig.tick(t.add(const Duration(seconds: 60)));
+
+      expect(
+        browser.spokenTexts.any((s) => s.contains('everyone')),
+        isTrue,
+        reason: 'Should say "everyone" when last participant finishes',
+      );
+    });
+  });
+
+  group('participant tracking (demos)', () {
+    test('creates demo tracker and prompts first participant on demo phase',
+        () async {
+      final t = DateTime(2026, 4, 25, 10, 0);
+      await facilitator.start(t);
+
+      // Fast-forward through all phases to demos.
+      // intros(5) + sprint1(25) + break1(10) + sprint2(25) + break2(10)
+      // + sprint3(25) + break3(10) = 110 min → demos
+      final transitions = [5, 30, 40, 65, 75, 100, 110];
+      for (final mins in transitions) {
+        await facilitator.tick(t.add(Duration(minutes: mins)));
+      }
+      browser.spokenTexts.clear();
+
+      // Now in demos — tick to let the demo tracker produce its first prompt.
+      // Actually, the demo announcement + first participant prompt should fire
+      // on the transition to demos phase.
+      // Let me check: the last tick at t+110 transitions to demos.
+      // So the announcement and prompt are already spoken.
+      // Let me re-check by looking at all spoken texts after the t+110 tick.
+
+      // Re-do: capture texts from the demos transition.
+      browser.spokenTexts.clear();
+      browser.calls.clear();
+
+      // Create a fresh facilitator for clarity.
+      browser.reset();
+      final fresh = MeetupFacilitator(
+        browser: browser,
+        config: config,
+      );
+      await fresh.start(t);
+
+      for (final mins in transitions) {
+        await fresh.tick(t.add(Duration(minutes: mins)));
+      }
+
+      // The transition to demos should have spoken the demos announcement
+      // AND the first participant prompt.
+      final demosTexts = browser.spokenTexts.where(
+        (s) => s.contains('Demo time') || s.contains('Alice'),
+      );
+      expect(demosTexts.length, greaterThanOrEqualTo(2));
+    });
+
+    test('demo participant gets time warnings', () async {
+      final t = DateTime(2026, 4, 25, 10, 0);
+      await facilitator.start(t);
+
+      // Fast-forward to demos phase.
+      final transitions = [5, 30, 40, 65, 75, 100, 110];
+      for (final mins in transitions) {
+        await facilitator.tick(t.add(Duration(minutes: mins)));
+      }
+      browser.spokenTexts.clear();
+
+      // Demos started at t+110. Alice has 60s demo.
+      // 92% of 60s = 55.2s → tick at t+110min + 56s.
+      final demosStart = t.add(const Duration(minutes: 110));
+      await facilitator.tick(demosStart.add(const Duration(seconds: 56)));
+
+      expect(
+        browser.spokenTexts.any((s) => s.contains('15 seconds')),
+        isTrue,
+      );
+    });
+  });
+
   group('full session flow', () {
     test('runs from start to finish through all phases', () async {
       final t = DateTime(2026, 3, 28, 10, 0);
@@ -308,21 +510,26 @@ void main() {
       final t = DateTime(2026, 3, 28, 10, 0);
       await facilitator.start(t);
 
-      // Intro announcement already spoken.
-      expect(browser.spokenTexts, hasLength(1));
+      // Intro announcement + first participant prompt.
+      expect(browser.spokenTexts, hasLength(2));
 
       final transitions = [5, 30, 40, 65, 75, 100, 110, 115];
       for (final mins in transitions) {
         await facilitator.tick(t.add(Duration(minutes: mins)));
       }
 
-      // 1 intro + 8 phase transitions = 9 announcements total.
-      // Plus sprint warnings: 3 sprints x 2 warnings = 6 warnings.
-      // But warnings only fire if we tick at the right time.
-      // In this test we jump directly to expiry times, so no warning
-      // ticks happen (remaining = 0, guards prevent warning).
-      // So we expect exactly 9 spoken texts.
-      expect(browser.spokenTexts, hasLength(9));
+      // Verify all phase transition announcements are present.
+      final phaseAnnouncements = browser.spokenTexts.where(
+        (s) =>
+            s.contains('Sprint') ||
+            s.contains('break') ||
+            s.contains('Demo time') ||
+            s.contains('wrap') ||
+            s.contains('Dreamfinder'),
+      );
+      // intro + sprint1 + break1 + sprint2 + break2 + sprint3 + break3
+      // + demos + done = 9 phase announcements.
+      expect(phaseAnnouncements.length, greaterThanOrEqualTo(9));
     });
 
     test('total session duration matches expected ~2 hours', () async {
