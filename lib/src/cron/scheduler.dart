@@ -10,6 +10,7 @@
 library;
 
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import '../db/queries.dart';
 import '../db/schema.dart';
@@ -119,14 +120,22 @@ class Scheduler {
     final compose = composeViaAgent;
     if (compose != null) {
       try {
-        message = await compose(
+        final composed = await compose(
           config.signalGroupId,
           'Send a standup prompt. Ask the team what they worked on yesterday, '
               "what they're working on today, and if they have any blockers. "
               "Tell them to reply naturally and you'll record their update.",
         );
-      } on Exception {
-        // Agent composition failed — use hardcoded fallback.
+        if (composed.isNotEmpty) {
+          message = composed;
+        }
+      } on Exception catch (e) {
+        developer.log(
+          'Agent composition failed for ${config.signalGroupId}, '
+              'using hardcoded fallback: $e',
+          name: 'Scheduler',
+          level: 900,
+        );
       }
     }
 

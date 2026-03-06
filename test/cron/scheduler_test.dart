@@ -176,6 +176,31 @@ void main() {
       expect(session, isNotNull);
     });
 
+    test('falls back to hardcoded message when composeViaAgent returns empty',
+        () async {
+      queries.upsertStandupConfig(
+        signalGroupId: 'group-1',
+        promptHour: 9,
+      );
+
+      final sentMessages = <MapEntry<String, String>>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        composeViaAgent: (groupId, taskDescription) async {
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 9, 0));
+
+      expect(sentMessages, hasLength(1));
+      expect(
+          sentMessages.first.value, equals(Scheduler.hardcodedStandupPrompt));
+    });
+
     test('sends hardcoded message when composeViaAgent is null', () async {
       queries.upsertStandupConfig(
         signalGroupId: 'group-1',
