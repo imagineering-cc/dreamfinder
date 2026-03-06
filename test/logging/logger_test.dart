@@ -66,8 +66,11 @@ void main() {
       logger.info('request handled', extra: {'chatId': 'g1', 'latency_ms': 42});
 
       final json = jsonDecode(output.first) as Map<String, dynamic>;
-      expect(json['chatId'], 'g1');
-      expect(json['latency_ms'], 42);
+      final data = json['data'] as Map<String, dynamic>;
+      expect(data['chatId'], 'g1');
+      expect(data['latency_ms'], 42);
+      // Verify extras are namespaced — no collision with reserved keys.
+      expect(json, isNot(contains('chatId')));
     });
 
     test('child logger inherits level and sink', () {

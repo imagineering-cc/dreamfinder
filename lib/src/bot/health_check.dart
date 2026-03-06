@@ -12,7 +12,15 @@ import 'dart:io';
 ///
 /// Call [recordPoll], [recordClaudeSuccess], and [recordError] from the
 /// main event loop to keep the health status current.
+/// Default threshold: if no poll for 2 minutes, report degraded.
+const _defaultStalePollThreshold = Duration(minutes: 2);
+
 class HealthCheck {
+  HealthCheck({
+    Duration stalePollThreshold = _defaultStalePollThreshold,
+  }) : _stalePollThreshold = stalePollThreshold;
+
+  final Duration _stalePollThreshold;
   final DateTime _startTime = DateTime.now();
   HttpServer? _server;
 
@@ -52,12 +60,19 @@ class HealthCheck {
 
   void _handleRequest(HttpRequest request) {
     if (request.uri.path == '/health') {
-      final uptime = DateTime.now().difference(_startTime);
+      final now = DateTime.now();
+      final uptime = now.difference(_startTime);
+      final pollStale = _lastPoll != null &&
+          now.difference(_lastPoll!) >= _stalePollThreshold;
+      final status = pollStale ? 'degraded' : 'ok';
+
       request.response
-        ..statusCode = HttpStatus.ok
+        ..statusCode = pollStale
+            ? HttpStatus.serviceUnavailable
+            : HttpStatus.ok
         ..headers.contentType = ContentType.json
         ..write(jsonEncode(<String, Object?>{
-          'status': 'ok',
+          'status': status,
           'uptime_seconds': uptime.inSeconds,
           'last_poll': _lastPoll?.toUtc().toIso8601String(),
           'last_claude_success':

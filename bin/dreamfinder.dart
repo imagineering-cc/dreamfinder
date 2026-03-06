@@ -213,6 +213,9 @@ Future<void> main() async {
           'sender': envelope.source,
           'chatId': envelope.chatId,
         });
+        log.debug('Message text', extra: {
+          'text': text.length > 200 ? '${text.substring(0, 200)}...' : text,
+        });
 
         try {
           final senderIsAdmin = env.isAdmin(envelope.sourceUuid);

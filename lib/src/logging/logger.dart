@@ -20,11 +20,18 @@ enum LogLevel {
 
   /// Parses a string like `"info"` or `"WARNING"` into a [LogLevel].
   ///
-  /// Returns [LogLevel.info] for unrecognized strings.
+  /// Returns [LogLevel.info] and prints a warning to stderr for
+  /// unrecognized strings (catches typos in `LOG_LEVEL` env var).
   static LogLevel fromString(String value) {
     final lower = value.toLowerCase();
     for (final level in values) {
       if (level.name == lower) return level;
+    }
+    if (value.isNotEmpty) {
+      stderr.writeln(
+        'WARNING: Unknown log level "$value", defaulting to "info". '
+        'Valid levels: ${values.map((l) => l.name).join(", ")}',
+      );
     }
     return LogLevel.info;
   }
@@ -78,7 +85,7 @@ class BotLogger {
       'level': msgLevel.name,
       'logger': name,
       'message': message,
-      if (extra != null) ...extra,
+      if (extra != null) 'data': extra,
     };
 
     _sink(jsonEncode(entry));
