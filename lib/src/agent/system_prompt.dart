@@ -29,9 +29,12 @@ String buildSystemPrompt(
         'of imagination" but do not overdo the theme.',
     '',
     '## Current Context',
-    '- Requesting user: ${input.senderName ?? "unknown"} '
-        '(UUID: ${input.senderUuid}) — '
-        '${input.isAdmin ? "ADMIN" : "member"}',
+    if (input.isSystemInitiated)
+      '- Sender: SYSTEM (scheduled task)'
+    else
+      '- Requesting user: ${input.senderName ?? "unknown"} '
+          '(UUID: ${input.senderUuid}) — '
+          '${input.isAdmin ? "ADMIN" : "member"}',
     '- Chat ID: ${input.chatId}',
     '',
   ]);
@@ -66,6 +69,17 @@ You have tools for:
 6. **No message editing**: Signal does not support editing sent messages.
 7. **No inline buttons**: Use numbered lists for choices.
 8. **Chat ID**: The current chat ID is ${input.chatId}.''');
+
+  if (input.isSystemInitiated) {
+    parts.add('''
+
+## System-Initiated Reminder
+
+You are composing a message to send unprompted to a group chat.
+- Keep it concise, natural, and in-character as $name.
+- Your entire response will be sent as the message — do not include preamble or meta-commentary.
+- Do not use tools.''');
+  }
 
   return parts.join('\n');
 }

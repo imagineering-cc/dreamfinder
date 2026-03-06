@@ -69,6 +69,7 @@ class AgentInput {
     required this.isAdmin,
     this.replyToText,
     this.replyToName,
+    this.isSystemInitiated = false,
   });
 
   final String text;
@@ -78,6 +79,12 @@ class AgentInput {
   final bool isAdmin;
   final String? replyToText;
   final String? replyToName;
+
+  /// When true, this message originates from the scheduler (not a user).
+  ///
+  /// System-initiated messages bypass tools (empty tool list) for a fast
+  /// single-round response, and receive a tailored system prompt section.
+  final bool isSystemInitiated;
 }
 
 /// Signature for the Claude API call, decoupled from the SDK.
@@ -124,7 +131,9 @@ class AgentLoop {
     AgentInput input, {
     required String systemPrompt,
   }) async {
-    final tools = _toolRegistry.getAllToolDefinitions();
+    final tools = input.isSystemInitiated
+        ? <ToolDefinition>[]
+        : _toolRegistry.getAllToolDefinitions();
     final historyMsgs = _history.getHistory(input.chatId);
     final messages = <AgentMessage>[
       for (final msg in historyMsgs) _historyToAgentMessage(msg),

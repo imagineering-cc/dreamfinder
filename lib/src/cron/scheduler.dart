@@ -19,15 +19,28 @@ export '../db/schema.dart' show CalendarReminderWindow;
 /// Callback for sending a message to a Signal group.
 typedef SendMessageFn = Future<void> Function(String groupId, String message);
 
+/// Callback that routes a scheduled task through the agent loop so Claude
+/// composes the message in-character and it lands in conversation history.
+typedef ComposeViaAgentFn = Future<String> Function(
+  String groupId,
+  String taskDescription,
+);
+
 /// Periodic scheduler for standup prompts and data cleanup.
 class Scheduler {
   Scheduler({
     required this.queries,
     required this.sendMessage,
+    this.composeViaAgent,
   });
 
   final Queries queries;
   final SendMessageFn sendMessage;
+
+  /// Optional agent composition callback. When provided, scheduled messages
+  /// are composed by Claude in-character. Falls back to hardcoded text on
+  /// exception or when null.
+  final ComposeViaAgentFn? composeViaAgent;
   Timer? _timer;
 
   /// Tracks the last date (YYYY-MM-DD) that data cleanup ran, to ensure
@@ -83,17 +96,39 @@ class Scheduler {
     }
   }
 
+  /// The hardcoded standup prompt used when agent composition is unavailable.
+  static const hardcodedStandupPrompt =
+      "Good morning! Time for today's standup.\n\n"
+      'Please share:\n'
+      '1. What did you work on yesterday?\n'
+      '2. What are you working on today?\n'
+      '3. Any blockers?\n\n'
+      'Just reply naturally — I\'ll record your update.';
+
   /// Sends the standup prompt message and creates the session record.
+  ///
+  /// Tries to compose the message via the agent loop so it lands in
+  /// conversation history and is in-character. Falls back to
+  /// [hardcodedStandupPrompt] if the agent is unavailable or throws.
   Future<void> _sendStandupPrompt(
     StandupConfigRecord config,
     String date,
   ) async {
-    final message = "Good morning! Time for today's standup.\n\n"
-        'Please share:\n'
-        '1. What did you work on yesterday?\n'
-        '2. What are you working on today?\n'
-        '3. Any blockers?\n\n'
-        'Just reply naturally — I\'ll record your update.';
+    var message = hardcodedStandupPrompt;
+
+    final compose = composeViaAgent;
+    if (compose != null) {
+      try {
+        message = await compose(
+          config.signalGroupId,
+          'Send a standup prompt. Ask the team what they worked on yesterday, '
+              "what they're working on today, and if they have any blockers. "
+              "Tell them to reply naturally and you'll record their update.",
+        );
+      } on Exception {
+        // Agent composition failed — use hardcoded fallback.
+      }
+    }
 
     await sendMessage(config.signalGroupId, message);
 

@@ -120,6 +120,23 @@ Future<void> main() async {
     queries: queries,
     sendMessage: (groupId, message) =>
         signalClient.sendMessage(recipient: groupId, message: message),
+    composeViaAgent: (groupId, taskDescription) async {
+      final input = AgentInput(
+        text: taskDescription,
+        chatId: groupId,
+        senderUuid: 'system',
+        isAdmin: true,
+        isSystemInitiated: true,
+      );
+      return agentLoop.processMessage(
+        input,
+        systemPrompt: buildSystemPrompt(
+          input,
+          botName: env.botName,
+          identity: queries.getBotIdentity(),
+        ),
+      );
+    },
   );
   scheduler.start();
   _log('Scheduler started.');

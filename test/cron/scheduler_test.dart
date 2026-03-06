@@ -122,6 +122,82 @@ void main() {
     });
   });
 
+  group('Scheduler agent composition', () {
+    test('uses composeViaAgent when provided', () async {
+      queries.upsertStandupConfig(
+        signalGroupId: 'group-1',
+        promptHour: 9,
+      );
+
+      final sentMessages = <MapEntry<String, String>>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        composeViaAgent: (groupId, taskDescription) async {
+          return 'Rise and shine, team! What are you working on today?';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 9, 0));
+
+      expect(sentMessages, hasLength(1));
+      expect(sentMessages.first.value, equals(
+        'Rise and shine, team! What are you working on today?',
+      ));
+    });
+
+    test('falls back to hardcoded message when composeViaAgent throws',
+        () async {
+      queries.upsertStandupConfig(
+        signalGroupId: 'group-1',
+        promptHour: 9,
+      );
+
+      final sentMessages = <MapEntry<String, String>>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        composeViaAgent: (groupId, taskDescription) async {
+          throw Exception('Claude API is down');
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 9, 0));
+
+      expect(sentMessages, hasLength(1));
+      expect(sentMessages.first.value, equals(Scheduler.hardcodedStandupPrompt));
+
+      // Session should still be created despite the agent failure.
+      final session = queries.getActiveStandupSession('group-1', '2026-03-02');
+      expect(session, isNotNull);
+    });
+
+    test('sends hardcoded message when composeViaAgent is null', () async {
+      queries.upsertStandupConfig(
+        signalGroupId: 'group-1',
+        promptHour: 9,
+      );
+
+      final sentMessages = <MapEntry<String, String>>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        // No composeViaAgent provided.
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 9, 0));
+
+      expect(sentMessages, hasLength(1));
+      expect(sentMessages.first.value, equals(Scheduler.hardcodedStandupPrompt));
+    });
+  });
+
   group('Scheduler old data cleanup', () {
     test('cleanOldData removes old reminders and calendar reminders', () {
       // Insert an old reminder.

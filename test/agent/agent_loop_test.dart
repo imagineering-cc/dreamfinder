@@ -178,6 +178,78 @@ void main() {
       expect(callCount, equals(2));
     });
 
+    test('passes empty tool list when isSystemInitiated is true', () async {
+      List<ToolDefinition>? capturedTools;
+      toolRegistry.registerCustomTool(CustomToolDef(
+        name: 'some_tool',
+        description: 'A tool',
+        inputSchema: const <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{}
+        },
+        handler: (args) async => 'result',
+      ));
+      final loop = AgentLoop(
+        createMessage: (m, t, s) async {
+          capturedTools = List.of(t);
+          return const AgentResponse(
+            textBlocks: [TextContent(text: 'Composed message')],
+            toolUseBlocks: [],
+            stopReason: StopReason.endTurn,
+          );
+        },
+        toolRegistry: toolRegistry,
+        history: history,
+      );
+      await loop.processMessage(
+        const AgentInput(
+          text: 'Send standup prompt',
+          chatId: 'c1',
+          senderUuid: 'system',
+          isAdmin: true,
+          isSystemInitiated: true,
+        ),
+        systemPrompt: 'You are Dreamfinder.',
+      );
+      expect(capturedTools, isEmpty);
+    });
+
+    test('passes tools normally when isSystemInitiated is false', () async {
+      List<ToolDefinition>? capturedTools;
+      toolRegistry.registerCustomTool(CustomToolDef(
+        name: 'some_tool',
+        description: 'A tool',
+        inputSchema: const <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{}
+        },
+        handler: (args) async => 'result',
+      ));
+      final loop = AgentLoop(
+        createMessage: (m, t, s) async {
+          capturedTools = List.of(t);
+          return const AgentResponse(
+            textBlocks: [TextContent(text: 'Hello')],
+            toolUseBlocks: [],
+            stopReason: StopReason.endTurn,
+          );
+        },
+        toolRegistry: toolRegistry,
+        history: history,
+      );
+      await loop.processMessage(
+        const AgentInput(
+          text: 'Hi',
+          chatId: 'c1',
+          senderUuid: 'u1',
+          isAdmin: false,
+        ),
+        systemPrompt: 'You are Dreamfinder.',
+      );
+      expect(capturedTools, isNotEmpty);
+      expect(capturedTools!.any((t) => t.name == 'some_tool'), isTrue);
+    });
+
     test('follow-up request sees prior tool context', () async {
       var callCount = 0;
       toolRegistry.registerCustomTool(CustomToolDef(
