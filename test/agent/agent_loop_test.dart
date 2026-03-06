@@ -88,10 +88,10 @@ void main() {
       expect(msgs[0].content, equals('What time?'));
       expect(msgs[0].role, equals(MessageRole.user));
 
-      expect(msgs[1].content, isA<Map>());
+      expect(msgs[1].content, isA<Map<String, dynamic>>());
       expect(msgs[1].role, equals(MessageRole.assistant));
 
-      expect(msgs[2].content, isA<List>());
+      expect(msgs[2].content, isA<List<Map<String, dynamic>>>());
       expect(msgs[2].role, equals(MessageRole.user)); // tool_result stored as user
 
       expect(msgs[3].content, contains('2026-02-28T12:00:00Z'));
@@ -355,11 +355,11 @@ void main() {
 
       // Second message is assistant+tool_use.
       expect(secondCallMessages![1].role, equals('assistant'));
-      expect(secondCallMessages![1].content, isA<Map>());
+      expect(secondCallMessages![1].content, isA<Map<String, dynamic>>());
 
       // Third message is tool_result.
       expect(secondCallMessages![2].role, equals('tool_result'));
-      expect(secondCallMessages![2].content, isA<List>());
+      expect(secondCallMessages![2].content, isA<List<Map<String, dynamic>>>());
 
       // Fourth message is assistant text.
       expect(secondCallMessages![3].role, equals('assistant'));

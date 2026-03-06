@@ -20,7 +20,7 @@ RUN dart compile exe bin/dreamfinder.dart -o bin/dreamfinder
 FROM node:22-slim
 
 # Install native dependencies needed by Dart AOT binary.
-RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

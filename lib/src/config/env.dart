@@ -18,6 +18,7 @@ class Env {
     this.botName = 'Dreamfinder',
     this.databasePath = './data/bot.db',
     this.logLevel = 'info',
+    this.healthPort = 8081,
   });
 
   factory Env.load() {
@@ -50,6 +51,7 @@ class Env {
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
       databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
+      healthPort: int.tryParse(dotEnv['HEALTH_PORT'] ?? '') ?? 8081,
     );
   }
 
@@ -69,6 +71,7 @@ class Env {
     String botName = 'Dreamfinder',
     String databasePath = './data/bot.db',
     String logLevel = 'info',
+    int healthPort = 8081,
   }) =>
       Env._(
         anthropicApiKey: anthropicApiKey,
@@ -86,6 +89,7 @@ class Env {
         botName: botName,
         databasePath: databasePath,
         logLevel: logLevel,
+        healthPort: healthPort,
       );
 
   final String anthropicApiKey;
@@ -106,6 +110,9 @@ class Env {
   final String botName;
   final String databasePath;
   final String logLevel;
+
+  /// Port for the health check HTTP endpoint (from `HEALTH_PORT` env var).
+  final int healthPort;
 
   /// Returns `true` if [signalUuid] is in the configured admin list.
   bool isAdmin(String? signalUuid) =>

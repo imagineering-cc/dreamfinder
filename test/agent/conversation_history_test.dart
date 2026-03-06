@@ -201,7 +201,7 @@ void main() {
     // tool_result → assistant text.
     final toolTurn = [
       const ChatMessage(role: MessageRole.user, content: 'Create a card'),
-      ChatMessage(
+      const ChatMessage(
         role: MessageRole.assistant,
         content: <String, dynamic>{
           'textBlocks': <Map<String, String>>[],
@@ -210,7 +210,7 @@ void main() {
           ],
         },
       ),
-      ChatMessage(
+      const ChatMessage(
         role: MessageRole.user,
         content: <Map<String, dynamic>>[
           {'toolUseId': 't1', 'content': '{"id": "card-1"}', 'isError': false},
@@ -240,8 +240,8 @@ void main() {
 
       expect(msgs, hasLength(4));
       expect(msgs[0].content, equals('Create a card'));
-      expect(msgs[1].content, isA<Map>());
-      expect(msgs[2].content, isA<List>());
+      expect(msgs[1].content, isA<Map<String, dynamic>>());
+      expect(msgs[2].content, isA<List<Map<String, dynamic>>>());
       expect(msgs[3].content, equals('I created the card "Test".'));
     });
 
@@ -283,21 +283,21 @@ void main() {
 
       // Verify structured types survived the round-trip.
       expect(msgs[0].content, isA<String>());
-      expect(msgs[1].content, isA<Map>());
-      expect(msgs[2].content, isA<List>());
+      expect(msgs[1].content, isA<Map<String, dynamic>>());
+      expect(msgs[2].content, isA<List<dynamic>>());
       expect(msgs[3].content, isA<String>());
 
       // Verify tool_result block contents.
-      final toolResult = msgs[2].content as List;
-      expect(toolResult.first, isA<Map>());
+      final toolResult = msgs[2].content as List<dynamic>;
+      expect(toolResult.first, isA<Map<String, dynamic>>());
       expect(
-          (toolResult.first as Map)['toolUseId'], equals('t1'));
+          (toolResult.first as Map<String, dynamic>)['toolUseId'], equals('t1'));
     });
 
     test('truncates large tool results in DB only', () {
       final largeTurn = [
         const ChatMessage(role: MessageRole.user, content: 'Search boards'),
-        ChatMessage(
+        const ChatMessage(
           role: MessageRole.assistant,
           content: <String, dynamic>{
             'textBlocks': <Map<String, String>>[],
@@ -350,7 +350,7 @@ void main() {
 
       smallHistory.appendTurn('c1', [
         const ChatMessage(role: MessageRole.user, content: 'Turn 1'),
-        ChatMessage(
+        const ChatMessage(
           role: MessageRole.assistant,
           content: <String, dynamic>{
             'textBlocks': <Map<String, String>>[],
@@ -359,7 +359,7 @@ void main() {
             ],
           },
         ),
-        ChatMessage(
+        const ChatMessage(
           role: MessageRole.user,
           content: <Map<String, dynamic>>[
             {'toolUseId': 't1', 'content': 'result1', 'isError': false},
@@ -370,7 +370,7 @@ void main() {
 
       smallHistory.appendTurn('c1', [
         const ChatMessage(role: MessageRole.user, content: 'Turn 2'),
-        ChatMessage(
+        const ChatMessage(
           role: MessageRole.assistant,
           content: <String, dynamic>{
             'textBlocks': <Map<String, String>>[],
@@ -379,7 +379,7 @@ void main() {
             ],
           },
         ),
-        ChatMessage(
+        const ChatMessage(
           role: MessageRole.user,
           content: <Map<String, dynamic>>[
             {'toolUseId': 't2', 'content': 'result2', 'isError': false},
@@ -477,7 +477,7 @@ void main() {
 
     test('returns empty for all-orphan messages', () {
       final messages = [
-        ChatMessage(
+        const ChatMessage(
           role: MessageRole.user,
           content: <Map<String, dynamic>>[
             {'toolUseId': 't1', 'content': 'result', 'isError': false},
@@ -510,7 +510,7 @@ void main() {
     test('groups tool-call turn as single unit', () {
       final messages = [
         const ChatMessage(role: MessageRole.user, content: 'Do it'),
-        ChatMessage(
+        const ChatMessage(
           role: MessageRole.assistant,
           content: <String, dynamic>{
             'textBlocks': <Map<String, String>>[],
@@ -519,7 +519,7 @@ void main() {
             ],
           },
         ),
-        ChatMessage(
+        const ChatMessage(
           role: MessageRole.user,
           content: <Map<String, dynamic>>[
             {'toolUseId': 't1', 'content': 'ok', 'isError': false},

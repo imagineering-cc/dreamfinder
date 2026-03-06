@@ -1,4 +1,3 @@
-import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:anthropic_sdk_dart/anthropic_sdk_dart.dart' as anthropic;
@@ -7,12 +6,14 @@ import 'package:imagineering_pm_bot/src/agent/agent_loop.dart';
 import 'package:imagineering_pm_bot/src/agent/conversation_history.dart';
 import 'package:imagineering_pm_bot/src/agent/system_prompt.dart';
 import 'package:imagineering_pm_bot/src/agent/tool_registry.dart';
+import 'package:imagineering_pm_bot/src/bot/health_check.dart';
 import 'package:imagineering_pm_bot/src/bot/rate_limiter.dart';
 import 'package:imagineering_pm_bot/src/config/env.dart';
 import 'package:imagineering_pm_bot/src/cron/scheduler.dart';
 import 'package:imagineering_pm_bot/src/db/database.dart';
 import 'package:imagineering_pm_bot/src/db/message_repository.dart';
 import 'package:imagineering_pm_bot/src/db/queries.dart';
+import 'package:imagineering_pm_bot/src/logging/logger.dart';
 import 'package:imagineering_pm_bot/src/mcp/mcp_manager.dart';
 import 'package:imagineering_pm_bot/src/signal/signal_client.dart';
 import 'package:imagineering_pm_bot/src/tools/bot_identity_tools.dart';
@@ -21,18 +22,23 @@ import 'package:imagineering_pm_bot/src/tools/standup_tools.dart';
 
 const _pollIntervalSeconds = 5;
 
-/// Logs to both stderr (visible in terminal) and Dart DevTools.
-void _log(String message, {String name = 'main', bool isError = false}) {
-  final timestamp = DateTime.now().toIso8601String().substring(11, 23);
-  stderr.writeln('[$timestamp] [$name] $message');
-  developer.log(message, name: name, level: isError ? 900 : 0);
-}
-
 Future<void> main() async {
-  _log('Starting Dreamfinder...');
-
   final env = Env.load();
-  _log('Config loaded: bot=${env.botName}, signal=${env.signalApiUrl}');
+  final log = BotLogger(
+    name: 'Main',
+    level: LogLevel.fromString(env.logLevel),
+  );
+
+  log.info('Starting Dreamfinder...');
+  log.info('Config loaded', extra: {
+    'bot': env.botName,
+    'signal': env.signalApiUrl,
+  });
+
+  // Start health check server.
+  final health = HealthCheck();
+  final healthPort = await health.start(port: env.healthPort);
+  log.info('Health check listening', extra: {'port': healthPort});
 
   // Ensure the database directory exists and open the database.
   final dbPath = env.databasePath;
@@ -42,7 +48,7 @@ Future<void> main() async {
   }
   final database = BotDatabase.open(dbPath);
   final messageRepo = MessageRepository(database);
-  _log('Database opened: $dbPath');
+  log.info('Database opened', extra: {'path': dbPath});
 
   final signalClient = SignalClient(
     baseUrl: env.signalApiUrl,
@@ -51,11 +57,11 @@ Future<void> main() async {
 
   try {
     final about = await signalClient.about();
-    _log('Signal API connected: versions=${about.versions}');
+    log.info('Signal API connected', extra: {'versions': about.versions});
     await signalClient.loadGroupMappings();
-    _log('Group mappings loaded');
+    log.info('Group mappings loaded');
   } on Exception catch (e) {
-    _log('Failed to connect to Signal API: $e', isError: true);
+    log.error('Failed to connect to Signal API: $e');
     exit(1);
   }
 
@@ -89,8 +95,7 @@ Future<void> main() async {
   }
 
   final serverNames = mcpManager.getServerNames();
-  _log(
-      'MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}');
+  log.info('MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}');
 
   final queries = Queries(database);
 
@@ -139,11 +144,12 @@ Future<void> main() async {
     },
   );
   scheduler.start();
-  _log('Scheduler started.');
+  log.info('Scheduler started');
 
   void shutdown() {
-    _log('Shutting down...');
+    log.info('Shutting down...');
     scheduler.stop();
+    health.stop();
     database.close();
     mcpManager.shutdown();
     anthropicClient.endSession();
@@ -160,17 +166,21 @@ Future<void> main() async {
   void refreshBotName() {
     cachedBotName =
         (queries.getBotIdentity()?.name ?? env.botName).toLowerCase();
-    _log('Bot name cache refreshed: $cachedBotName');
+    log.info('Bot name cache refreshed', extra: {'name': cachedBotName});
   }
 
   // Wire up identity change callback so the cache stays warm.
   registerBotIdentityOnChanged(refreshBotName);
 
-  _log('Dreamfinder is running! Polling every ${_pollIntervalSeconds}s...');
+  log.info('Dreamfinder is running!', extra: {
+    'poll_interval_seconds': _pollIntervalSeconds,
+  });
 
   while (true) {
     try {
       final envelopes = await signalClient.receiveMessages();
+      health.recordPoll();
+
       for (final envelope in envelopes) {
         if (!envelope.hasTextMessage) continue;
 
@@ -191,11 +201,21 @@ Future<void> main() async {
           chatId: envelope.chatId,
           senderUuid: envelope.sourceUuid,
         )) {
-          _log('Rate limited: ${envelope.source} in ${envelope.chatId}');
+          log.warning('Rate limited', extra: {
+            'sender': envelope.source,
+            'chatId': envelope.chatId,
+          });
           continue;
         }
 
-        _log('${isGroup ? "[group] " : ""}Message from ${envelope.source}: $text');
+        log.info('Message received', extra: {
+          'group': isGroup,
+          'sender': envelope.source,
+          'chatId': envelope.chatId,
+        });
+        log.debug('Message text', extra: {
+          'text': text.length > 200 ? '${text.substring(0, 200)}...' : text,
+        });
 
         try {
           final senderIsAdmin = env.isAdmin(envelope.sourceUuid);
@@ -218,23 +238,32 @@ Future<void> main() async {
               identity: queries.getBotIdentity(),
             ),
           );
+          health.recordClaudeSuccess();
+
           if (response.isNotEmpty) {
-            _log('Responding to ${envelope.chatId}: '
-                '${response.length > 80 ? '${response.substring(0, 80)}...' : response}');
+            log.info('Responding', extra: {
+              'chatId': envelope.chatId,
+              'length': response.length,
+            });
             await signalClient.sendMessage(
               recipient: envelope.chatId,
               message: response,
             );
-            _log('Response sent.');
+            log.debug('Response sent');
           }
         } on Exception catch (e) {
-          _log('Error processing message: $e', isError: true);
+          health.recordError();
+          log.error('Error processing message: $e', extra: {
+            'chatId': envelope.chatId,
+          });
 
           // Self-heal: if Claude rejects due to malformed history (orphaned
           // tool_result blocks), clear that chat's history and retry once.
           if (e.toString().contains('tool_use_id') ||
               e.toString().contains('tool_result')) {
-            _log('Clearing corrupt history for ${envelope.chatId}');
+            log.warning('Clearing corrupt history', extra: {
+              'chatId': envelope.chatId,
+            });
             history.clearHistory(envelope.chatId);
             messageRepo.deleteConversation(envelope.chatId);
           }
@@ -245,18 +274,19 @@ Future<void> main() async {
               message: 'Something went wrong. Please try again.',
             );
           } on Exception catch (sendErr) {
-            _log('Failed to send error message: $sendErr', isError: true);
+            log.error('Failed to send error message: $sendErr');
           }
         }
       }
     } on Exception catch (e) {
-      _log('Polling error: $e', isError: true);
+      health.recordError();
+      log.error('Polling error: $e');
 
       // Auto-recover from signal-cli connection drops by restarting the
       // Docker container and reloading group mappings.
       if (e.toString().contains('Closed unexpectedly') ||
           e.toString().contains('Connection terminated')) {
-        _log('Signal connection lost — restarting signal-api...');
+        log.warning('Signal connection lost — restarting signal-api...');
         try {
           final result = await Process.run('docker', [
             'compose',
@@ -265,7 +295,9 @@ Future<void> main() async {
             'restart',
             'signal-api',
           ]);
-          _log('signal-api restart: ${result.exitCode == 0 ? "OK" : "FAILED"}');
+          log.info('signal-api restart', extra: {
+            'success': result.exitCode == 0,
+          });
           // Wait for the container to come back up with a health check loop.
           var connected = false;
           for (var attempt = 0; attempt < 10; attempt++) {
@@ -275,17 +307,19 @@ Future<void> main() async {
               connected = true;
               break;
             } on Exception {
-              _log('Waiting for signal-api... (attempt ${attempt + 1}/10)');
+              log.info('Waiting for signal-api...', extra: {
+                'attempt': attempt + 1,
+              });
             }
           }
           if (connected) {
             await signalClient.loadGroupMappings();
-            _log('Reconnected and group mappings reloaded');
+            log.info('Reconnected and group mappings reloaded');
           } else {
-            _log('signal-api failed to come back up after 30s', isError: true);
+            log.error('signal-api failed to come back up after 30s');
           }
         } on Exception catch (restartErr) {
-          _log('Failed to restart signal-api: $restartErr', isError: true);
+          log.error('Failed to restart signal-api: $restartErr');
         }
       }
     }
