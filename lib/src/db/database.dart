@@ -2,7 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// Current schema version. Bump this and add a migration block in
 /// [_runMigrations] whenever the schema changes.
-const schemaVersion = 2;
+const schemaVersion = 3;
 
 /// SQLite database wrapper for Dreamfinder.
 ///
@@ -87,6 +87,7 @@ class BotDatabase {
   void _runMigrations(int fromVersion) {
     if (fromVersion < 1) _migrateToV1();
     if (fromVersion < 2) _migrateToV2();
+    if (fromVersion < 3) _migrateToV3();
 
     _setVersion(schemaVersion);
   }
@@ -260,6 +261,17 @@ class BotDatabase {
     _db.execute('''
       CREATE INDEX IF NOT EXISTS idx_messages_chat_id_id
       ON messages(chat_id, id DESC)
+    ''');
+  }
+
+  /// Version 3: general-purpose key-value store for bot metadata
+  /// (deploy version tracking, feature flags, etc.).
+  void _migrateToV3() {
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS bot_metadata (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
     ''');
   }
 }
