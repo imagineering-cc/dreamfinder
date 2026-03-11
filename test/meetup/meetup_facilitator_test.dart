@@ -1,7 +1,7 @@
-import 'package:imagineering_pm_bot/src/meetup/meet_browser.dart';
-import 'package:imagineering_pm_bot/src/meetup/meetup_config.dart';
-import 'package:imagineering_pm_bot/src/meetup/meetup_facilitator.dart';
-import 'package:imagineering_pm_bot/src/meetup/meetup_session.dart';
+import 'package:dreamfinder/src/meetup/meet_browser.dart';
+import 'package:dreamfinder/src/meetup/meetup_config.dart';
+import 'package:dreamfinder/src/meetup/meetup_facilitator.dart';
+import 'package:dreamfinder/src/meetup/meetup_session.dart';
 import 'package:test/test.dart';
 
 void main() {

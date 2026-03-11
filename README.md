@@ -1,4 +1,4 @@
-# Dreamfinder — imagineering-pm-bot
+# Dreamfinder
 
 > _"One little spark of inspiration is at the heart of all creation."_
 
@@ -25,7 +25,7 @@ The bot processes every message through a Claude LLM agent loop with access to ~
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    imagineering-pm-bot                               │
+│                        Dreamfinder                                    │
 │                                                                     │
 │  ┌──────────────┐    ┌──────────────┐    ┌───────────────────────┐  │
 │  │   Message     │    │  Agent Loop  │    │    Cron Scheduler     │  │
@@ -132,8 +132,8 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 
 ```bash
 # Clone the repo
-git clone git@github.com:enspyrco/imagineering-pm-bot.git
-cd imagineering-pm-bot
+git clone git@github.com:imagineering-cc/dreamfinder.git
+cd dreamfinder
 
 # Install dependencies
 dart pub get
@@ -311,7 +311,7 @@ model.
 This project is a direct adaptation of **xdeca-pm-bot** (private repo), a production
 Telegram bot serving the xDeca organization. The core architecture is identical:
 
-| Aspect             | xdeca-pm-bot           | imagineering-pm-bot          |
+| Aspect             | xdeca-pm-bot           | Dreamfinder                  |
 | ------------------ | ---------------------- | ---------------------------- |
 | Language           | TypeScript             | Dart                         |
 | Messaging          | Telegram (grammY)      | Signal (signal-cli-rest-api) |

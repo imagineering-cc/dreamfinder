@@ -1,6 +1,6 @@
-import 'package:imagineering_pm_bot/src/agent/agent_loop.dart';
-import 'package:imagineering_pm_bot/src/agent/conversation_history.dart';
-import 'package:imagineering_pm_bot/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/agent/agent_loop.dart';
+import 'package:dreamfinder/src/agent/conversation_history.dart';
+import 'package:dreamfinder/src/agent/tool_registry.dart';
 import 'package:test/test.dart';
 
 void main() {

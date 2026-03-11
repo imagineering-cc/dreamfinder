@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:imagineering_pm_bot/src/agent/conversation_history.dart';
-import 'package:imagineering_pm_bot/src/db/database.dart';
-import 'package:imagineering_pm_bot/src/db/message_repository.dart' as db_repo;
-import 'package:imagineering_pm_bot/src/db/message_repository.dart'
+import 'package:dreamfinder/src/agent/conversation_history.dart';
+import 'package:dreamfinder/src/db/database.dart';
+import 'package:dreamfinder/src/db/message_repository.dart' as db_repo;
+import 'package:dreamfinder/src/db/message_repository.dart'
     show MessageRepository;
 import 'package:test/test.dart';
 

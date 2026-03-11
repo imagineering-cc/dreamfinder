@@ -1,11 +1,11 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:imagineering_pm_bot/src/agent/agent_loop.dart';
-import 'package:imagineering_pm_bot/src/agent/conversation_history.dart';
-import 'package:imagineering_pm_bot/src/agent/tool_registry.dart';
-import 'package:imagineering_pm_bot/src/mcp/mcp_manager.dart';
-import 'package:imagineering_pm_bot/src/signal/signal_client.dart';
+import 'package:dreamfinder/src/agent/agent_loop.dart';
+import 'package:dreamfinder/src/agent/conversation_history.dart';
+import 'package:dreamfinder/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/mcp/mcp_manager.dart';
+import 'package:dreamfinder/src/signal/signal_client.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:test/test.dart';
 

@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:imagineering_pm_bot/src/signal/models.dart';
-import 'package:imagineering_pm_bot/src/signal/signal_client.dart';
+import 'package:dreamfinder/src/signal/models.dart';
+import 'package:dreamfinder/src/signal/signal_client.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:test/test.dart';
 

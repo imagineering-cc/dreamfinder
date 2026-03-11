@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:imagineering_pm_bot/src/bot/health_check.dart';
+import 'package:dreamfinder/src/bot/health_check.dart';
 import 'package:test/test.dart';
 
 void main() {

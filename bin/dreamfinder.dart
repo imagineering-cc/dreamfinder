@@ -2,23 +2,23 @@ import 'dart:io';
 
 import 'package:anthropic_sdk_dart/anthropic_sdk_dart.dart' as anthropic;
 
-import 'package:imagineering_pm_bot/src/agent/agent_loop.dart';
-import 'package:imagineering_pm_bot/src/agent/conversation_history.dart';
-import 'package:imagineering_pm_bot/src/agent/system_prompt.dart';
-import 'package:imagineering_pm_bot/src/agent/tool_registry.dart';
-import 'package:imagineering_pm_bot/src/bot/health_check.dart';
-import 'package:imagineering_pm_bot/src/bot/rate_limiter.dart';
-import 'package:imagineering_pm_bot/src/config/env.dart';
-import 'package:imagineering_pm_bot/src/cron/scheduler.dart';
-import 'package:imagineering_pm_bot/src/db/database.dart';
-import 'package:imagineering_pm_bot/src/db/message_repository.dart';
-import 'package:imagineering_pm_bot/src/db/queries.dart';
-import 'package:imagineering_pm_bot/src/logging/logger.dart';
-import 'package:imagineering_pm_bot/src/mcp/mcp_manager.dart';
-import 'package:imagineering_pm_bot/src/signal/signal_client.dart';
-import 'package:imagineering_pm_bot/src/tools/bot_identity_tools.dart';
-import 'package:imagineering_pm_bot/src/tools/chat_config_tools.dart';
-import 'package:imagineering_pm_bot/src/tools/standup_tools.dart';
+import 'package:dreamfinder/src/agent/agent_loop.dart';
+import 'package:dreamfinder/src/agent/conversation_history.dart';
+import 'package:dreamfinder/src/agent/system_prompt.dart';
+import 'package:dreamfinder/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/bot/health_check.dart';
+import 'package:dreamfinder/src/bot/rate_limiter.dart';
+import 'package:dreamfinder/src/config/env.dart';
+import 'package:dreamfinder/src/cron/scheduler.dart';
+import 'package:dreamfinder/src/db/database.dart';
+import 'package:dreamfinder/src/db/message_repository.dart';
+import 'package:dreamfinder/src/db/queries.dart';
+import 'package:dreamfinder/src/logging/logger.dart';
+import 'package:dreamfinder/src/mcp/mcp_manager.dart';
+import 'package:dreamfinder/src/signal/signal_client.dart';
+import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
+import 'package:dreamfinder/src/tools/chat_config_tools.dart';
+import 'package:dreamfinder/src/tools/standup_tools.dart';
 
 const _pollIntervalSeconds = 5;
 

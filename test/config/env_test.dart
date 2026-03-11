@@ -1,4 +1,4 @@
-import 'package:imagineering_pm_bot/src/config/env.dart';
+import 'package:dreamfinder/src/config/env.dart';
 import 'package:test/test.dart';
 
 void main() {

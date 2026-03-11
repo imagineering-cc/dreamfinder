@@ -1,5 +1,5 @@
-import 'package:imagineering_pm_bot/src/agent/tool_registry.dart';
-import 'package:imagineering_pm_bot/src/mcp/mcp_manager.dart';
+import 'package:dreamfinder/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/mcp/mcp_manager.dart';
 import 'package:test/test.dart';
 
 void main() {

@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:imagineering_pm_bot/src/agent/tool_registry.dart';
-import 'package:imagineering_pm_bot/src/db/database.dart';
-import 'package:imagineering_pm_bot/src/db/queries.dart';
-import 'package:imagineering_pm_bot/src/tools/bot_identity_tools.dart';
+import 'package:dreamfinder/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/db/database.dart';
+import 'package:dreamfinder/src/db/queries.dart';
+import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
 import 'package:test/test.dart';
 
 void main() {

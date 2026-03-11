@@ -1,5 +1,5 @@
-import 'package:imagineering_pm_bot/src/meetup/caption_entry.dart';
-import 'package:imagineering_pm_bot/src/meetup/meet_browser.dart';
+import 'package:dreamfinder/src/meetup/caption_entry.dart';
+import 'package:dreamfinder/src/meetup/meet_browser.dart';
 import 'package:test/test.dart';
 
 void main() {

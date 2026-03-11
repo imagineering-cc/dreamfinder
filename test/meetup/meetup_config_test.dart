@@ -1,4 +1,4 @@
-import 'package:imagineering_pm_bot/src/meetup/meetup_config.dart';
+import 'package:dreamfinder/src/meetup/meetup_config.dart';
 import 'package:test/test.dart';
 
 void main() {

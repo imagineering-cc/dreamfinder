@@ -1,6 +1,6 @@
-import 'package:imagineering_pm_bot/src/db/database.dart';
-import 'package:imagineering_pm_bot/src/db/queries.dart';
-import 'package:imagineering_pm_bot/src/db/schema.dart';
+import 'package:dreamfinder/src/db/database.dart';
+import 'package:dreamfinder/src/db/queries.dart';
+import 'package:dreamfinder/src/db/schema.dart';
 import 'package:test/test.dart';
 
 void main() {

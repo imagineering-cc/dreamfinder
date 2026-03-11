@@ -1,4 +1,4 @@
-import 'package:imagineering_pm_bot/src/meetup/participant_tracker.dart';
+import 'package:dreamfinder/src/meetup/participant_tracker.dart';
 import 'package:test/test.dart';
 
 void main() {

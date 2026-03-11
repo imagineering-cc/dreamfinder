@@ -1,4 +1,4 @@
-# imagineering-pm-bot (Dreamfinder)
+# Dreamfinder
 
 > See [README.md](README.md) for full project documentation, architecture diagrams,
 > Signal integration details, MCP integration details, and deployment guide.

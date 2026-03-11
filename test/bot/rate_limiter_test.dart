@@ -1,4 +1,4 @@
-import 'package:imagineering_pm_bot/src/bot/rate_limiter.dart';
+import 'package:dreamfinder/src/bot/rate_limiter.dart';
 import 'package:test/test.dart';
 
 void main() {

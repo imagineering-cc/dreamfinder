@@ -1,7 +1,7 @@
 /// Schema model classes and enums for the Dreamfinder database.
 ///
 /// These types represent rows from the 10 domain tables adapted from
-/// xdeca-pm-bot (Telegram) to Signal. Key differences from Telegram:
+/// xdeca-pm-bot (Telegram) to Signal (now called Dreamfinder). Key differences from Telegram:
 /// - Group IDs are base64 strings (not integers)
 /// - User IDs are UUIDs (not integers)
 /// - Display names replace @usernames

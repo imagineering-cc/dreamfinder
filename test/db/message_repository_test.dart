@@ -1,5 +1,5 @@
-import 'package:imagineering_pm_bot/src/db/database.dart';
-import 'package:imagineering_pm_bot/src/db/message_repository.dart';
+import 'package:dreamfinder/src/db/database.dart';
+import 'package:dreamfinder/src/db/message_repository.dart';
 import 'package:test/test.dart';
 
 void main() {

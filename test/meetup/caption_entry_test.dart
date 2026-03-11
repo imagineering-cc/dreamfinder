@@ -1,4 +1,4 @@
-import 'package:imagineering_pm_bot/src/meetup/caption_entry.dart';
+import 'package:dreamfinder/src/meetup/caption_entry.dart';
 import 'package:test/test.dart';
 
 void main() {

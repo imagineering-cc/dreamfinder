@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:imagineering_pm_bot/src/logging/logger.dart';
+import 'package:dreamfinder/src/logging/logger.dart';
 import 'package:test/test.dart';
 
 void main() {

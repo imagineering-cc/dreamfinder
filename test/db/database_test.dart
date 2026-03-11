@@ -1,4 +1,4 @@
-import 'package:imagineering_pm_bot/src/db/database.dart';
+import 'package:dreamfinder/src/db/database.dart';
 import 'package:test/test.dart';
 
 void main() {

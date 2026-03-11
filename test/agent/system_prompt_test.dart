@@ -1,5 +1,5 @@
-import 'package:imagineering_pm_bot/src/agent/agent_loop.dart';
-import 'package:imagineering_pm_bot/src/agent/system_prompt.dart';
+import 'package:dreamfinder/src/agent/agent_loop.dart';
+import 'package:dreamfinder/src/agent/system_prompt.dart';
 import 'package:test/test.dart';
 
 void main() {
