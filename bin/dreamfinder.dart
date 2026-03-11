@@ -6,6 +6,7 @@ import 'package:dreamfinder/src/agent/agent_loop.dart';
 import 'package:dreamfinder/src/agent/conversation_history.dart';
 import 'package:dreamfinder/src/agent/system_prompt.dart';
 import 'package:dreamfinder/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/bot/group_continuation.dart';
 import 'package:dreamfinder/src/bot/health_check.dart';
 import 'package:dreamfinder/src/bot/rate_limiter.dart';
 import 'package:dreamfinder/src/config/env.dart';
@@ -174,7 +175,7 @@ Future<void> main() async {
 
   // Track chats where the bot spoke last, so the next message is treated as a
   // continuation without requiring an explicit name mention.
-  final botSpokeLastIn = <String>{};
+  final continuation = GroupContinuation();
 
   log.info('Dreamfinder is running!', extra: {
     'poll_interval_seconds': _pollIntervalSeconds,
@@ -195,17 +196,12 @@ Future<void> main() async {
         // 1. The bot name is mentioned (whole word), OR
         // 2. The bot was the last speaker (conversation continuation).
         if (isGroup &&
-            !botSpokeLastIn.contains(envelope.chatId) &&
+            !continuation.shouldContinue(chatId: envelope.chatId) &&
             !RegExp('\\b${RegExp.escape(cachedBotName)}\\b',
                     caseSensitive: false)
                 .hasMatch(text)) {
-          // Someone else spoke — bot is no longer the last speaker.
-          botSpokeLastIn.remove(envelope.chatId);
           continue;
         }
-        // Clear the flag — this message will be processed, so the next
-        // unaddressed message should not auto-trigger.
-        botSpokeLastIn.remove(envelope.chatId);
 
         // Rate limit check — prevents spam from a single user or group.
         if (!rateLimiter.shouldAllow(
@@ -261,7 +257,9 @@ Future<void> main() async {
               message: response,
             );
             // Mark this chat so the next message is treated as a continuation.
-            if (isGroup) botSpokeLastIn.add(envelope.chatId);
+            if (isGroup) {
+              continuation.recordBotResponse(chatId: envelope.chatId);
+            }
             log.debug('Response sent');
           }
         } on Exception catch (e) {
@@ -339,6 +337,7 @@ Future<void> main() async {
 
     history.evictStale();
     rateLimiter.evictStale();
+    continuation.evictStale();
     await Future<void>.delayed(const Duration(seconds: _pollIntervalSeconds));
   }
 }
