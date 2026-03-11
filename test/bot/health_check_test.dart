@@ -32,6 +32,9 @@ void main() {
         final json = jsonDecode(body) as Map<String, dynamic>;
 
         expect(json['status'], 'ok');
+        expect(json['version'], 'dev');
+        expect(json['commit'], 'local');
+        expect(json['build_time'], 'unknown');
         expect(json['uptime_seconds'], isA<int>());
         expect(json, contains('last_poll'));
         expect(json, contains('last_claude_success'));
@@ -112,6 +115,30 @@ void main() {
         final body = await response.transform(utf8.decoder).join();
         final json = jsonDecode(body) as Map<String, dynamic>;
         expect(json['status'], 'degraded');
+      } finally {
+        client.close();
+      }
+    });
+
+    test('includes custom version info in response', () async {
+      await health.stop();
+      health = HealthCheck(
+        version: '0.1.0+abc1234',
+        commit: 'abc1234',
+        buildTime: '2026-03-09T12:00:00Z',
+      );
+      port = await health.start(port: 0);
+
+      final client = HttpClient();
+      try {
+        final request = await client.get('localhost', port, '/health');
+        final response = await request.close();
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+
+        expect(json['version'], '0.1.0+abc1234');
+        expect(json['commit'], 'abc1234');
+        expect(json['build_time'], '2026-03-09T12:00:00Z');
       } finally {
         client.close();
       }

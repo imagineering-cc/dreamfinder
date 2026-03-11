@@ -113,9 +113,13 @@ class SignalClient {
   }
 
   /// Polls for new messages. `GET /v1/receive/{number}`
+  ///
+  /// Uses long-polling with a server-side timeout so the request blocks until
+  /// a message arrives (or the timeout expires), eliminating the latency of
+  /// short-polling intervals.
   Future<List<SignalEnvelope>> receiveMessages() async {
     final response = await _client.get(
-      Uri.parse('$baseUrl/v1/receive/$phoneNumber'),
+      Uri.parse('$baseUrl/v1/receive/$phoneNumber?timeout=10'),
     );
     _ensureSuccess(response);
     final list = jsonDecode(response.body) as List<dynamic>;

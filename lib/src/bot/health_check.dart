@@ -18,7 +18,19 @@ const _defaultStalePollThreshold = Duration(minutes: 2);
 class HealthCheck {
   HealthCheck({
     Duration stalePollThreshold = _defaultStalePollThreshold,
+    this.version = 'dev',
+    this.commit = 'local',
+    this.buildTime = 'unknown',
   }) : _stalePollThreshold = stalePollThreshold;
+
+  /// Semver + short SHA, e.g. `0.1.0+abc1234`.
+  final String version;
+
+  /// Git commit SHA baked in at build time.
+  final String commit;
+
+  /// ISO 8601 UTC timestamp of the Docker build.
+  final String buildTime;
 
   final Duration _stalePollThreshold;
   final DateTime _startTime = DateTime.now();
@@ -73,6 +85,9 @@ class HealthCheck {
         ..headers.contentType = ContentType.json
         ..write(jsonEncode(<String, Object?>{
           'status': status,
+          'version': version,
+          'commit': commit,
+          'build_time': buildTime,
           'uptime_seconds': uptime.inSeconds,
           'last_poll': _lastPoll?.toUtc().toIso8601String(),
           'last_claude_success':

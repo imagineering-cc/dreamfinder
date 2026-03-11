@@ -14,6 +14,13 @@ RUN dart pub get
 COPY lib/ lib/
 COPY bin/ bin/
 
+ARG BUILD_VERSION=dev
+ARG BUILD_SHA=local
+ARG BUILD_TIME=unknown
+RUN printf "/// Build version info — generated at Docker build time.\nconst String appVersion = '%s+%s';\nconst String appCommit = '%s';\nconst String appBuildTime = '%s';\n" \
+    "$BUILD_VERSION" "$BUILD_SHA" "$BUILD_SHA" "$BUILD_TIME" \
+    > lib/src/config/version.dart
+
 RUN dart compile exe bin/dreamfinder.dart -o bin/dreamfinder
 
 # --- Runtime stage ---

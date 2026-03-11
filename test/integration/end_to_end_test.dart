@@ -24,7 +24,7 @@ void main() {
         client: mockHttp);
 
     when(() => mockHttp
-            .get(Uri.parse('http://localhost:8080/v1/receive/+1234567890')))
+            .get(Uri.parse('http://localhost:8080/v1/receive/+1234567890?timeout=10')))
         .thenAnswer((_) async => http.Response(
             jsonEncode([
               {

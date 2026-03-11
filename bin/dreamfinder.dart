@@ -9,6 +9,7 @@ import 'package:dreamfinder/src/agent/tool_registry.dart';
 import 'package:dreamfinder/src/bot/health_check.dart';
 import 'package:dreamfinder/src/bot/rate_limiter.dart';
 import 'package:dreamfinder/src/config/env.dart';
+import 'package:dreamfinder/src/config/version.dart';
 import 'package:dreamfinder/src/cron/scheduler.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/message_repository.dart';
@@ -20,7 +21,9 @@ import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
 import 'package:dreamfinder/src/tools/chat_config_tools.dart';
 import 'package:dreamfinder/src/tools/standup_tools.dart';
 
-const _pollIntervalSeconds = 5;
+// Short backoff between poll cycles — the actual wait happens server-side
+// via long-polling in receiveMessages (10s timeout).
+const _pollIntervalSeconds = 1;
 
 Future<void> main() async {
   final env = Env.load();
@@ -29,14 +32,18 @@ Future<void> main() async {
     level: LogLevel.fromString(env.logLevel),
   );
 
-  log.info('Starting Dreamfinder...');
+  log.info('Starting Dreamfinder v$appVersion ($appCommit)');
   log.info('Config loaded', extra: {
     'bot': env.botName,
     'signal': env.signalApiUrl,
   });
 
   // Start health check server.
-  final health = HealthCheck();
+  final health = HealthCheck(
+    version: appVersion,
+    commit: appCommit,
+    buildTime: appBuildTime,
+  );
   final healthPort = await health.start(port: env.healthPort);
   log.info('Health check listening', extra: {'port': healthPort});
 

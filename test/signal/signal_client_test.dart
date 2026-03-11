@@ -93,7 +93,7 @@ void main() {
     });
 
     test('receiveMessages returns list of envelopes', () async {
-      when(() => mockClient.get(Uri.parse('$baseUrl/v1/receive/$phoneNumber')))
+      when(() => mockClient.get(Uri.parse('$baseUrl/v1/receive/$phoneNumber?timeout=10')))
           .thenAnswer((_) async => http.Response(
                 jsonEncode([
                   {
