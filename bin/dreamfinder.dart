@@ -10,6 +10,7 @@ import 'package:dreamfinder/src/bot/group_continuation.dart';
 import 'package:dreamfinder/src/bot/health_check.dart';
 import 'package:dreamfinder/src/bot/rate_limiter.dart';
 import 'package:dreamfinder/src/config/env.dart';
+import 'package:dreamfinder/src/config/oauth_client.dart';
 import 'package:dreamfinder/src/config/version.dart';
 import 'package:dreamfinder/src/cron/scheduler.dart';
 import 'package:dreamfinder/src/db/database.dart';
@@ -114,12 +115,37 @@ Future<void> main() async {
   registerStandupTools(toolRegistry, queries);
 
   final history = ConversationHistory(repository: messageRepo);
-  final anthropicClient = anthropic.AnthropicClient(
-    apiKey: env.anthropicApiKey,
-  );
+
+  // Set up Anthropic client — OAuth (Claude Max) or API key.
+  OAuthTokenManager? oauthManager;
+  anthropic.AnthropicClient anthropicClient;
+
+  if (env.useOAuth) {
+    oauthManager = OAuthTokenManager(
+      queries: queries,
+      log: BotLogger(name: 'OAuth', level: LogLevel.fromString(env.logLevel)),
+      initialRefreshToken: env.claudeRefreshToken,
+    );
+    // Create initial client with empty key — headers are set per-request.
+    anthropicClient = anthropic.AnthropicClient(apiKey: '');
+    log.info('Auth mode: OAuth (Claude Max)');
+  } else {
+    anthropicClient = anthropic.AnthropicClient(apiKey: env.anthropicApiKey);
+    log.info('Auth mode: API key');
+  }
 
   final agentLoop = AgentLoop(
     createMessage: (messages, tools, systemPrompt) async {
+      if (oauthManager != null) {
+        final token = await oauthManager.getAccessToken();
+        anthropicClient = anthropic.AnthropicClient(
+          apiKey: '',
+          headers: {
+            'Authorization': 'Bearer $token',
+            'anthropic-beta': 'oauth-2025-04-20',
+          },
+        );
+      }
       return _callClaude(anthropicClient, messages, tools, systemPrompt);
     },
     toolRegistry: toolRegistry,
