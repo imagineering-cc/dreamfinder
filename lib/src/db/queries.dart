@@ -8,6 +8,7 @@ library;
 import 'database.dart';
 import 'queries/board_config_queries.dart';
 import 'queries/calendar_queries.dart';
+import 'queries/deploy_queries.dart';
 import 'queries/identity_queries.dart';
 import 'queries/oauth_queries.dart';
 import 'queries/reminder_queries.dart';
@@ -17,6 +18,7 @@ import 'queries/workspace_queries.dart';
 
 export 'queries/board_config_queries.dart';
 export 'queries/calendar_queries.dart';
+export 'queries/deploy_queries.dart';
 export 'queries/identity_queries.dart';
 export 'queries/oauth_queries.dart';
 export 'queries/reminder_queries.dart';
@@ -36,6 +38,7 @@ class Queries
         ReminderQueries,
         IdentityQueries,
         OAuthQueries,
+        DeployQueries,
         StandupQueries,
         CalendarQueries {
   Queries(this.db);

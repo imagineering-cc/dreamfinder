@@ -20,6 +20,7 @@ class Env {
     this.databasePath = './data/bot.db',
     this.logLevel = 'info',
     this.healthPort = 8081,
+    this.deployAnnounceGroupId,
   });
 
   factory Env.load() {
@@ -58,6 +59,7 @@ class Env {
       databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
       healthPort: int.tryParse(dotEnv['HEALTH_PORT'] ?? '') ?? 8081,
+      deployAnnounceGroupId: dotEnv['DEPLOY_ANNOUNCE_GROUP_ID'],
     );
   }
 
@@ -79,6 +81,7 @@ class Env {
     String databasePath = './data/bot.db',
     String logLevel = 'info',
     int healthPort = 8081,
+    String? deployAnnounceGroupId,
   }) =>
       Env._(
         anthropicApiKey: anthropicApiKey,
@@ -98,6 +101,7 @@ class Env {
         databasePath: databasePath,
         logLevel: logLevel,
         healthPort: healthPort,
+        deployAnnounceGroupId: deployAnnounceGroupId,
       );
 
   /// Anthropic API key. Null when using OAuth auth.
@@ -130,6 +134,10 @@ class Env {
 
   /// Port for the health check HTTP endpoint (from `HEALTH_PORT` env var).
   final int healthPort;
+
+  /// Signal group ID to send deploy announcements to.
+  /// If null, deploy announcements are disabled.
+  final String? deployAnnounceGroupId;
 
   /// Returns `true` if [signalUuid] is in the configured admin list.
   bool isAdmin(String? signalUuid) =>

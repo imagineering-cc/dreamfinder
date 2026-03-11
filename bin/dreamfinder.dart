@@ -6,6 +6,7 @@ import 'package:dreamfinder/src/agent/agent_loop.dart';
 import 'package:dreamfinder/src/agent/conversation_history.dart';
 import 'package:dreamfinder/src/agent/system_prompt.dart';
 import 'package:dreamfinder/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/bot/deploy_announcer.dart';
 import 'package:dreamfinder/src/bot/group_continuation.dart';
 import 'package:dreamfinder/src/bot/health_check.dart';
 import 'package:dreamfinder/src/bot/rate_limiter.dart';
@@ -185,6 +186,43 @@ Future<void> main() async {
   );
   scheduler.start();
   log.info('Scheduler started');
+
+  // Announce deploy if version changed — Dreamfinder reads its own changelog
+  // and announces its reimagining in its own voice.
+  final announceGroupId = env.deployAnnounceGroupId;
+  if (announceGroupId != null && appChangelog.isNotEmpty) {
+    final announcer = DeployAnnouncer(
+      queries: queries,
+      composeViaAgent: (groupId, taskDescription) async {
+        final input = AgentInput(
+          text: taskDescription,
+          chatId: groupId,
+          senderUuid: 'system',
+          isAdmin: true,
+          isSystemInitiated: true,
+        );
+        return agentLoop.processMessage(
+          input,
+          systemPrompt: buildSystemPrompt(
+            input,
+            botName: env.botName,
+            identity: queries.getBotIdentity(),
+          ),
+        );
+      },
+      sendMessage: (groupId, message) =>
+          signalClient.sendMessage(recipient: groupId, message: message),
+      currentVersion: '$appVersion+$appCommit',
+      changelog: appChangelog,
+      diffStat: appDiffStat,
+      groupId: announceGroupId,
+      log: log,
+    );
+    final announced = await announcer.announceIfNewVersion();
+    if (announced) {
+      log.info('Deploy announcement sent', extra: {'group': announceGroupId});
+    }
+  }
 
   void shutdown() {
     log.info('Shutting down...');
