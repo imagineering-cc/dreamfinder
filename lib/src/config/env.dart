@@ -21,6 +21,7 @@ class Env {
     this.logLevel = 'info',
     this.healthPort = 8081,
     this.deployAnnounceGroupId,
+    this.voyageApiKey,
   });
 
   factory Env.load() {
@@ -60,6 +61,7 @@ class Env {
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
       healthPort: int.tryParse(dotEnv['HEALTH_PORT'] ?? '') ?? 8081,
       deployAnnounceGroupId: dotEnv['DEPLOY_ANNOUNCE_GROUP_ID'],
+      voyageApiKey: dotEnv['VOYAGE_API_KEY'],
     );
   }
 
@@ -82,6 +84,7 @@ class Env {
     String logLevel = 'info',
     int healthPort = 8081,
     String? deployAnnounceGroupId,
+    String? voyageApiKey,
   }) =>
       Env._(
         anthropicApiKey: anthropicApiKey,
@@ -102,6 +105,7 @@ class Env {
         logLevel: logLevel,
         healthPort: healthPort,
         deployAnnounceGroupId: deployAnnounceGroupId,
+        voyageApiKey: voyageApiKey,
       );
 
   /// Anthropic API key. Null when using OAuth auth.
@@ -139,6 +143,10 @@ class Env {
   /// If null, deploy announcements are disabled.
   final String? deployAnnounceGroupId;
 
+  /// Voyage AI API key for generating text embeddings.
+  /// If null, the RAG memory system is disabled.
+  final String? voyageApiKey;
+
   /// Returns `true` if [signalUuid] is in the configured admin list.
   bool isAdmin(String? signalUuid) =>
       signalUuid != null && adminUuids.contains(signalUuid);
@@ -147,6 +155,7 @@ class Env {
   bool get outlineEnabled => outlineApiKey != null && outlineApiKey!.isNotEmpty;
   bool get radicaleEnabled =>
       radicalePassword != null && radicalePassword!.isNotEmpty;
+  bool get voyageEnabled => voyageApiKey != null && voyageApiKey!.isNotEmpty;
 
   /// Parses a comma-separated string into a trimmed list.
   static List<String> _parseList(String? value) {

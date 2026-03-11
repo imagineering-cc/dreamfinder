@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 
+import '../memory/embedding_pipeline.dart';
 import 'conversation_history.dart';
 import 'tool_registry.dart';
 
@@ -114,17 +115,20 @@ class AgentLoop {
     required ConversationHistory history,
     int maxToolRounds = _defaultMaxToolRounds,
     TypingIndicatorFn? onTyping,
+    EmbeddingPipeline? embeddingPipeline,
   })  : _createMessage = createMessage,
         _toolRegistry = toolRegistry,
         _history = history,
         _maxToolRounds = maxToolRounds,
-        _onTyping = onTyping;
+        _onTyping = onTyping,
+        _embeddingPipeline = embeddingPipeline;
 
   final CreateMessageFn _createMessage;
   final ToolRegistry _toolRegistry;
   final ConversationHistory _history;
   final int _maxToolRounds;
   final TypingIndicatorFn? _onTyping;
+  final EmbeddingPipeline? _embeddingPipeline;
 
   /// Processes a user message through the full agent loop.
   Future<String> processMessage(
@@ -159,6 +163,7 @@ class AgentLoop {
         messages.add(AgentMessage(role: 'assistant', content: text));
 
         _persistTurn(input.chatId, messages, turnStartIndex);
+        _queueEmbedding(input, text);
         return text;
       }
 
@@ -228,6 +233,7 @@ class AgentLoop {
 
     messages.add(AgentMessage(role: 'assistant', content: responseText));
     _persistTurn(input.chatId, messages, turnStartIndex);
+    _queueEmbedding(input, responseText);
 
     return responseText;
   }
@@ -275,6 +281,21 @@ class AgentLoop {
 
   String _extractText(AgentResponse response) {
     return response.textBlocks.map((b) => b.text).join('\n').trim();
+  }
+
+  /// Queues the user+assistant turn for background embedding.
+  ///
+  /// Skips system-initiated messages (standup prompts, deploy announcements)
+  /// since they're operational rather than semantic.
+  void _queueEmbedding(AgentInput input, String assistantText) {
+    if (_embeddingPipeline == null || input.isSystemInitiated) return;
+    _embeddingPipeline.queue(
+      chatId: input.chatId,
+      userText: input.text,
+      assistantText: assistantText,
+      senderUuid: input.senderUuid,
+      senderName: input.senderName,
+    );
   }
 
   void _sendTyping(String chatId) {

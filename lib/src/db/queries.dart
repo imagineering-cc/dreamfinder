@@ -5,11 +5,13 @@
 /// a single [Queries] class for convenience.
 library;
 
+import '../memory/embedding_pipeline.dart';
 import 'database.dart';
 import 'queries/board_config_queries.dart';
 import 'queries/calendar_queries.dart';
-import 'queries/metadata_queries.dart';
 import 'queries/identity_queries.dart';
+import 'queries/memory_queries.dart';
+import 'queries/metadata_queries.dart';
 import 'queries/oauth_queries.dart';
 import 'queries/reminder_queries.dart';
 import 'queries/standup_queries.dart';
@@ -18,8 +20,9 @@ import 'queries/workspace_queries.dart';
 
 export 'queries/board_config_queries.dart';
 export 'queries/calendar_queries.dart';
-export 'queries/metadata_queries.dart';
 export 'queries/identity_queries.dart';
+export 'queries/memory_queries.dart';
+export 'queries/metadata_queries.dart';
 export 'queries/oauth_queries.dart';
 export 'queries/reminder_queries.dart';
 export 'queries/standup_queries.dart';
@@ -38,9 +41,11 @@ class Queries
         ReminderQueries,
         IdentityQueries,
         OAuthQueries,
+        MemoryQueries,
         MetadataQueries,
         StandupQueries,
-        CalendarQueries {
+        CalendarQueries
+    implements MemoryQueryAccessor {
   Queries(this.db);
 
   @override
