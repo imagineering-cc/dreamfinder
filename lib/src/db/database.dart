@@ -2,7 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// Current schema version. Bump this and add a migration block in
 /// [_runMigrations] whenever the schema changes.
-const schemaVersion = 3;
+const schemaVersion = 4;
 
 /// SQLite database wrapper for Dreamfinder.
 ///
@@ -88,6 +88,7 @@ class BotDatabase {
     if (fromVersion < 1) _migrateToV1();
     if (fromVersion < 2) _migrateToV2();
     if (fromVersion < 3) _migrateToV3();
+    if (fromVersion < 4) _migrateToV4();
 
     _setVersion(schemaVersion);
   }
@@ -271,6 +272,61 @@ class BotDatabase {
       CREATE TABLE IF NOT EXISTS bot_metadata (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      )
+    ''');
+  }
+
+  /// Version 4: RAG memory system — embedding storage, summaries, and
+  /// consolidation tracking for semantic long-term memory.
+  void _migrateToV4() {
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS memory_embeddings (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id  INTEGER,
+        chat_id     TEXT    NOT NULL,
+        source_type TEXT    NOT NULL CHECK (source_type IN ('message', 'summary')),
+        source_text TEXT    NOT NULL,
+        sender_uuid TEXT,
+        sender_name TEXT,
+        visibility  TEXT    NOT NULL DEFAULT 'same_chat'
+                    CHECK (visibility IN ('same_chat', 'cross_chat', 'private')),
+        embedding   BLOB,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_memory_chat
+      ON memory_embeddings(chat_id)
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_memory_type
+      ON memory_embeddings(source_type)
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_memory_vis
+      ON memory_embeddings(visibility)
+    ''');
+
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS memory_summaries (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id         TEXT    NOT NULL,
+        summary_text    TEXT    NOT NULL,
+        message_id_from INTEGER NOT NULL,
+        message_id_to   INTEGER NOT NULL,
+        message_count   INTEGER NOT NULL,
+        created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS memory_consolidation_state (
+        chat_id              TEXT PRIMARY KEY,
+        last_consolidated_id INTEGER NOT NULL DEFAULT 0,
+        last_consolidated_at TEXT
       )
     ''');
   }

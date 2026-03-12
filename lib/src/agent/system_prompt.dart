@@ -1,4 +1,5 @@
 import '../db/schema.dart';
+import '../memory/memory_record.dart';
 import 'agent_loop.dart';
 
 /// Builds the dynamic system prompt for the Claude agent loop.
@@ -12,6 +13,7 @@ String buildSystemPrompt(
   AgentInput input, {
   String botName = 'Dreamfinder',
   BotIdentityRecord? identity,
+  List<MemorySearchResult> memories = const [],
 }) {
   final name = identity?.name ?? botName;
   final pronouns = identity?.pronouns ?? 'they/them';
@@ -69,6 +71,25 @@ You have tools for:
 6. **No message editing**: Signal does not support editing sent messages.
 7. **No inline buttons**: Use numbered lists for choices.
 8. **Chat ID**: The current chat ID is ${input.chatId}.''');
+
+  if (memories.isNotEmpty) {
+    parts.add('\n## Relevant Memories\n');
+    parts.add(
+      'These are relevant excerpts from past conversations you may draw on. '
+      'Reference them naturally if relevant — do not mention that you are '
+      'recalling from a memory system.\n',
+    );
+    for (final result in memories) {
+      final record = result.record;
+      final date = record.createdAt.split('T').first;
+      final chatLabel = record.visibility == MemoryVisibility.crossChat
+          ? 'cross-chat'
+          : record.chatId == input.chatId
+              ? 'this chat'
+              : 'another chat';
+      parts.add('[$date, $chatLabel] ${record.sourceText}\n');
+    }
+  }
 
   if (input.isSystemInitiated) {
     parts.add('''
