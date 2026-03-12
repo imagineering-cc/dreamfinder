@@ -57,7 +57,12 @@ CustomToolDef _saveMemoryTool(
         });
       }
 
-      final content = args['content'] as String;
+      final content = (args['content'] as String).trim();
+      if (content.isEmpty) {
+        return jsonEncode(<String, dynamic>{
+          'error': 'Content is empty — nothing to remember.',
+        });
+      }
       final visibilityStr = args['visibility'] as String?;
       final visibility = switch (visibilityStr) {
         'cross_chat' => MemoryVisibility.crossChat,
