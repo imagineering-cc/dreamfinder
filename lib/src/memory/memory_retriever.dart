@@ -45,12 +45,14 @@ class MemoryRetriever {
 
   /// Retrieves the most relevant memories for [query] in [chatId].
   ///
-  /// Returns up to [_topK] results sorted by descending similarity score.
-  /// Returns an empty list if embedding fails (graceful degradation).
+  /// Returns up to [topK] results (defaults to the constructor's value) sorted
+  /// by descending similarity score. Returns an empty list if embedding fails
+  /// (graceful degradation).
   Future<List<MemorySearchResult>> retrieve(
     String query,
-    String chatId,
-  ) async {
+    String chatId, {
+    int? topK,
+  }) async {
     try {
       final queryEmbeddings = await _client.embed(
         [query],
@@ -74,7 +76,7 @@ class MemoryRetriever {
       // Sort descending by score.
       scored.sort((a, b) => b.score.compareTo(a.score));
 
-      return scored.take(_topK).toList();
+      return scored.take(topK ?? _topK).toList();
     } on Exception catch (e) {
       developer.log(
         'Memory retrieval failed: $e',

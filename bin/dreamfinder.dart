@@ -19,6 +19,7 @@ import 'package:dreamfinder/src/db/message_repository.dart';
 import 'package:dreamfinder/src/db/queries.dart';
 import 'package:dreamfinder/src/logging/logger.dart';
 import 'package:dreamfinder/src/mcp/mcp_manager.dart';
+import 'package:dreamfinder/src/memory/embedding_backfill.dart';
 import 'package:dreamfinder/src/memory/embedding_client.dart';
 import 'package:dreamfinder/src/memory/embedding_pipeline.dart';
 import 'package:dreamfinder/src/memory/memory_consolidator.dart';
@@ -129,6 +130,7 @@ Future<void> main() async {
   EmbeddingPipeline? embeddingPipeline;
   MemoryRetriever? memoryRetriever;
   MemoryConsolidator? memoryConsolidator;
+  EmbeddingBackfill? embeddingBackfill;
   EmbeddingClient? voyageClient;
 
   if (env.voyageEnabled) {
@@ -141,6 +143,10 @@ Future<void> main() async {
       client: voyageClient,
       loadMemories: (chatId) => queries.getVisibleMemories(chatId),
     );
+    embeddingBackfill = EmbeddingBackfill(
+      queries: queries,
+      client: voyageClient,
+    );
     // Consolidator will be fully wired after the Anthropic client is created
     // (needs the summarization callback). Placeholder set below.
     log.info('RAG memory system enabled (Voyage AI)');
@@ -148,7 +154,7 @@ Future<void> main() async {
     log.info('RAG memory system disabled (no VOYAGE_API_KEY)');
   }
 
-  registerMemoryTools(toolRegistry, embeddingPipeline);
+  registerMemoryTools(toolRegistry, embeddingPipeline, memoryRetriever);
 
   // Set up Anthropic client — OAuth (Claude Max) or API key.
   OAuthTokenManager? oauthManager;
@@ -248,6 +254,7 @@ Future<void> main() async {
     queries: queries,
     sendMessage: (groupId, message) =>
         signalClient.sendMessage(recipient: groupId, message: message),
+    backfill: embeddingBackfill,
     consolidator: memoryConsolidator,
     composeViaAgent: (groupId, taskDescription) async {
       final input = AgentInput(

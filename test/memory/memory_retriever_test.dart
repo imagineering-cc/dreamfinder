@@ -180,6 +180,23 @@ void main() {
     expect(results.every((r) => r.record.embedding != null), isTrue);
   });
 
+  test('topK override returns more than default', () async {
+    final retriever = MemoryRetriever(
+      client: fakeClient,
+      loadMemories: (_) => makeRecords(),
+      topK: 1,
+      minScore: 0.0,
+    );
+
+    // Default topK is 1, but override with 3.
+    final results = await retriever.retrieve('Dawn Gate', 'group-1', topK: 3);
+    expect(results, hasLength(3));
+
+    // Without override, should respect constructor topK.
+    final defaultResults = await retriever.retrieve('Dawn Gate', 'group-1');
+    expect(defaultResults, hasLength(1));
+  });
+
   test('same-chat memory is retrieved; cross-chat memory from other group is not', () async {
     final groupARecords = [
       MemoryRecord(

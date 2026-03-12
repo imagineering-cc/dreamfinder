@@ -398,6 +398,97 @@ void main() {
     });
   });
 
+  group('getUnembeddedRecords', () {
+    test('returns records with null embeddings', () {
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Has embedding',
+        embedding: List.filled(512, 0.1),
+      );
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'No embedding',
+      );
+
+      final records = queries.getUnembeddedRecords();
+      expect(records, hasLength(1));
+      expect(records.first.sourceText, equals('No embedding'));
+      expect(records.first.embedding, isNull);
+    });
+
+    test('skips records that have embeddings', () {
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Embedded',
+        embedding: List.filled(512, 0.5),
+      );
+
+      final records = queries.getUnembeddedRecords();
+      expect(records, isEmpty);
+    });
+
+    test('respects limit parameter', () {
+      for (var i = 0; i < 10; i++) {
+        queries.insertMemoryEmbedding(
+          chatId: 'group-1',
+          sourceType: MemorySourceType.message,
+          sourceText: 'Unembedded $i',
+        );
+      }
+
+      final records = queries.getUnembeddedRecords(limit: 3);
+      expect(records, hasLength(3));
+    });
+
+    test('returns results ordered by id ascending', () {
+      for (var i = 0; i < 5; i++) {
+        queries.insertMemoryEmbedding(
+          chatId: 'group-1',
+          sourceType: MemorySourceType.message,
+          sourceText: 'Record $i',
+        );
+      }
+
+      final records = queries.getUnembeddedRecords();
+      for (var i = 0; i < records.length - 1; i++) {
+        expect(records[i].id, lessThan(records[i + 1].id));
+      }
+    });
+
+    test('includes both message and summary source types', () {
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Unembedded message',
+      );
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.summary,
+        sourceText: 'Unembedded summary',
+      );
+
+      final records = queries.getUnembeddedRecords();
+      expect(records, hasLength(2));
+      final types = records.map((r) => r.sourceType).toSet();
+      expect(types, containsAll([MemorySourceType.message, MemorySourceType.summary]));
+    });
+
+    test('returns empty list when all records have embeddings', () {
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'All good',
+        embedding: List.filled(512, 0.1),
+      );
+
+      final records = queries.getUnembeddedRecords();
+      expect(records, isEmpty);
+    });
+  });
+
   group('getEmbeddedMessageIds', () {
     test('returns set of message IDs with embeddings', () {
       queries.insertMemoryEmbedding(

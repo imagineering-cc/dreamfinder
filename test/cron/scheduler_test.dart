@@ -1,6 +1,7 @@
 import 'package:dreamfinder/src/cron/scheduler.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/queries.dart';
+import 'package:dreamfinder/src/memory/embedding_backfill.dart';
 import 'package:dreamfinder/src/memory/memory_consolidator.dart';
 import 'package:test/test.dart';
 
@@ -350,6 +351,64 @@ void main() {
       expect(consolidateCalled, isFalse);
     });
   });
+
+  group('Scheduler embedding backfill', () {
+    test('runs backfill before consolidation in daily window', () async {
+      final callOrder = <String>[];
+      final backfill = FakeEmbeddingBackfill(
+        onBackfill: () => callOrder.add('backfill'),
+      );
+      final consolidator = FakeMemoryConsolidator(
+        onConsolidate: () => callOrder.add('consolidate'),
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        backfill: backfill,
+        consolidator: consolidator,
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      expect(callOrder, equals(['backfill', 'consolidate']));
+    });
+
+    test('works without backfill when null', () async {
+      var consolidateCalled = false;
+      final consolidator = FakeMemoryConsolidator(
+        onConsolidate: () => consolidateCalled = true,
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        // No backfill provided.
+        consolidator: consolidator,
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      // Consolidator should still run.
+      expect(consolidateCalled, isTrue);
+    });
+  });
+}
+
+/// Fake backfill for scheduler tests.
+class FakeEmbeddingBackfill implements EmbeddingBackfill {
+  FakeEmbeddingBackfill({this.onBackfill});
+
+  final void Function()? onBackfill;
+
+  @override
+  int get batchLimit => 50;
+
+  @override
+  Future<int> backfill() async {
+    onBackfill?.call();
+    return 0;
+  }
 }
 
 /// Fake consolidator for scheduler tests.

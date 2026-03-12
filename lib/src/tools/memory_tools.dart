@@ -1,24 +1,29 @@
-/// Custom tool for explicit memory saves via natural language.
+/// Custom tools for the RAG memory system.
 ///
-/// The `save_memory` tool lets the agent store a piece of knowledge in the
-/// RAG memory system with an explicit visibility level, overriding the
-/// automatic chat-context-based default. Any user can ask the bot to
-/// "remember this everywhere" (or similar), and the agent calls this tool.
+/// - `save_memory`: Explicitly save information to long-term memory.
+/// - `search_memory`: Actively search past conversations and saved knowledge.
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../agent/tool_registry.dart';
 import '../memory/embedding_pipeline.dart';
 import '../memory/memory_record.dart';
+import '../memory/memory_retriever.dart';
 
 /// Registers memory tools with the [ToolRegistry].
 ///
-/// When [pipeline] is `null` (no `VOYAGE_API_KEY`), the tool is still
-/// registered but returns an error when invoked — this lets the agent
-/// explain the limitation to the user.
-void registerMemoryTools(ToolRegistry registry, EmbeddingPipeline? pipeline) {
+/// When [pipeline] is `null` (no `VOYAGE_API_KEY`), the save tool is still
+/// registered but returns an error when invoked — this lets the agent explain
+/// the limitation to the user. Same pattern for [retriever] and search.
+void registerMemoryTools(
+  ToolRegistry registry,
+  EmbeddingPipeline? pipeline,
+  MemoryRetriever? retriever,
+) {
   registry.registerCustomTool(_saveMemoryTool(registry, pipeline));
+  registry.registerCustomTool(_searchMemoryTool(registry, retriever));
 }
 
 CustomToolDef _saveMemoryTool(
@@ -83,6 +88,77 @@ CustomToolDef _saveMemoryTool(
         'success': true,
         'visibility': visibility.dbValue,
         'content_length': content.length,
+      });
+    },
+  );
+}
+
+CustomToolDef _searchMemoryTool(
+  ToolRegistry registry,
+  MemoryRetriever? retriever,
+) {
+  return CustomToolDef(
+    name: 'search_memory',
+    description: 'Search past conversations and saved knowledge from long-term '
+        'memory. Use this when passive recall does not surface what you need, '
+        'or when a user asks "do you remember..." or "what did we discuss '
+        'about...". Returns the most relevant memories ranked by similarity.',
+    inputSchema: const <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'query': <String, dynamic>{
+          'type': 'string',
+          'description':
+              'The search query — a natural language description of '
+                  'what you are looking for.',
+        },
+        'limit': <String, dynamic>{
+          'type': 'integer',
+          'description': 'Maximum number of results to return (1–10, '
+              'default 5).',
+        },
+      },
+      'required': <String>['query'],
+    },
+    handler: (args) async {
+      if (retriever == null) {
+        return jsonEncode(<String, dynamic>{
+          'error': 'Long-term memory search is not enabled — '
+              'the VOYAGE_API_KEY environment variable is not set.',
+        });
+      }
+
+      final query = (args['query'] as String).trim();
+      if (query.isEmpty) {
+        return jsonEncode(<String, dynamic>{
+          'error': 'Query is empty — nothing to search for.',
+        });
+      }
+
+      final rawLimit = args['limit'] as int? ?? 5;
+      final limit = math.min(rawLimit, 10).clamp(1, 10);
+
+      final ctx = registry.context;
+      final chatId = ctx?.chatId ?? 'unknown';
+
+      final results = await retriever.retrieve(
+        query,
+        chatId,
+        topK: limit,
+      );
+
+      return jsonEncode(<String, dynamic>{
+        'count': results.length,
+        'results': [
+          for (final r in results)
+            <String, dynamic>{
+              'source_text': r.record.sourceText,
+              'date': r.record.createdAt.split('T').first,
+              'score': double.parse(r.score.toStringAsFixed(3)),
+              'visibility': r.record.visibility.dbValue,
+              'source_type': r.record.sourceType.dbValue,
+            },
+        ],
       });
     },
   );
