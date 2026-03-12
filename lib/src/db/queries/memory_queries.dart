@@ -175,10 +175,10 @@ mixin MemoryQueries {
     return float32.toList();
   }
 
-  MemoryRecord _memoryFromRow(dynamic row) {
+  MemoryRecord _memoryFromRow(Map<String, Object?> row) {
     final embeddingBlob = row['embedding'];
     List<double>? embedding;
-    if (embeddingBlob != null && embeddingBlob is Uint8List) {
+    if (embeddingBlob is Uint8List) {
       embedding = _blobToDoubles(embeddingBlob);
     }
 

@@ -17,7 +17,13 @@ abstract class EmbeddingClient {
   /// Embeds a list of texts and returns their vector representations.
   ///
   /// Each inner list is a float vector of length [dimensions].
-  Future<List<List<double>>> embed(List<String> texts);
+  /// [inputType] controls how the embedding model treats the input:
+  /// - `'document'` for content being stored (default)
+  /// - `'query'` for search queries used in retrieval
+  Future<List<List<double>>> embed(
+    List<String> texts, {
+    String inputType = 'document',
+  });
 
   /// The dimensionality of the embedding vectors.
   int get dimensions;
@@ -48,7 +54,10 @@ class VoyageEmbeddingClient implements EmbeddingClient {
   int get dimensions => 512;
 
   @override
-  Future<List<List<double>>> embed(List<String> texts) async {
+  Future<List<List<double>>> embed(
+    List<String> texts, {
+    String inputType = 'document',
+  }) async {
     if (texts.isEmpty) return [];
 
     final response = await _httpClient.post(
@@ -60,7 +69,7 @@ class VoyageEmbeddingClient implements EmbeddingClient {
       body: jsonEncode({
         'model': model,
         'input': texts,
-        'input_type': 'document',
+        'input_type': inputType,
       }),
     );
 

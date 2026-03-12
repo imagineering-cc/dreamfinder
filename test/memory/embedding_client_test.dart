@@ -44,6 +44,32 @@ void main() {
       expect(body['input_type'], equals('document'));
     });
 
+    test('passes inputType to API request', () async {
+      String? capturedBody;
+
+      final mockClient = http_testing.MockClient((request) async {
+        capturedBody = request.body;
+        return http.Response(
+          jsonEncode({
+            'data': [
+              {'index': 0, 'embedding': List.filled(512, 0.1)},
+            ],
+          }),
+          200,
+        );
+      });
+
+      final client = VoyageEmbeddingClient(
+        apiKey: 'test-key',
+        httpClient: mockClient,
+      );
+
+      await client.embed(['search query'], inputType: 'query');
+
+      final body = jsonDecode(capturedBody!) as Map<String, dynamic>;
+      expect(body['input_type'], equals('query'));
+    });
+
     test('returns embeddings in input order', () async {
       final mockClient = http_testing.MockClient((request) async {
         // Simulate out-of-order response.

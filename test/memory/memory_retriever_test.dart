@@ -11,7 +11,10 @@ class FakeRetrievalClient implements EmbeddingClient {
   int get dimensions => 3;
 
   @override
-  Future<List<List<double>>> embed(List<String> texts) async {
+  Future<List<List<double>>> embed(
+    List<String> texts, {
+    String inputType = 'document',
+  }) async {
     if (shouldThrow) throw const EmbeddingException('network error');
     // Return a simple deterministic vector for each text.
     return [

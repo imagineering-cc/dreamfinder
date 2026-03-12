@@ -52,7 +52,10 @@ class MemoryRetriever {
     String chatId,
   ) async {
     try {
-      final queryEmbeddings = await _client.embed([query]);
+      final queryEmbeddings = await _client.embed(
+        [query],
+        inputType: 'query',
+      );
       if (queryEmbeddings.isEmpty) return [];
       final queryVec = queryEmbeddings.first;
 

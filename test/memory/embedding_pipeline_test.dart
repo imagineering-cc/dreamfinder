@@ -14,7 +14,10 @@ class FakeEmbeddingClient implements EmbeddingClient {
   int get dimensions => 512;
 
   @override
-  Future<List<List<double>>> embed(List<String> texts) async {
+  Future<List<List<double>>> embed(
+    List<String> texts, {
+    String inputType = 'document',
+  }) async {
     callCount++;
     if (shouldThrow) {
       throw const EmbeddingException('fake error');
