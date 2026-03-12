@@ -5,7 +5,6 @@
 library;
 
 import 'dart:convert';
-import 'dart:math' as math;
 
 import '../agent/tool_registry.dart';
 import '../memory/embedding_pipeline.dart';
@@ -135,8 +134,7 @@ CustomToolDef _searchMemoryTool(
         });
       }
 
-      final rawLimit = args['limit'] as int? ?? 5;
-      final limit = math.min(rawLimit, 10).clamp(1, 10);
+      final limit = (args['limit'] as int? ?? 5).clamp(1, 10);
 
       final ctx = registry.context;
       final chatId = ctx?.chatId ?? 'unknown';
