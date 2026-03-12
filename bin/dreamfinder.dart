@@ -21,8 +21,10 @@ import 'package:dreamfinder/src/logging/logger.dart';
 import 'package:dreamfinder/src/mcp/mcp_manager.dart';
 import 'package:dreamfinder/src/memory/embedding_client.dart';
 import 'package:dreamfinder/src/memory/embedding_pipeline.dart';
+import 'package:dreamfinder/src/memory/memory_consolidator.dart';
 import 'package:dreamfinder/src/memory/memory_record.dart';
 import 'package:dreamfinder/src/memory/memory_retriever.dart';
+import 'package:dreamfinder/src/memory/summarization_client.dart';
 import 'package:dreamfinder/src/signal/signal_client.dart';
 import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
 import 'package:dreamfinder/src/tools/chat_config_tools.dart';
@@ -126,6 +128,7 @@ Future<void> main() async {
   // Set up RAG memory system — optional, enabled when VOYAGE_API_KEY is set.
   EmbeddingPipeline? embeddingPipeline;
   MemoryRetriever? memoryRetriever;
+  MemoryConsolidator? memoryConsolidator;
 
   if (env.voyageEnabled) {
     final embeddingClient = VoyageEmbeddingClient(apiKey: env.voyageApiKey!);
@@ -137,6 +140,8 @@ Future<void> main() async {
       client: embeddingClient,
       loadMemories: (chatId) => queries.getVisibleMemories(chatId),
     );
+    // Consolidator will be fully wired after the Anthropic client is created
+    // (needs the summarization callback). Placeholder set below.
     log.info('RAG memory system enabled (Voyage AI)');
   } else {
     log.info('RAG memory system disabled (no VOYAGE_API_KEY)');
@@ -188,12 +193,62 @@ Future<void> main() async {
     embeddingPipeline: embeddingPipeline,
   );
 
+  // Wire up memory consolidator now that the Anthropic client exists.
+  if (env.voyageEnabled) {
+    final embeddingClient = VoyageEmbeddingClient(apiKey: env.voyageApiKey!);
+    final summarizer = SummarizationClient(
+      createSummarization: (prompt) async {
+        // Refresh OAuth token if needed (same pattern as agent loop).
+        if (oauthManager != null) {
+          final token = await oauthManager.getAccessToken();
+          if (token != _lastOAuthToken) {
+            _lastOAuthToken = token;
+            anthropicClient = anthropic.AnthropicClient(
+              apiKey: '',
+              headers: {
+                'Authorization': 'Bearer $token',
+                'anthropic-beta': 'oauth-2025-04-20',
+              },
+            );
+          }
+        }
+        final response = await anthropicClient.createMessage(
+          request: anthropic.CreateMessageRequest(
+            model: const anthropic.Model.modelId('claude-haiku-4-5-20251001'),
+            maxTokens: 512,
+            messages: [
+              anthropic.Message(
+                role: anthropic.MessageRole.user,
+                content: anthropic.MessageContent.text(prompt),
+              ),
+            ],
+          ),
+        );
+        // Extract text from response blocks.
+        final buffer = StringBuffer();
+        for (final block in response.content.blocks) {
+          if (block is anthropic.TextBlock) {
+            buffer.write(block.text);
+          }
+        }
+        return buffer.toString();
+      },
+    );
+    memoryConsolidator = MemoryConsolidator(
+      queries: queries,
+      summarizer: summarizer,
+      embeddingClient: embeddingClient,
+    );
+    log.info('Memory consolidator enabled');
+  }
+
   final rateLimiter = RateLimiter();
 
   final scheduler = Scheduler(
     queries: queries,
     sendMessage: (groupId, message) =>
         signalClient.sendMessage(recipient: groupId, message: message),
+    consolidator: memoryConsolidator,
     composeViaAgent: (groupId, taskDescription) async {
       final input = AgentInput(
         text: taskDescription,

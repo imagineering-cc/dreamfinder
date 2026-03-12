@@ -1,6 +1,7 @@
 import 'package:dreamfinder/src/cron/scheduler.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/queries.dart';
+import 'package:dreamfinder/src/memory/memory_consolidator.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -301,4 +302,70 @@ void main() {
       expect(queries.getLastReminder('card-old', 'group-1'), isNotNull);
     });
   });
+
+  group('Scheduler memory consolidation', () {
+    test('calls consolidate during daily cleanup window', () async {
+      var consolidateCalled = false;
+      final consolidator = FakeMemoryConsolidator(
+        onConsolidate: () => consolidateCalled = true,
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        consolidator: consolidator,
+      );
+
+      // Tick at 3:15 AM — cleanup window.
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      expect(consolidateCalled, isTrue);
+    });
+
+    test('skips consolidation when consolidator is null', () async {
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        // No consolidator.
+      );
+
+      // Should not throw.
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+    });
+
+    test('does not call consolidate before 3 AM', () async {
+      var consolidateCalled = false;
+      final consolidator = FakeMemoryConsolidator(
+        onConsolidate: () => consolidateCalled = true,
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        consolidator: consolidator,
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 2, 59));
+
+      expect(consolidateCalled, isFalse);
+    });
+  });
+}
+
+/// Fake consolidator for scheduler tests.
+class FakeMemoryConsolidator implements MemoryConsolidator {
+  FakeMemoryConsolidator({this.onConsolidate});
+
+  final void Function()? onConsolidate;
+
+  @override
+  int get batchSize => 20;
+
+  @override
+  int get minAgeHours => 48;
+
+  @override
+  Future<void> consolidate() async {
+    onConsolidate?.call();
+  }
 }

@@ -14,6 +14,7 @@ import 'dart:developer' as developer;
 
 import '../db/queries.dart';
 import '../db/schema.dart';
+import '../memory/memory_consolidator.dart';
 
 export '../db/schema.dart' show CalendarReminderWindow;
 
@@ -33,6 +34,7 @@ class Scheduler {
     required this.queries,
     required this.sendMessage,
     this.composeViaAgent,
+    this.consolidator,
   });
 
   final Queries queries;
@@ -42,6 +44,10 @@ class Scheduler {
   /// are composed by Claude in-character. Falls back to hardcoded text on
   /// exception or when null.
   final ComposeViaAgentFn? composeViaAgent;
+
+  /// Optional memory consolidator. When provided, runs during the daily
+  /// cleanup window to summarize old conversation embeddings.
+  final MemoryConsolidator? consolidator;
   Timer? _timer;
 
   /// Tracks the last date (YYYY-MM-DD) that data cleanup ran, to ensure
@@ -94,6 +100,7 @@ class Scheduler {
     if (now.hour >= 3 && _lastCleanupDate != todayStr) {
       _lastCleanupDate = todayStr;
       cleanOldData();
+      await consolidator?.consolidate();
     }
   }
 

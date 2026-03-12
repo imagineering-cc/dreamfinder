@@ -172,6 +172,232 @@ void main() {
     });
   });
 
+  group('getChatsWithUnconsolidatedMemories', () {
+    test('returns distinct chat IDs with message-type embeddings', () {
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Text 1',
+      );
+      queries.insertMemoryEmbedding(
+        chatId: 'group-2',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Text 2',
+      );
+      // Summary-type should not appear.
+      queries.insertMemoryEmbedding(
+        chatId: 'group-3',
+        sourceType: MemorySourceType.summary,
+        sourceText: 'Summary',
+      );
+
+      final chats = queries.getChatsWithUnconsolidatedMemories();
+      expect(chats, containsAll(['group-1', 'group-2']));
+      expect(chats, isNot(contains('group-3')));
+    });
+
+    test('returns empty list when no message embeddings exist', () {
+      final chats = queries.getChatsWithUnconsolidatedMemories();
+      expect(chats, isEmpty);
+    });
+  });
+
+  group('getUnconsolidatedMemories', () {
+    test('respects afterId filter', () {
+      final id1 = queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Old message',
+      );
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'New message',
+      );
+      // Backdate both records so they pass the age filter.
+      database.handle.execute(
+        "UPDATE memory_embeddings SET created_at = datetime('now', '-72 hours')",
+      );
+
+      final memories = queries.getUnconsolidatedMemories(
+        'group-1',
+        afterId: id1,
+        minAgeHours: 48,
+      );
+      expect(memories, hasLength(1));
+      expect(memories.first.sourceText, equals('New message'));
+    });
+
+    test('respects age filter', () {
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Recent message',
+      );
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Old message',
+      );
+      // Only backdate the second record.
+      database.handle.execute(
+        "UPDATE memory_embeddings SET created_at = datetime('now', '-72 hours') "
+        "WHERE source_text = 'Old message'",
+      );
+
+      final memories = queries.getUnconsolidatedMemories(
+        'group-1',
+        afterId: 0,
+        minAgeHours: 48,
+      );
+      expect(memories, hasLength(1));
+      expect(memories.first.sourceText, equals('Old message'));
+    });
+
+    test('only returns message-type records', () {
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Message',
+      );
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.summary,
+        sourceText: 'Summary',
+      );
+      database.handle.execute(
+        "UPDATE memory_embeddings SET created_at = datetime('now', '-72 hours')",
+      );
+
+      final memories = queries.getUnconsolidatedMemories(
+        'group-1',
+        afterId: 0,
+        minAgeHours: 48,
+      );
+      expect(memories, hasLength(1));
+      expect(memories.first.sourceType, equals(MemorySourceType.message));
+    });
+
+    test('returns results ordered by id ascending', () {
+      for (var i = 0; i < 5; i++) {
+        queries.insertMemoryEmbedding(
+          chatId: 'group-1',
+          sourceType: MemorySourceType.message,
+          sourceText: 'Message $i',
+        );
+      }
+      database.handle.execute(
+        "UPDATE memory_embeddings SET created_at = datetime('now', '-72 hours')",
+      );
+
+      final memories = queries.getUnconsolidatedMemories(
+        'group-1',
+        afterId: 0,
+        minAgeHours: 48,
+      );
+      for (var i = 0; i < memories.length - 1; i++) {
+        expect(memories[i].id, lessThan(memories[i + 1].id));
+      }
+    });
+  });
+
+  group('insertMemorySummary', () {
+    test('inserts and returns ID', () {
+      final id = queries.insertMemorySummary(
+        chatId: 'group-1',
+        summaryText: 'A concise summary of conversations.',
+        messageIdFrom: 1,
+        messageIdTo: 20,
+        messageCount: 20,
+      );
+
+      expect(id, greaterThan(0));
+
+      final rows = database.handle.select(
+        'SELECT * FROM memory_summaries WHERE id = ?',
+        [id],
+      );
+      expect(rows, hasLength(1));
+      expect(rows.first['chat_id'], equals('group-1'));
+      expect(rows.first['summary_text'],
+          equals('A concise summary of conversations.'));
+      expect(rows.first['message_id_from'], equals(1));
+      expect(rows.first['message_id_to'], equals(20));
+      expect(rows.first['message_count'], equals(20));
+    });
+  });
+
+  group('deleteMemoryEmbeddings', () {
+    test('deletes specified IDs and preserves others', () {
+      final id1 = queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Keep this',
+      );
+      final id2 = queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Delete this',
+      );
+      final id3 = queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Delete this too',
+      );
+
+      queries.deleteMemoryEmbeddings([id2, id3]);
+
+      expect(queries.countMemoryEmbeddings(), equals(1));
+
+      final remaining = database.handle.select(
+        'SELECT id FROM memory_embeddings',
+      );
+      expect(remaining.first['id'], equals(id1));
+    });
+
+    test('handles empty list gracefully', () {
+      queries.insertMemoryEmbedding(
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Should remain',
+      );
+
+      queries.deleteMemoryEmbeddings([]);
+      expect(queries.countMemoryEmbeddings(), equals(1));
+    });
+  });
+
+  group('runInTransaction', () {
+    test('commits on success', () {
+      queries.runInTransaction(() {
+        queries.insertMemoryEmbedding(
+          chatId: 'group-1',
+          sourceType: MemorySourceType.message,
+          sourceText: 'Inside transaction',
+        );
+      });
+
+      expect(queries.countMemoryEmbeddings(), equals(1));
+    });
+
+    test('rolls back on error', () {
+      try {
+        queries.runInTransaction(() {
+          queries.insertMemoryEmbedding(
+            chatId: 'group-1',
+            sourceType: MemorySourceType.message,
+            sourceText: 'Should be rolled back',
+          );
+          throw Exception('Deliberate failure');
+        });
+      } on Exception {
+        // Expected.
+      }
+
+      expect(queries.countMemoryEmbeddings(), equals(0));
+    });
+  });
+
   group('getEmbeddedMessageIds', () {
     test('returns set of message IDs with embeddings', () {
       queries.insertMemoryEmbedding(
