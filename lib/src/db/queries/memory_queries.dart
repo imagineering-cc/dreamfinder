@@ -111,6 +111,20 @@ mixin MemoryQueries {
     return [for (final row in rows) _memoryFromRow(row)];
   }
 
+  /// Returns memory records that have no embedding vector yet.
+  ///
+  /// These are records where the Voyage API call failed during initial
+  /// embedding (in [EmbeddingPipeline] or [MemoryConsolidator]). Ordered by
+  /// `id ASC` so the oldest orphans are retried first.
+  List<MemoryRecord> getUnembeddedRecords({int limit = 50}) {
+    final rows = db.handle.select(
+      'SELECT * FROM memory_embeddings WHERE embedding IS NULL '
+      'ORDER BY id ASC LIMIT ?',
+      [limit],
+    );
+    return [for (final row in rows) _memoryFromRow(row)];
+  }
+
   /// Returns the total number of memory embedding records.
   int countMemoryEmbeddings() {
     final rows = db.handle.select(

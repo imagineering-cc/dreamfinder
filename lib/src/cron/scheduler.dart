@@ -14,6 +14,7 @@ import 'dart:developer' as developer;
 
 import '../db/queries.dart';
 import '../db/schema.dart';
+import '../memory/embedding_backfill.dart';
 import '../memory/memory_consolidator.dart';
 
 export '../db/schema.dart' show CalendarReminderWindow;
@@ -34,6 +35,7 @@ class Scheduler {
     required this.queries,
     required this.sendMessage,
     this.composeViaAgent,
+    this.backfill,
     this.consolidator,
   });
 
@@ -44,6 +46,10 @@ class Scheduler {
   /// are composed by Claude in-character. Falls back to hardcoded text on
   /// exception or when null.
   final ComposeViaAgentFn? composeViaAgent;
+
+  /// Optional embedding backfill. When provided, retries null-embedding
+  /// records before consolidation in the daily cleanup window.
+  final EmbeddingBackfill? backfill;
 
   /// Optional memory consolidator. When provided, runs during the daily
   /// cleanup window to summarize old conversation embeddings.
@@ -100,6 +106,7 @@ class Scheduler {
     if (now.hour >= 3 && _lastCleanupDate != todayStr) {
       _lastCleanupDate = todayStr;
       cleanOldData();
+      await backfill?.backfill();
       await consolidator?.consolidate();
     }
   }

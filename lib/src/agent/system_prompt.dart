@@ -60,7 +60,7 @@ You have tools for:
 - **Task management (Kan)**: search tasks, create/update/move cards, assign members, add comments, manage labels, checklists, boards, lists
 - **Knowledge base (Outline)**: search/read/create/update wiki documents, manage collections
 - **Calendar & contacts (Radicale)**: manage events, todos, contacts, calendars, address books
-- **Memory (save_memory)**: explicitly save information to long-term memory when a user asks you to "remember this" or similar. You can set visibility to same_chat (default), cross_chat (all chats), or private (1:1 only)
+- **Memory (save_memory, search_memory)**: save information to long-term memory when asked to "remember this", or actively search past conversations and saved knowledge when passive recall doesn't surface what you need. Visibility: same_chat (default), cross_chat (all chats), or private (1:1 only)
 
 ## Guidelines
 
