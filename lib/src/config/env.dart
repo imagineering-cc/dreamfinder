@@ -14,6 +14,7 @@ class Env {
     this.radicaleBaseUrl,
     this.radicaleUsername,
     this.radicalePassword,
+    this.calendarUrl,
     this.adminUuids = const [],
     this.kanMcpPath,
     this.botName = 'Dreamfinder',
@@ -54,6 +55,7 @@ class Env {
       radicaleBaseUrl: dotEnv['RADICALE_BASE_URL'],
       radicaleUsername: dotEnv['RADICALE_USERNAME'],
       radicalePassword: dotEnv['RADICALE_PASSWORD'],
+      calendarUrl: dotEnv['CALENDAR_URL'],
       adminUuids: _parseList(dotEnv['ADMIN_UUIDS']),
       kanMcpPath: dotEnv['KAN_MCP_PATH'],
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
@@ -77,6 +79,7 @@ class Env {
     String? radicaleBaseUrl,
     String? radicaleUsername,
     String? radicalePassword,
+    String? calendarUrl,
     List<String> adminUuids = const [],
     String? kanMcpPath,
     String botName = 'Dreamfinder',
@@ -98,6 +101,7 @@ class Env {
         radicaleBaseUrl: radicaleBaseUrl,
         radicaleUsername: radicaleUsername,
         radicalePassword: radicalePassword,
+        calendarUrl: calendarUrl,
         adminUuids: adminUuids,
         kanMcpPath: kanMcpPath,
         botName: botName,
@@ -127,6 +131,12 @@ class Env {
   final String? radicaleBaseUrl;
   final String? radicaleUsername;
   final String? radicalePassword;
+
+  /// Full CalDAV URL to query for upcoming events (e.g.,
+  /// `https://dav.example.com/user/calendar/`). If null, calendar event
+  /// awareness is disabled.
+  final String? calendarUrl;
+
   /// Signal UUIDs that have admin privileges (from `ADMIN_UUIDS` env var).
   final List<String> adminUuids;
 

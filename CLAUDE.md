@@ -12,12 +12,13 @@ API, no message editing, no inline keyboards, and stricter rate limiting.
 
 **Status**: Active sprint — end-to-end bot is runnable. Signal client, agent loop,
 conversation history (DB-backed), tool registry, MCP manager, system prompt, SQLite
-persistence (13 domain tables), custom tools (identity + chat config), standup
-orchestration, deploy announcements, OAuth auth, and RAG-based long-term memory are
-implemented with 349+ tests. Speed is a primary concern. Prefer working code over
-perfect abstractions. Skip plan mode for straightforward tasks, minimize
-over-engineering, and keep momentum high. Still respect correctness and type safety,
-but bias toward shipping.
+persistence (13 domain tables), custom tools (identity + chat config + memory),
+standup orchestration, deploy announcements, OAuth auth, RAG-based long-term
+memory (all 4 phases complete), and calendar event awareness are implemented
+with 427+ tests. Speed is a primary
+concern. Prefer working code over perfect abstractions. Skip plan mode for
+straightforward tasks, minimize over-engineering, and keep momentum high. Still
+respect correctness and type safety, but bias toward shipping.
 
 ## Tech Stack
 
@@ -79,6 +80,7 @@ RADICALE_BASE_URL=            # Radicale CalDAV/CardDAV server URL
 RADICALE_USERNAME=            # Radicale auth username
 RADICALE_PASSWORD=            # Radicale auth password
 VOYAGE_API_KEY=               # Voyage AI key for RAG memory embeddings (optional)
+CALENDAR_URL=                 # CalDAV calendar URL for event awareness (optional)
 BOT_NAME=                     # Display name (default: "Dreamfinder")
 DATABASE_PATH=                # SQLite path (default: ./data/bot.db)
 LOG_LEVEL=                    # Logging level (default: info)
@@ -139,3 +141,29 @@ LOG_LEVEL=                    # Logging level (default: info)
 - Branch naming: `feat/description`, `fix/description`, `chore/description`.
 - **Always work on a feature branch** — never commit directly to `main`. Create a
   new branch before starting work, even for small changes.
+
+## Future Directions
+
+Prioritized by value/effort ratio. These are the next features to build.
+
+### 1. Timezone support for standup prompts
+The only TODO in the codebase (`scheduler.dart`). Standup prompts currently fire at
+server-local time (UTC on GCP), not the configured group timezone. A team in AEST
+gets their 9am prompt at 7pm. Requires the `timezone` package to convert `now` before
+comparing against `config.promptHour`.
+
+### 2. ~~Calendar event awareness~~ (DONE)
+Upcoming events from the Radicale calendar are injected into the system prompt
+alongside memories. Set `CALENDAR_URL` to enable. The `CalendarRetriever` fetches
+events via MCP with a 7-day lookahead on every message.
+
+### 3. Proactive task nudges
+The scheduler + Kan MCP tools exist but Dreamfinder never proactively reminds about
+overdue or stale cards. Add a scheduled job that queries Kan for overdue tasks and
+sends reminder messages via the agent loop (in-character). The `sent_reminders` table
+already tracks dedup for this — it just needs to be wired up.
+
+### 4. sqlite-vec migration (deferred)
+Brute-force cosine similarity is <10ms for 10K vectors. Only revisit if the memory
+store exceeds ~100K records. The current design doesn't paint us into a corner — the
+swap is well-contained in `getVisibleMemories` + the retriever's scoring loop.
