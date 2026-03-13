@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:anthropic_sdk_dart/anthropic_sdk_dart.dart' as anthropic;
 
 import 'package:dreamfinder/src/agent/agent_loop.dart';
+import 'package:dreamfinder/src/agent/calendar_retriever.dart';
 import 'package:dreamfinder/src/agent/conversation_history.dart';
 import 'package:dreamfinder/src/agent/system_prompt.dart';
 import 'package:dreamfinder/src/agent/tool_registry.dart';
@@ -114,6 +115,17 @@ Future<void> main() async {
 
   final serverNames = mcpManager.getServerNames();
   log.info('MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}');
+
+  // Set up calendar event awareness — optional, enabled when CALENDAR_URL is
+  // set and Radicale MCP is running.
+  CalendarRetriever? calendarRetriever;
+  if (env.calendarUrl != null && env.radicaleEnabled) {
+    calendarRetriever = CalendarRetriever(
+      mcpManager: mcpManager,
+      calendarUrl: env.calendarUrl!,
+    );
+    log.info('Calendar awareness enabled', extra: {'url': env.calendarUrl});
+  }
 
   final queries = Queries(database);
 
@@ -419,6 +431,11 @@ Future<void> main() async {
                 )
               : <MemorySearchResult>[];
 
+          // Fetch upcoming calendar events for awareness.
+          final events = calendarRetriever != null
+              ? await calendarRetriever.fetchUpcoming()
+              : <CalendarEvent>[];
+
           final response = await agentLoop.processMessage(
             input,
             systemPrompt: buildSystemPrompt(
@@ -426,6 +443,9 @@ Future<void> main() async {
               botName: env.botName,
               identity: queries.getBotIdentity(),
               memories: memories,
+              events: events,
+              eventTimeZoneOffset:
+                  Duration(hours: env.eventTimeZoneOffsetHours),
             ),
           );
           health.recordClaudeSuccess();

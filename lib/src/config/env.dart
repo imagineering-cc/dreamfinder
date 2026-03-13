@@ -14,6 +14,8 @@ class Env {
     this.radicaleBaseUrl,
     this.radicaleUsername,
     this.radicalePassword,
+    this.calendarUrl,
+    this.eventTimeZoneOffsetHours = 0,
     this.adminUuids = const [],
     this.kanMcpPath,
     this.botName = 'Dreamfinder',
@@ -54,6 +56,9 @@ class Env {
       radicaleBaseUrl: dotEnv['RADICALE_BASE_URL'],
       radicaleUsername: dotEnv['RADICALE_USERNAME'],
       radicalePassword: dotEnv['RADICALE_PASSWORD'],
+      calendarUrl: dotEnv['CALENDAR_URL'],
+      eventTimeZoneOffsetHours:
+          int.tryParse(dotEnv['EVENT_TIMEZONE_OFFSET_HOURS'] ?? '') ?? 0,
       adminUuids: _parseList(dotEnv['ADMIN_UUIDS']),
       kanMcpPath: dotEnv['KAN_MCP_PATH'],
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
@@ -77,6 +82,8 @@ class Env {
     String? radicaleBaseUrl,
     String? radicaleUsername,
     String? radicalePassword,
+    String? calendarUrl,
+    int eventTimeZoneOffsetHours = 0,
     List<String> adminUuids = const [],
     String? kanMcpPath,
     String botName = 'Dreamfinder',
@@ -98,6 +105,8 @@ class Env {
         radicaleBaseUrl: radicaleBaseUrl,
         radicaleUsername: radicaleUsername,
         radicalePassword: radicalePassword,
+        calendarUrl: calendarUrl,
+        eventTimeZoneOffsetHours: eventTimeZoneOffsetHours,
         adminUuids: adminUuids,
         kanMcpPath: kanMcpPath,
         botName: botName,
@@ -127,6 +136,16 @@ class Env {
   final String? radicaleBaseUrl;
   final String? radicaleUsername;
   final String? radicalePassword;
+
+  /// Full CalDAV URL to query for upcoming events (e.g.,
+  /// `https://dav.example.com/user/calendar/`). If null, calendar event
+  /// awareness is disabled.
+  final String? calendarUrl;
+
+  /// UTC offset (in hours) for displaying event times in the system prompt.
+  /// Radicale returns UTC; this converts to local time. Default: 0 (UTC).
+  final int eventTimeZoneOffsetHours;
+
   /// Signal UUIDs that have admin privileges (from `ADMIN_UUIDS` env var).
   final List<String> adminUuids;
 

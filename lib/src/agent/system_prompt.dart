@@ -2,6 +2,34 @@ import '../db/schema.dart';
 import '../memory/memory_record.dart';
 import 'agent_loop.dart';
 
+/// A calendar event to inject into the system prompt for awareness.
+class CalendarEvent {
+  const CalendarEvent({
+    required this.summary,
+    required this.start,
+    this.end,
+    this.location,
+    this.description,
+  });
+
+  /// Parses a calendar event from the JSON returned by the Radicale MCP server.
+  factory CalendarEvent.fromJson(Map<String, dynamic> json) {
+    return CalendarEvent(
+      summary: json['summary'] as String? ?? '(untitled)',
+      start: json['start'] as String,
+      end: json['end'] as String?,
+      location: json['location'] as String?,
+      description: json['description'] as String?,
+    );
+  }
+
+  final String summary;
+  final String start;
+  final String? end;
+  final String? location;
+  final String? description;
+}
+
 /// Builds the dynamic system prompt for the Claude agent loop.
 ///
 /// Adapted for Signal: no Telegram Markdown, no inline keyboards,
@@ -9,11 +37,16 @@ import 'agent_loop.dart';
 ///
 /// When [identity] is provided, the bot's name, pronouns, and tone are
 /// sourced from the database. Otherwise, defaults are used.
+///
+/// When [events] is provided, upcoming calendar events are injected so the
+/// agent can reference them naturally in conversation.
 String buildSystemPrompt(
   AgentInput input, {
   String botName = 'Dreamfinder',
   BotIdentityRecord? identity,
   List<MemorySearchResult> memories = const [],
+  List<CalendarEvent> events = const [],
+  Duration eventTimeZoneOffset = Duration.zero,
 }) {
   final name = identity?.name ?? botName;
   final pronouns = identity?.pronouns ?? 'they/them';
@@ -89,6 +122,30 @@ You have tools for:
               ? 'this chat'
               : 'another chat';
       parts.add('[$date, $chatLabel] ${record.sourceText}\n');
+    }
+  }
+
+  if (events.isNotEmpty) {
+    parts.add('\n## Upcoming Events\n');
+    parts.add(
+      'These are upcoming calendar events. Reference them naturally if '
+      'relevant — e.g., "you have a meetup tomorrow" or "the Bendigo trip '
+      'is this Saturday."\n',
+    );
+    for (final event in events) {
+      final start = DateTime.tryParse(event.start);
+      if (start == null) continue;
+      final local = start.toUtc().add(eventTimeZoneOffset);
+      final dateStr =
+          '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+          '${local.day.toString().padLeft(2, '0')}';
+      final timeStr =
+          '${local.hour.toString().padLeft(2, '0')}:'
+          '${local.minute.toString().padLeft(2, '0')}';
+      final loc = event.location;
+      final locationStr =
+          loc != null && loc.isNotEmpty ? ' — $loc' : '';
+      parts.add('- [$dateStr $timeStr] ${event.summary}$locationStr\n');
     }
   }
 
