@@ -81,7 +81,7 @@ RADICALE_USERNAME=            # Radicale auth username
 RADICALE_PASSWORD=            # Radicale auth password
 VOYAGE_API_KEY=               # Voyage AI key for RAG memory embeddings (optional)
 CALENDAR_URL=                 # CalDAV calendar URL for event awareness (optional)
-EVENT_TIMEZONE_OFFSET_HOURS=  # UTC offset for event display (default: 0)
+EVENT_TIMEZONE=               # IANA timezone for event display (e.g., Australia/Melbourne)
 BOT_NAME=                     # Display name (default: "Dreamfinder")
 DATABASE_PATH=                # SQLite path (default: ./data/bot.db)
 LOG_LEVEL=                    # Logging level (default: info)
@@ -147,11 +147,10 @@ LOG_LEVEL=                    # Logging level (default: info)
 
 Prioritized by value/effort ratio. These are the next features to build.
 
-### 1. Timezone support for standup prompts
-The only TODO in the codebase (`scheduler.dart`). Standup prompts currently fire at
-server-local time (UTC on GCP), not the configured group timezone. A team in AEST
-gets their 9am prompt at 7pm. Requires the `timezone` package to convert `now` before
-comparing against `config.promptHour`.
+### 1. ~~Timezone support for standup prompts~~ (DONE)
+The `timezone` package converts server UTC to the group's configured IANA timezone
+before comparing against `config.promptHour`. Weekend checks and session dedup also
+use local time. Calendar event display in the system prompt uses `EVENT_TIMEZONE`.
 
 ### 2. ~~Calendar event awareness~~ (DONE)
 Upcoming events from the Radicale calendar are injected into the system prompt

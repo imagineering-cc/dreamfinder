@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:anthropic_sdk_dart/anthropic_sdk_dart.dart' as anthropic;
+import 'package:timezone/data/latest.dart' as tzdata;
 
 import 'package:dreamfinder/src/agent/agent_loop.dart';
 import 'package:dreamfinder/src/agent/calendar_retriever.dart';
@@ -38,6 +39,7 @@ import 'package:dreamfinder/src/tools/standup_tools.dart';
 const _pollIntervalSeconds = 1;
 
 Future<void> main() async {
+  tzdata.initializeTimeZones();
   final env = Env.load();
   final log = BotLogger(
     name: 'Main',
@@ -444,8 +446,7 @@ Future<void> main() async {
               identity: queries.getBotIdentity(),
               memories: memories,
               events: events,
-              eventTimeZoneOffset:
-                  Duration(hours: env.eventTimeZoneOffsetHours),
+              eventTimeZone: env.eventTimeZone,
             ),
           );
           health.recordClaudeSuccess();

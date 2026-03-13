@@ -15,7 +15,7 @@ class Env {
     this.radicaleUsername,
     this.radicalePassword,
     this.calendarUrl,
-    this.eventTimeZoneOffsetHours = 0,
+    this.eventTimeZone,
     this.adminUuids = const [],
     this.kanMcpPath,
     this.botName = 'Dreamfinder',
@@ -57,8 +57,7 @@ class Env {
       radicaleUsername: dotEnv['RADICALE_USERNAME'],
       radicalePassword: dotEnv['RADICALE_PASSWORD'],
       calendarUrl: dotEnv['CALENDAR_URL'],
-      eventTimeZoneOffsetHours:
-          int.tryParse(dotEnv['EVENT_TIMEZONE_OFFSET_HOURS'] ?? '') ?? 0,
+      eventTimeZone: dotEnv['EVENT_TIMEZONE'],
       adminUuids: _parseList(dotEnv['ADMIN_UUIDS']),
       kanMcpPath: dotEnv['KAN_MCP_PATH'],
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
@@ -83,7 +82,7 @@ class Env {
     String? radicaleUsername,
     String? radicalePassword,
     String? calendarUrl,
-    int eventTimeZoneOffsetHours = 0,
+    String? eventTimeZone,
     List<String> adminUuids = const [],
     String? kanMcpPath,
     String botName = 'Dreamfinder',
@@ -106,7 +105,7 @@ class Env {
         radicaleUsername: radicaleUsername,
         radicalePassword: radicalePassword,
         calendarUrl: calendarUrl,
-        eventTimeZoneOffsetHours: eventTimeZoneOffsetHours,
+        eventTimeZone: eventTimeZone,
         adminUuids: adminUuids,
         kanMcpPath: kanMcpPath,
         botName: botName,
@@ -142,9 +141,9 @@ class Env {
   /// awareness is disabled.
   final String? calendarUrl;
 
-  /// UTC offset (in hours) for displaying event times in the system prompt.
-  /// Radicale returns UTC; this converts to local time. Default: 0 (UTC).
-  final int eventTimeZoneOffsetHours;
+  /// IANA timezone for displaying event times in the system prompt (e.g.,
+  /// `Australia/Melbourne`). If null, times are displayed in UTC.
+  final String? eventTimeZone;
 
   /// Signal UUIDs that have admin privileges (from `ADMIN_UUIDS` env var).
   final List<String> adminUuids;

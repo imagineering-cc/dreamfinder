@@ -1,3 +1,5 @@
+import 'package:timezone/timezone.dart' as tz;
+
 import '../db/schema.dart';
 import '../memory/memory_record.dart';
 import 'agent_loop.dart';
@@ -46,7 +48,7 @@ String buildSystemPrompt(
   BotIdentityRecord? identity,
   List<MemorySearchResult> memories = const [],
   List<CalendarEvent> events = const [],
-  Duration eventTimeZoneOffset = Duration.zero,
+  String? eventTimeZone,
 }) {
   final name = identity?.name ?? botName;
   final pronouns = identity?.pronouns ?? 'they/them';
@@ -132,10 +134,25 @@ You have tools for:
       'relevant — e.g., "you have a meetup tomorrow" or "the Bendigo trip '
       'is this Saturday."\n',
     );
+    // Resolve timezone location once for all events.
+    tz.Location? location;
+    if (eventTimeZone != null) {
+      try {
+        location = tz.getLocation(eventTimeZone);
+      } on Exception {
+        // Invalid timezone — fall through to UTC.
+      }
+    }
+
     for (final event in events) {
       final start = DateTime.tryParse(event.start);
       if (start == null) continue;
-      final local = start.toUtc().add(eventTimeZoneOffset);
+      final DateTime local;
+      if (location != null) {
+        local = tz.TZDateTime.from(start.toUtc(), location);
+      } else {
+        local = start.toUtc();
+      }
       final dateStr =
           '${local.year}-${local.month.toString().padLeft(2, '0')}-'
           '${local.day.toString().padLeft(2, '0')}';

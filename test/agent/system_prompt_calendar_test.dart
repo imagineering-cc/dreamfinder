@@ -1,8 +1,11 @@
 import 'package:dreamfinder/src/agent/agent_loop.dart';
 import 'package:dreamfinder/src/agent/system_prompt.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:test/test.dart';
 
 void main() {
+  setUpAll(() => tzdata.initializeTimeZones());
+
   group('buildSystemPrompt — calendar events', () {
     const input = AgentInput(
       text: 'What do we have coming up?',
@@ -31,7 +34,7 @@ void main() {
       final prompt = buildSystemPrompt(
         input,
         events: events,
-        eventTimeZoneOffset: const Duration(hours: 11),
+        eventTimeZone: 'Australia/Melbourne',
       );
 
       expect(prompt, contains('## Upcoming Events'));
@@ -85,8 +88,8 @@ void main() {
       expect(eventsIndex, lessThan(reminderIndex));
     });
 
-    test('applies timezone offset to display times', () {
-      // Event at 2026-03-13T23:00:00Z = 2026-03-14T10:00:00 AEDT (+11)
+    test('applies IANA timezone to display times', () {
+      // Event at 2026-03-13T23:00:00Z = 2026-03-14T10:00:00 AEDT
       final events = [
         const CalendarEvent(
           summary: 'Bendigo Day Trip',
@@ -97,7 +100,7 @@ void main() {
       final prompt = buildSystemPrompt(
         input,
         events: events,
-        eventTimeZoneOffset: const Duration(hours: 11),
+        eventTimeZone: 'Australia/Melbourne',
       );
 
       // Should show local date/time (Mar 14 at 10:00), not UTC (Mar 13 at 23:00).
@@ -105,7 +108,7 @@ void main() {
       expect(prompt, isNot(contains('23:00')));
     });
 
-    test('defaults to UTC when no timezone offset provided', () {
+    test('defaults to UTC when no timezone provided', () {
       final events = [
         const CalendarEvent(
           summary: 'Bendigo Day Trip',
@@ -116,6 +119,25 @@ void main() {
       final prompt = buildSystemPrompt(input, events: events);
 
       expect(prompt, contains('[2026-03-13 23:00]'));
+    });
+
+    test('handles DST transitions correctly', () {
+      // April 5, 2026 — AEST (+10) not AEDT (+11).
+      // 2026-04-04T23:00:00Z = 2026-04-05T09:00:00 AEST.
+      final events = [
+        const CalendarEvent(
+          summary: 'Post-DST Event',
+          start: '2026-04-04T23:00:00.000Z',
+        ),
+      ];
+
+      final prompt = buildSystemPrompt(
+        input,
+        events: events,
+        eventTimeZone: 'Australia/Melbourne',
+      );
+
+      expect(prompt, contains('[2026-04-05 09:00]'));
     });
 
     test('skips events with malformed start dates', () {
@@ -134,6 +156,24 @@ void main() {
 
       expect(prompt, contains('Good Event'));
       expect(prompt, isNot(contains('Bad Event')));
+    });
+
+    test('falls back to UTC for invalid timezone', () {
+      final events = [
+        const CalendarEvent(
+          summary: 'Test Event',
+          start: '2026-03-13T23:00:00.000Z',
+        ),
+      ];
+
+      final prompt = buildSystemPrompt(
+        input,
+        events: events,
+        eventTimeZone: 'Invalid/Timezone',
+      );
+
+      // Should show UTC time since timezone is invalid.
+      expect(prompt, contains('[2026-03-13 23:00]'));
     });
   });
 }

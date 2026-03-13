@@ -12,6 +12,9 @@ library;
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:timezone/data/latest.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
+
 import '../db/queries.dart';
 import '../db/schema.dart';
 import '../memory/embedding_backfill.dart';
@@ -62,10 +65,20 @@ class Scheduler {
 
   /// Starts the scheduler, ticking every 60 seconds.
   void start() {
+    _ensureTimeZonesInitialized();
     _timer = Timer.periodic(
       const Duration(seconds: 60),
       (_) => tick(DateTime.now()),
     );
+  }
+
+  static bool _timeZonesInitialized = false;
+
+  static void _ensureTimeZonesInitialized() {
+    if (!_timeZonesInitialized) {
+      tzdata.initializeTimeZones();
+      _timeZonesInitialized = true;
+    }
   }
 
   /// Stops the scheduler.
@@ -78,20 +91,21 @@ class Scheduler {
   ///
   /// Public so tests can call it directly with a controlled timestamp.
   Future<void> tick(DateTime now) async {
+    _ensureTimeZonesInitialized();
     final configs = queries.getAllStandupConfigs();
     for (final config in configs) {
       if (!config.enabled) continue;
 
-      // Skip weekends if configured.
-      if (config.skipWeekends && _isWeekend(now)) continue;
+      // Convert server time to the group's configured timezone.
+      final localNow = _toLocalTime(now, config.timezone);
 
-      final today = _dateString(now);
+      // Skip weekends if configured (using local date).
+      if (config.skipWeekends && _isWeekend(localNow)) continue;
 
-      // Check if it's prompt hour and no session exists yet today.
-      // TODO(timezone): Convert `now` to `config.timezone` before comparing.
-      // Currently uses server-local time; the timezone field is stored but
-      // not yet applied. Add the `timezone` package when needed.
-      if (now.hour == config.promptHour) {
+      final today = _dateString(localNow);
+
+      // Check if it's prompt hour in the local timezone.
+      if (localNow.hour == config.promptHour) {
         final existingSession =
             queries.getActiveStandupSession(config.signalGroupId, today);
         if (existingSession == null) {
@@ -167,9 +181,28 @@ class Scheduler {
     queries.cleanOldCalendarReminders(olderThanDays: 7);
   }
 
+  /// Converts [dt] to the given IANA [timezone]. Falls back to UTC if the
+  /// timezone name is invalid.
+  DateTime _toLocalTime(DateTime dt, String timezone) {
+    try {
+      final location = tz.getLocation(timezone);
+      final local = tz.TZDateTime.from(dt.toUtc(), location);
+      return local;
+    } on Exception {
+      developer.log(
+        'Unknown timezone "$timezone", falling back to UTC',
+        name: 'Scheduler',
+        level: 900,
+      );
+      return dt.toUtc();
+    }
+  }
+
   bool _isWeekend(DateTime dt) =>
       dt.weekday == DateTime.saturday || dt.weekday == DateTime.sunday;
 
-  String _dateString(DateTime dt) => dt.toIso8601String().substring(0, 10);
+  String _dateString(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
+      '${dt.day.toString().padLeft(2, '0')}';
 }
 
