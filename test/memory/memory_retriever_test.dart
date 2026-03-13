@@ -180,6 +180,76 @@ void main() {
     expect(results.every((r) => r.record.embedding != null), isTrue);
   });
 
+  test('skipRecentMinutes filters out recent memories', () async {
+    final now = DateTime.now();
+    final recentTime = now.subtract(const Duration(minutes: 10)).toIso8601String();
+    final oldTime = now.subtract(const Duration(hours: 2)).toIso8601String();
+
+    final records = [
+      MemoryRecord(
+        id: 1,
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Recent Dawn Gate discussion',
+        visibility: MemoryVisibility.sameChat,
+        embedding: [1.0, 0.0, 0.0],
+        createdAt: recentTime, // 10 minutes ago — in sliding window
+      ),
+      MemoryRecord(
+        id: 2,
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Old Dawn Gate lore from last week',
+        visibility: MemoryVisibility.sameChat,
+        embedding: [0.95, 0.05, 0.0],
+        createdAt: oldTime, // 2 hours ago — not in window
+      ),
+    ];
+
+    final retriever = MemoryRetriever(
+      client: fakeClient,
+      loadMemories: (_) => records,
+      minScore: 0.0,
+    );
+
+    // With skipRecentMinutes=60, the 10-min-old record should be excluded.
+    final results = await retriever.retrieve(
+      'Dawn Gate',
+      'group-1',
+      skipRecentMinutes: 60,
+    );
+
+    expect(results, hasLength(1));
+    expect(results.first.record.id, equals(2));
+  });
+
+  test('skipRecentMinutes defaults to null (no filtering)', () async {
+    final now = DateTime.now();
+    final recentTime = now.subtract(const Duration(minutes: 5)).toIso8601String();
+
+    final records = [
+      MemoryRecord(
+        id: 1,
+        chatId: 'group-1',
+        sourceType: MemorySourceType.message,
+        sourceText: 'Very recent Dawn Gate chat',
+        visibility: MemoryVisibility.sameChat,
+        embedding: [1.0, 0.0, 0.0],
+        createdAt: recentTime,
+      ),
+    ];
+
+    final retriever = MemoryRetriever(
+      client: fakeClient,
+      loadMemories: (_) => records,
+      minScore: 0.0,
+    );
+
+    // Without skipRecentMinutes, recent records should be included.
+    final results = await retriever.retrieve('Dawn Gate', 'group-1');
+    expect(results, hasLength(1));
+  });
+
   test('topK override returns more than default', () async {
     final retriever = MemoryRetriever(
       client: fakeClient,

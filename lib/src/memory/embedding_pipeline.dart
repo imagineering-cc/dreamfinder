@@ -35,11 +35,14 @@ class EmbeddingPipeline {
   EmbeddingPipeline({
     required EmbeddingClient client,
     required MemoryQueryAccessor queries,
+    String botName = 'Dreamfinder',
   })  : _client = client,
-        _queries = queries;
+        _queries = queries,
+        _botName = botName;
 
   final EmbeddingClient _client;
   final MemoryQueryAccessor _queries;
+  final String _botName;
 
   /// Queues a user+assistant turn for embedding.
   ///
@@ -57,7 +60,7 @@ class EmbeddingPipeline {
     MemoryVisibility visibility = MemoryVisibility.sameChat,
   }) {
     final sourceText = '${senderName ?? "User"}: $userText\n'
-        'Dreamfinder: $assistantText';
+        '$_botName: $assistantText';
 
     // Skip trivially short conversations.
     if (userText.length < _minSourceLength &&

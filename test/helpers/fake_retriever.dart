@@ -30,6 +30,7 @@ class FakeRetriever extends MemoryRetriever {
     String query,
     String chatId, {
     int? topK,
+    int? skipRecentMinutes,
   }) async {
     lastQuery = query;
     lastChatId = chatId;

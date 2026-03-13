@@ -48,10 +48,16 @@ class MemoryRetriever {
   /// Returns up to [topK] results (defaults to the constructor's value) sorted
   /// by descending similarity score. Returns an empty list if embedding fails
   /// (graceful degradation).
+  ///
+  /// When [skipRecentMinutes] is provided, memories created within that many
+  /// minutes of the current time are excluded. This prevents injecting memories
+  /// that are already present in the sliding conversation window, avoiding
+  /// redundant context that wastes tokens.
   Future<List<MemorySearchResult>> retrieve(
     String query,
     String chatId, {
     int? topK,
+    int? skipRecentMinutes,
   }) async {
     try {
       final queryEmbeddings = await _client.embed(
@@ -64,9 +70,20 @@ class MemoryRetriever {
       final candidates = _loadMemories(chatId);
       if (candidates.isEmpty) return [];
 
+      final cutoff = skipRecentMinutes != null
+          ? DateTime.now().subtract(Duration(minutes: skipRecentMinutes))
+          : null;
+
       final scored = <MemorySearchResult>[];
       for (final record in candidates) {
         if (record.embedding == null) continue;
+
+        // Skip memories that are likely still in the sliding window.
+        if (cutoff != null) {
+          final createdAt = DateTime.tryParse(record.createdAt);
+          if (createdAt != null && createdAt.isAfter(cutoff)) continue;
+        }
+
         final score = _cosineSimilarity(queryVec, record.embedding!);
         if (score >= _minScore) {
           scored.add(MemorySearchResult(record: record, score: score));

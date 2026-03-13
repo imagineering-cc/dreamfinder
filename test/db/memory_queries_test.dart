@@ -153,6 +153,25 @@ void main() {
       final visible = queries.getVisibleMemories('dm-alice');
       expect(visible, hasLength(1));
     });
+
+    test('respects limit parameter', () {
+      for (var i = 0; i < 20; i++) {
+        queries.insertMemoryEmbedding(
+          chatId: 'group-1',
+          sourceType: MemorySourceType.message,
+          sourceText: 'Memory $i',
+          visibility: MemoryVisibility.sameChat,
+          embedding: List.filled(512, 0.1),
+        );
+      }
+
+      final visible = queries.getVisibleMemories('group-1', limit: 5);
+      expect(visible, hasLength(5));
+
+      // Default should return all (up to the default limit).
+      final allVisible = queries.getVisibleMemories('group-1');
+      expect(allVisible, hasLength(20));
+    });
   });
 
   group('consolidation state', () {

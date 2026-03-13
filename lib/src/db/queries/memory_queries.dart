@@ -97,7 +97,10 @@ mixin MemoryQueries {
   ///
   /// In practice, same_chat and private both filter by chat_id — the
   /// distinction matters for 1:1 vs group chats at the assignment level.
-  List<MemoryRecord> getVisibleMemories(String queryChatId) {
+  List<MemoryRecord> getVisibleMemories(
+    String queryChatId, {
+    int limit = 1000,
+  }) {
     final rows = db.handle.select(
       '''SELECT * FROM memory_embeddings
          WHERE embedding IS NOT NULL
@@ -105,8 +108,9 @@ mixin MemoryQueries {
            visibility = 'cross_chat'
            OR chat_id = ?
          )
-         ORDER BY created_at DESC''',
-      [queryChatId],
+         ORDER BY created_at DESC
+         LIMIT ?''',
+      [queryChatId, limit],
     );
     return [for (final row in rows) _memoryFromRow(row)];
   }

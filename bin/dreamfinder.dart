@@ -138,6 +138,7 @@ Future<void> main() async {
     embeddingPipeline = EmbeddingPipeline(
       client: voyageClient,
       queries: queries,
+      botName: env.botName,
     );
     memoryRetriever = MemoryRetriever(
       client: voyageClient,
@@ -408,8 +409,14 @@ Future<void> main() async {
           );
 
           // Retrieve relevant long-term memories for context injection.
+          // Skip memories from the last 30 minutes — those are likely still
+          // in the sliding conversation window and would waste tokens.
           final memories = memoryRetriever != null
-              ? await memoryRetriever.retrieve(text, envelope.chatId)
+              ? await memoryRetriever.retrieve(
+                  text,
+                  envelope.chatId,
+                  skipRecentMinutes: 30,
+                )
               : <MemorySearchResult>[];
 
           final response = await agentLoop.processMessage(
