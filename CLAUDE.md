@@ -81,6 +81,7 @@ RADICALE_USERNAME=            # Radicale auth username
 RADICALE_PASSWORD=            # Radicale auth password
 VOYAGE_API_KEY=               # Voyage AI key for RAG memory embeddings (optional)
 CALENDAR_URL=                 # CalDAV calendar URL for event awareness (optional)
+EVENT_TIMEZONE_OFFSET_HOURS=  # UTC offset for event display (default: 0)
 BOT_NAME=                     # Display name (default: "Dreamfinder")
 DATABASE_PATH=                # SQLite path (default: ./data/bot.db)
 LOG_LEVEL=                    # Logging level (default: info)

@@ -46,6 +46,7 @@ String buildSystemPrompt(
   BotIdentityRecord? identity,
   List<MemorySearchResult> memories = const [],
   List<CalendarEvent> events = const [],
+  Duration eventTimeZoneOffset = Duration.zero,
 }) {
   final name = identity?.name ?? botName;
   final pronouns = identity?.pronouns ?? 'they/them';
@@ -132,13 +133,15 @@ You have tools for:
       'is this Saturday."\n',
     );
     for (final event in events) {
-      final start = DateTime.parse(event.start);
+      final start = DateTime.tryParse(event.start);
+      if (start == null) continue;
+      final local = start.toUtc().add(eventTimeZoneOffset);
       final dateStr =
-          '${start.year}-${start.month.toString().padLeft(2, '0')}-'
-          '${start.day.toString().padLeft(2, '0')}';
+          '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+          '${local.day.toString().padLeft(2, '0')}';
       final timeStr =
-          '${start.hour.toString().padLeft(2, '0')}:'
-          '${start.minute.toString().padLeft(2, '0')}';
+          '${local.hour.toString().padLeft(2, '0')}:'
+          '${local.minute.toString().padLeft(2, '0')}';
       final loc = event.location;
       final locationStr =
           loc != null && loc.isNotEmpty ? ' — $loc' : '';

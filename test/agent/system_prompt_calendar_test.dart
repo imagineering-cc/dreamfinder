@@ -16,19 +16,23 @@ void main() {
       final events = [
         const CalendarEvent(
           summary: 'Bendigo Day Trip',
-          start: '2026-03-14T10:00:00+11:00',
-          end: '2026-03-14T15:30:00+11:00',
+          start: '2026-03-13T23:00:00.000Z',
+          end: '2026-03-14T04:30:00.000Z',
           location: 'Southern Cross Station',
         ),
         const CalendarEvent(
           summary: "Round 3: We're getting there!",
-          start: '2026-03-28T19:00:00+11:00',
-          end: '2026-03-28T21:00:00+11:00',
+          start: '2026-03-28T08:00:00.000Z',
+          end: '2026-03-28T10:00:00.000Z',
           location: 'The Abode, 318 Russell St',
         ),
       ];
 
-      final prompt = buildSystemPrompt(input, events: events);
+      final prompt = buildSystemPrompt(
+        input,
+        events: events,
+        eventTimeZoneOffset: const Duration(hours: 11),
+      );
 
       expect(prompt, contains('## Upcoming Events'));
       expect(prompt, contains('Bendigo Day Trip'));
@@ -47,8 +51,8 @@ void main() {
       final events = [
         const CalendarEvent(
           summary: 'Round 2.1',
-          start: '2026-05-23T19:00:00+10:00',
-          end: '2026-05-23T21:00:00+10:00',
+          start: '2026-05-23T09:00:00.000Z',
+          end: '2026-05-23T11:00:00.000Z',
         ),
       ];
 
@@ -69,8 +73,8 @@ void main() {
       final events = [
         const CalendarEvent(
           summary: 'Standup',
-          start: '2026-03-14T09:00:00+11:00',
-          end: '2026-03-14T09:15:00+11:00',
+          start: '2026-03-13T22:00:00.000Z',
+          end: '2026-03-13T22:15:00.000Z',
         ),
       ];
 
@@ -79,6 +83,57 @@ void main() {
       final eventsIndex = prompt.indexOf('## Upcoming Events');
       final reminderIndex = prompt.indexOf('## System-Initiated Reminder');
       expect(eventsIndex, lessThan(reminderIndex));
+    });
+
+    test('applies timezone offset to display times', () {
+      // Event at 2026-03-13T23:00:00Z = 2026-03-14T10:00:00 AEDT (+11)
+      final events = [
+        const CalendarEvent(
+          summary: 'Bendigo Day Trip',
+          start: '2026-03-13T23:00:00.000Z',
+        ),
+      ];
+
+      final prompt = buildSystemPrompt(
+        input,
+        events: events,
+        eventTimeZoneOffset: const Duration(hours: 11),
+      );
+
+      // Should show local date/time (Mar 14 at 10:00), not UTC (Mar 13 at 23:00).
+      expect(prompt, contains('[2026-03-14 10:00]'));
+      expect(prompt, isNot(contains('23:00')));
+    });
+
+    test('defaults to UTC when no timezone offset provided', () {
+      final events = [
+        const CalendarEvent(
+          summary: 'Bendigo Day Trip',
+          start: '2026-03-13T23:00:00.000Z',
+        ),
+      ];
+
+      final prompt = buildSystemPrompt(input, events: events);
+
+      expect(prompt, contains('[2026-03-13 23:00]'));
+    });
+
+    test('skips events with malformed start dates', () {
+      final events = [
+        const CalendarEvent(
+          summary: 'Good Event',
+          start: '2026-03-14T10:00:00.000Z',
+        ),
+        const CalendarEvent(
+          summary: 'Bad Event',
+          start: 'not-a-date',
+        ),
+      ];
+
+      final prompt = buildSystemPrompt(input, events: events);
+
+      expect(prompt, contains('Good Event'));
+      expect(prompt, isNot(contains('Bad Event')));
     });
   });
 }

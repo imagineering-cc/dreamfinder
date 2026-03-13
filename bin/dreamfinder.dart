@@ -444,6 +444,8 @@ Future<void> main() async {
               identity: queries.getBotIdentity(),
               memories: memories,
               events: events,
+              eventTimeZoneOffset:
+                  Duration(hours: env.eventTimeZoneOffsetHours),
             ),
           );
           health.recordClaudeSuccess();
