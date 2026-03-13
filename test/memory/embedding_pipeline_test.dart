@@ -143,7 +143,7 @@ void main() {
     final customPipeline = EmbeddingPipeline(
       client: fakeClient,
       queries: queries,
-      botName: 'Gizmo',
+      getBotName: () => 'Gizmo',
     );
 
     customPipeline.queue(
@@ -174,5 +174,39 @@ void main() {
     final records = queries.getEmbeddedMemories(chatId: 'group-1');
     expect(records, hasLength(1));
     expect(records.first.sourceText, contains('Dreamfinder:'));
+  });
+
+  test('reflects bot name changes at runtime', () async {
+    var currentName = 'Dreamfinder';
+    final reactivePipeline = EmbeddingPipeline(
+      client: fakeClient,
+      queries: queries,
+      getBotName: () => currentName,
+    );
+
+    reactivePipeline.queue(
+      chatId: 'group-1',
+      userText: 'Hello there!',
+      assistantText: 'Hi! Nice to meet you.',
+      senderName: 'Nick',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    // Change the name at runtime (simulates set_bot_identity).
+    currentName = 'Figment';
+
+    reactivePipeline.queue(
+      chatId: 'group-1',
+      userText: 'What is your name?',
+      assistantText: 'I am Figment!',
+      senderName: 'Nick',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    final records = queries.getEmbeddedMemories(chatId: 'group-1');
+    expect(records, hasLength(2));
+    final sourceTexts = records.map((r) => r.sourceText).toList();
+    expect(sourceTexts, contains(contains('Figment:')));
+    expect(sourceTexts, contains(contains('Dreamfinder:')));
   });
 }

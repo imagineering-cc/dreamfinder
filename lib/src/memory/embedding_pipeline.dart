@@ -35,14 +35,20 @@ class EmbeddingPipeline {
   EmbeddingPipeline({
     required EmbeddingClient client,
     required MemoryQueryAccessor queries,
-    String botName = 'Dreamfinder',
+    String Function()? getBotName,
   })  : _client = client,
         _queries = queries,
-        _botName = botName;
+        _getBotName = getBotName ?? _defaultBotName;
+
+  static String _defaultBotName() => 'Dreamfinder';
 
   final EmbeddingClient _client;
   final MemoryQueryAccessor _queries;
-  final String _botName;
+
+  /// Returns the current bot name. Called on each [queue] invocation so
+  /// runtime identity changes (via `set_bot_identity`) are reflected
+  /// immediately in stored source text.
+  final String Function() _getBotName;
 
   /// Queues a user+assistant turn for embedding.
   ///
@@ -60,7 +66,7 @@ class EmbeddingPipeline {
     MemoryVisibility visibility = MemoryVisibility.sameChat,
   }) {
     final sourceText = '${senderName ?? "User"}: $userText\n'
-        '$_botName: $assistantText';
+        '${_getBotName()}: $assistantText';
 
     // Skip trivially short conversations.
     if (userText.length < _minSourceLength &&
