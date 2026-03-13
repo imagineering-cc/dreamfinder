@@ -16,6 +16,7 @@ import 'package:dreamfinder/src/config/env.dart';
 import 'package:dreamfinder/src/config/oauth_client.dart';
 import 'package:dreamfinder/src/config/version.dart';
 import 'package:dreamfinder/src/cron/scheduler.dart';
+import 'package:dreamfinder/src/dream/dream_cycle.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/message_repository.dart';
 import 'package:dreamfinder/src/db/queries.dart';
@@ -265,6 +266,22 @@ Future<void> main() async {
 
   final rateLimiter = RateLimiter();
 
+  // Dream cycle orchestrator — triggered by "goodnight" messages.
+  final dreamCycle = DreamCycle(
+    queries: queries,
+    messageRepo: messageRepo,
+    agentLoop: agentLoop,
+    toolRegistry: toolRegistry,
+    sendMessage: (groupId, message) =>
+        signalClient.sendMessage(recipient: groupId, message: message),
+    botName: env.botName,
+    buildSystemPrompt: (input) => buildSystemPrompt(
+      input,
+      botName: env.botName,
+      identity: queries.getBotIdentity(),
+    ),
+  );
+
   final scheduler = Scheduler(
     queries: queries,
     sendMessage: (groupId, message) =>
@@ -465,6 +482,23 @@ Future<void> main() async {
               continuation.recordBotResponse(chatId: envelope.chatId);
             }
             log.debug('Response sent');
+
+            // Check for goodnight messages in group chats → trigger dream.
+            if (isGroup && isGoodnightMessage(text)) {
+              final today =
+                  DateTime.now().toUtc().toIso8601String().split('T').first;
+              final started = dreamCycle.trigger(
+                groupId: envelope.chatId,
+                triggeredByUuid: envelope.sourceUuid,
+                date: today,
+              );
+              if (started) {
+                log.info('Dream cycle triggered', extra: {
+                  'group': envelope.chatId,
+                  'date': today,
+                });
+              }
+            }
           }
         } on Exception catch (e) {
           health.recordError();
@@ -650,5 +684,7 @@ Future<AgentResponse> _callClaude(
       anthropic.StopReason.maxTokens => StopReason.maxTokens,
       _ => StopReason.endTurn,
     },
+    inputTokens: response.usage?.inputTokens ?? 0,
+    outputTokens: response.usage?.outputTokens ?? 0,
   );
 }

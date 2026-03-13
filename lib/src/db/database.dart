@@ -2,7 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// Current schema version. Bump this and add a migration block in
 /// [_runMigrations] whenever the schema changes.
-const schemaVersion = 4;
+const schemaVersion = 5;
 
 /// SQLite database wrapper for Dreamfinder.
 ///
@@ -89,6 +89,7 @@ class BotDatabase {
     if (fromVersion < 2) _migrateToV2();
     if (fromVersion < 3) _migrateToV3();
     if (fromVersion < 4) _migrateToV4();
+    if (fromVersion < 5) _migrateToV5();
 
     _setVersion(schemaVersion);
   }
@@ -327,6 +328,25 @@ class BotDatabase {
         chat_id              TEXT PRIMARY KEY,
         last_consolidated_id INTEGER NOT NULL DEFAULT 0,
         last_consolidated_at TEXT
+      )
+    ''');
+  }
+
+  /// Version 5: dream cycle tracking — autonomous nightly knowledge
+  /// organization sessions.
+  void _migrateToV5() {
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS dream_cycles (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        signal_group_id   TEXT    NOT NULL,
+        date              TEXT    NOT NULL,
+        status            TEXT    NOT NULL DEFAULT 'dreaming'
+                          CHECK (status IN ('dreaming', 'completed', 'failed')),
+        triggered_by_uuid TEXT    NOT NULL,
+        started_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+        completed_at      TEXT,
+        error_message     TEXT,
+        UNIQUE(signal_group_id, date)
       )
     ''');
   }

@@ -206,6 +206,34 @@ class MessageRepository {
     return result.first['cnt'] as int;
   }
 
+  /// Returns messages for [chatId] created after [since] (ISO 8601 datetime),
+  /// in chronological order.
+  ///
+  /// Used by the dream cycle to replay chat history since the last cycle.
+  List<PersistedMessage> getMessagesSince({
+    required String chatId,
+    required String since,
+  }) {
+    final result = _db.handle.select(
+      'SELECT * FROM messages WHERE chat_id = ? AND created_at > ? '
+      'ORDER BY id ASC',
+      [chatId, since],
+    );
+    return [
+      for (final row in result)
+        PersistedMessage(
+          id: row['id'] as int,
+          chatId: row['chat_id'] as String,
+          role:
+              row['role'] == 'user' ? MessageRole.user : MessageRole.assistant,
+          content: deserializeContent(row['content'] as String),
+          senderUuid: row['sender_uuid'] as String?,
+          senderName: row['sender_name'] as String?,
+          createdAt: row['created_at'] as String,
+        ),
+    ];
+  }
+
   /// Trims persisted messages to keep only the most recent [maxMessages].
   ///
   /// Uses the composite `idx_messages_chat_id_id` index for efficiency.

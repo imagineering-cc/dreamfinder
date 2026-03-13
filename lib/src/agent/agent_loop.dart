@@ -46,11 +46,54 @@ class AgentResponse {
     required this.textBlocks,
     required this.toolUseBlocks,
     required this.stopReason,
+    this.inputTokens = 0,
+    this.outputTokens = 0,
   });
 
   final List<TextContent> textBlocks;
   final List<ToolUseContent> toolUseBlocks;
   final StopReason stopReason;
+
+  /// Token usage from this API call.
+  final int inputTokens;
+  final int outputTokens;
+}
+
+/// Accumulated token usage across an agent loop run.
+class TokenUsage {
+  int inputTokens = 0;
+  int outputTokens = 0;
+
+  /// Total tokens (input + output).
+  int get totalTokens => inputTokens + outputTokens;
+
+  void add(AgentResponse response) {
+    inputTokens += response.inputTokens;
+    outputTokens += response.outputTokens;
+  }
+
+  @override
+  String toString() =>
+      'TokenUsage(input: $inputTokens, output: $outputTokens, '
+      'total: $totalTokens)';
+}
+
+/// Result of processing a message through the agent loop.
+class AgentResult {
+  const AgentResult({
+    required this.text,
+    required this.usage,
+    required this.toolCallCount,
+  });
+
+  /// The final text response.
+  final String text;
+
+  /// Accumulated token usage across all rounds.
+  final TokenUsage usage;
+
+  /// Number of tool calls made during processing.
+  final int toolCallCount;
 }
 
 /// A message in the agent loop's running conversation.
@@ -140,9 +183,29 @@ class AgentLoop {
   final EmbeddingPipeline? _embeddingPipeline;
 
   /// Processes a user message through the full agent loop.
+  ///
+  /// When [maxToolRounds] is provided, it overrides the constructor default.
+  /// The dream cycle uses this to allow up to 50 tool rounds.
   Future<String> processMessage(
     AgentInput input, {
     required String systemPrompt,
+    int? maxToolRounds,
+  }) async {
+    final result = await processMessageWithUsage(
+      input,
+      systemPrompt: systemPrompt,
+      maxToolRounds: maxToolRounds,
+    );
+    return result.text;
+  }
+
+  /// Like [processMessage], but also returns token usage and tool call count.
+  ///
+  /// Used by the dream cycle to track total cost across multiple cycles.
+  Future<AgentResult> processMessageWithUsage(
+    AgentInput input, {
+    required String systemPrompt,
+    int? maxToolRounds,
   }) async {
     final tools = input.isSystemInitiated
         ? <ToolDefinition>[]
@@ -159,12 +222,17 @@ class AgentLoop {
 
     _sendTyping(input.chatId);
 
+    final effectiveMaxRounds = maxToolRounds ?? _maxToolRounds;
+    final usage = TokenUsage();
+    var toolCallCount = 0;
+
     AgentResponse? lastResponse;
     var rounds = 0;
 
-    while (rounds < _maxToolRounds) {
+    while (rounds < effectiveMaxRounds) {
       rounds++;
       lastResponse = await _createMessage(messages, tools, systemPrompt);
+      usage.add(lastResponse);
 
       final toolUses = lastResponse.toolUseBlocks;
       if (toolUses.isEmpty) {
@@ -173,8 +241,14 @@ class AgentLoop {
 
         _persistTurn(input.chatId, messages, turnStartIndex);
         _queueEmbedding(input, text);
-        return text;
+        return AgentResult(
+          text: text,
+          usage: usage,
+          toolCallCount: toolCallCount,
+        );
       }
+
+      toolCallCount += toolUses.length;
 
       messages.add(AgentMessage(
         role: 'assistant',
@@ -244,7 +318,11 @@ class AgentLoop {
     _persistTurn(input.chatId, messages, turnStartIndex);
     _queueEmbedding(input, responseText);
 
-    return responseText;
+    return AgentResult(
+      text: responseText,
+      usage: usage,
+      toolCallCount: toolCallCount,
+    );
   }
 
   /// Extracts the turn slice from [messages] and persists it to history.

@@ -250,6 +250,46 @@ void main() {
       expect(capturedTools!.any((t) => t.name == 'some_tool'), isTrue);
     });
 
+    test('maxToolRounds parameter overrides constructor default', () async {
+      var callCount = 0;
+      toolRegistry.registerCustomTool(CustomToolDef(
+        name: 'loop_tool',
+        description: 'Loops',
+        inputSchema: const <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{}
+        },
+        handler: (args) async => 'result',
+      ));
+      // Constructor default is 10, but we override to 2 via parameter.
+      final loop = AgentLoop(
+        createMessage: (m, t, s) async {
+          callCount++;
+          return AgentResponse(
+            textBlocks: const [TextContent(text: 'Working...')],
+            toolUseBlocks: [
+              ToolUseContent(
+                  id: 't-$callCount',
+                  name: 'loop_tool',
+                  input: const <String, dynamic>{})
+            ],
+            stopReason: StopReason.toolUse,
+          );
+        },
+        toolRegistry: toolRegistry,
+        history: history,
+        maxToolRounds: 10, // Constructor default.
+      );
+      final result = await loop.processMessage(
+        const AgentInput(
+            text: 'Do it', chatId: 'c1', senderUuid: 'u1', isAdmin: false),
+        systemPrompt: 'You are Dreamfinder.',
+        maxToolRounds: 2, // Override to 2.
+      );
+      expect(callCount, equals(2));
+      expect(result, isNotEmpty);
+    });
+
     test('follow-up request sees prior tool context', () async {
       var callCount = 0;
       toolRegistry.registerCustomTool(CustomToolDef(

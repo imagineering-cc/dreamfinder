@@ -171,6 +171,55 @@ void main() {
       expect(conversations, hasLength(2));
     });
 
+    test('getMessagesSince returns messages after a given timestamp', () {
+      // Insert messages with explicit timestamps via raw SQL.
+      db.handle.execute(
+        'INSERT OR IGNORE INTO conversations (chat_id) VALUES (?)',
+        ['chat-1'],
+      );
+      db.handle.execute(
+        'INSERT INTO messages (chat_id, role, content, sender_uuid, '
+        "sender_name, created_at) VALUES (?, 'user', ?, ?, ?, ?)",
+        ['chat-1', 'Old message', 'u1', 'Alice', '2026-03-13T10:00:00'],
+      );
+      db.handle.execute(
+        'INSERT INTO messages (chat_id, role, content, sender_uuid, '
+        "sender_name, created_at) VALUES (?, 'user', ?, ?, ?, ?)",
+        ['chat-1', 'New message', 'u1', 'Alice', '2026-03-14T10:00:00'],
+      );
+      db.handle.execute(
+        'INSERT INTO messages (chat_id, role, content, sender_uuid, '
+        "sender_name, created_at) VALUES (?, 'assistant', ?, NULL, NULL, ?)",
+        ['chat-1', 'Response to new', '2026-03-14T10:01:00'],
+      );
+
+      final messages = repo.getMessagesSince(
+        chatId: 'chat-1',
+        since: '2026-03-13T23:00:00',
+      );
+
+      expect(messages, hasLength(2));
+      expect(messages[0].content, equals('New message'));
+      expect(messages[1].content, equals('Response to new'));
+    });
+
+    test('getMessagesSince returns empty list when no messages after since',
+        () {
+      repo.saveMessage(
+        chatId: 'chat-1',
+        role: MessageRole.user,
+        content: 'Old',
+        senderUuid: 'u1',
+      );
+
+      final messages = repo.getMessagesSince(
+        chatId: 'chat-1',
+        since: '2099-01-01T00:00:00',
+      );
+
+      expect(messages, isEmpty);
+    });
+
     test('messageCount returns total messages for a chat', () {
       repo.saveMessage(
         chatId: 'chat-1',

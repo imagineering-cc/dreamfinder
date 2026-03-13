@@ -268,6 +268,47 @@ class StandupResponse {
   final String? rawMessage;
 }
 
+/// Status of a dream cycle for a given day.
+enum DreamCycleStatus {
+  dreaming,
+  completed,
+  failed;
+
+  /// Database column value.
+  String get dbValue => name;
+
+  /// Parses a database column value into a [DreamCycleStatus].
+  static DreamCycleStatus fromDb(String value) => switch (value) {
+        'dreaming' => dreaming,
+        'completed' => completed,
+        'failed' => failed,
+        _ => throw ArgumentError('Unknown dream cycle status: $value'),
+      };
+}
+
+/// A single dream cycle for one group on one date.
+class DreamCycleRecord {
+  const DreamCycleRecord({
+    required this.id,
+    required this.signalGroupId,
+    required this.date,
+    required this.status,
+    required this.triggeredByUuid,
+    required this.startedAt,
+    this.completedAt,
+    this.errorMessage,
+  });
+
+  final int id;
+  final String signalGroupId;
+  final String date;
+  final DreamCycleStatus status;
+  final String triggeredByUuid;
+  final String startedAt;
+  final String? completedAt;
+  final String? errorMessage;
+}
+
 /// Tracks calendar event reminders sent to avoid duplicates.
 class CalendarReminderRecord {
   const CalendarReminderRecord({
