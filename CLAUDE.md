@@ -12,10 +12,11 @@ API, no message editing, no inline keyboards, and stricter rate limiting.
 
 **Status**: Active sprint — end-to-end bot is runnable. Signal client, agent loop,
 conversation history (DB-backed), tool registry, MCP manager, system prompt, SQLite
-persistence (13 domain tables), custom tools (identity + chat config + memory),
-standup orchestration, deploy announcements, OAuth auth, RAG-based long-term
-memory (all 4 phases complete), and calendar event awareness are implemented
-with 427+ tests. Speed is a primary
+persistence (14 domain tables), custom tools (identity + chat config + memory +
+kickstart), standup orchestration, deploy announcements, OAuth auth, RAG-based
+long-term memory (all 4 phases complete), calendar event awareness, and autonomous
+dream cycle (multi-phase with parallel branching) are implemented with 519+ tests.
+Kickstart guided onboarding is in progress. Speed is a primary
 concern. Prefer working code over perfect abstractions. Skip plan mode for
 straightforward tasks, minimize over-engineering, and keep momentum high. Still
 respect correctness and type safety, but bias toward shipping.
@@ -44,8 +45,10 @@ lib/
     mcp/            # MCP subprocess manager
     memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
-    tools/          # Custom tool definitions (identity, chat config, standup)
-    db/             # SQLite database, schema, queries (10 mixins), message repository
+    tools/          # Custom tool definitions (identity, chat config, standup, kickstart)
+    db/             # SQLite database, schema, queries (11 mixins), message repository
+    dream/          # Dream cycle orchestrator, sleep stage prompts
+    kickstart/      # Guided onboarding detection, state, prompts
     cron/           # Scheduled jobs (standup orchestration)
     bot/            # Message handler, rate limiting, health check, deploy announcer
 bin/                # Entry point (dreamfinder.dart)
@@ -131,7 +134,7 @@ LOG_LEVEL=                    # Logging level (default: info)
 - SQLite via the `sqlite3` package (synchronous API). No ORM — raw SQL with
   parameterized queries in `Queries` class and `MessageRepository`.
 - Schema defined in `database.dart` with versioned migrations (`_migrateToV1()` through
-  `_migrateToV4()`). Version tracked in `schema_version` table. Current: v4.
+  `_migrateToV5()`). Version tracked in `schema_version` table. Current: v5.
 - Never store secrets or API keys in SQLite.
 
 ## Git & Workflow
@@ -157,13 +160,26 @@ Upcoming events from the Radicale calendar are injected into the system prompt
 alongside memories. Set `CALENDAR_URL` to enable. The `CalendarRetriever` fetches
 events via MCP with a 7-day lookahead on every message.
 
-### 3. Proactive task nudges
+### 3. ~~Dream cycle~~ (DONE)
+Autonomous multi-phase agent session triggered by "goodnight" messages. Modeled after
+real sleep stages: Light (N1→N2) → Deep (N2→N3) → Branch per spark (parallel via
+`Future.wait`) → REM (converge) → Wake. Adaptive depth — quiet days skip deeper
+phases. Token usage tracked across all phases/branches. Schema v5 adds `dream_cycles`
+table with UNIQUE(group, date) constraint.
+
+### 4. Kickstart guided onboarding (IN PROGRESS)
+5-step guided setup triggered by "kickstart" / "get started" / "let's set up":
+Workspace Setup → Team Roster → Project Seeding → Knowledge Dump → Dream Primer.
+State persisted via `bot_metadata` table (no migration needed). System prompt injection
+via `_buildFullSystemPrompt`. Custom tools: `advance_kickstart`, `complete_kickstart`.
+
+### 5. Proactive task nudges
 The scheduler + Kan MCP tools exist but Dreamfinder never proactively reminds about
 overdue or stale cards. Add a scheduled job that queries Kan for overdue tasks and
 sends reminder messages via the agent loop (in-character). The `sent_reminders` table
 already tracks dedup for this — it just needs to be wired up.
 
-### 4. sqlite-vec migration (deferred)
+### 6. sqlite-vec migration (deferred)
 Brute-force cosine similarity is <10ms for 10K vectors. Only revisit if the memory
 store exceeds ~100K records. The current design doesn't paint us into a corner — the
 swap is well-contained in `getVisibleMemories` + the retriever's scoring loop.

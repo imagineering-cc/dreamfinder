@@ -6,7 +6,7 @@ An AI-powered project management bot for Signal, built for the Imagineering orga
 
 The bot processes every message through a Claude LLM agent loop with access to ~75 tools across task management (Kan.bn), knowledge base (Outline), calendar (Radicale), web automation (Playwright), and custom bot tools. No slash commands — just natural language.
 
-> **Status**: End-to-end bot is runnable. Signal client, agent loop, DB-backed conversation history, tool registry, MCP manager, system prompt, SQLite persistence (10 domain tables), and custom tools (identity + chat config, 10 tools) are implemented with 106+ tests. Cron scheduler, standup orchestration, and dedicated message handler are next. Adapted from xdeca-pm-bot, a production Telegram bot with the same architecture.
+> **Status**: End-to-end bot is deployed and running. 519+ tests, 14 domain tables, schema v5. Features: Signal client, agent loop, DB-backed conversation history, tool registry, MCP manager (~75 tools), system prompt with context injection, RAG long-term memory (Voyage AI embeddings), standup orchestration, deploy announcements, OAuth auth (Claude Max), calendar event awareness, autonomous dream cycle with parallel branching, and kickstart guided onboarding (in progress). Adapted from xdeca-pm-bot, a production Telegram bot with the same architecture.
 
 ## Architecture
 
@@ -58,7 +58,7 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Features (Planned)
+## Features
 
 ### Task Management (via Kan.bn)
 
@@ -66,7 +66,6 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 - List tasks by board, list, assignee, or label
 - Manage checklists, comments, and labels
 - Sprint planning and tracking
-- Automatic reminders for overdue and stale tasks
 
 ### Knowledge Base (via Outline)
 
@@ -76,30 +75,59 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 
 ### Calendar (via Radicale)
 
-- View upcoming events and deadlines
+- View upcoming events and deadlines — 7-day lookahead injected into system prompt
 - Create and manage calendar events
 - Todo list management
+- Timezone-aware display (`EVENT_TIMEZONE`)
 
 ### Team Coordination
 
 - Async daily standups — bot prompts team members and collects responses
 - Standup summaries posted to group
+- Timezone-aware prompt scheduling (per-group IANA timezone config)
 - User identity mapping (Signal UUID to Kan.bn user)
 
 ### Bot Intelligence
 
 - Full natural language understanding — no slash commands needed
 - Conversation history with 20-message window and 30-minute TTL
+- RAG long-term memory — Voyage AI embeddings, cosine similarity retrieval, context injection
 - Rate limiting in group chats to avoid noise
 - Configurable per-chat settings (enabled tools, response style)
 - Bot personality/identity customization
 
+### Dream Cycle
+
+Autonomous multi-phase agent session triggered by "goodnight" messages, modeled after
+real sleep stages:
+
+```
+Light (N1→N2) → Deep (N2→N3) → Branch per spark (parallel) → REM (converge) → Wake
+```
+
+- **Light Sleep**: Files obvious items from chat history into Kan/Outline
+- **Deep Sleep**: Finds connections, surfaces `[SPARK]` tags for creative threads
+- **Dream Branching**: Each spark becomes a parallel agent thread (`Future.wait`)
+- **REM Convergence**: Merges branch reports, finds meta-patterns
+- **Waking Message**: In-character summary with dream stats
+- Adaptive depth — quiet days skip deeper phases
+- Token usage tracked across all phases and branches
+
+### Kickstart Guided Onboarding (In Progress)
+
+5-step guided setup triggered by natural language ("kickstart", "get started", etc.):
+
+1. **Workspace Setup** — Link Kan workspace and default board
+2. **Team Roster** — Map Signal users to Kan members
+3. **Project Seeding** — Create cards and docs for active projects
+4. **Knowledge Dump** — Capture decisions, conventions, context
+5. **Dream Primer** — Summarize setup and introduce the dream cycle
+
 ### Reminders (Cron-based)
 
-- Overdue task alerts
-- Stale task nudges
-- Unassigned task notifications
-- Standup prompts at configured times
+- Standup prompts at configured times (timezone-aware)
+- Overdue task alerts (planned)
+- Stale task nudges (planned)
 
 ## Tech Stack
 
@@ -228,10 +256,9 @@ In addition to MCP server tools, the bot defines its own tools in `lib/src/tools
 - **chat_config** — Workspace linking, default board/list config per group
 - **user_mapping** — Map Signal UUIDs to Kan.bn users and display names
 - **bot_identity** — Get/set bot name, pronouns, and communication tone
-- **sprint_info** — Current sprint metadata (planned)
-- **standup** — Collect and summarize daily standup responses (planned)
-- **deploy_info** — Current deployment version, uptime, health (planned)
-- **server_ops** — Diagnostic tools (MCP server status, latency) (planned)
+- **memory** — Save, search, and manage long-term RAG memories
+- **standup** — Collect and summarize daily standup responses
+- **kickstart** — Advance and complete guided onboarding steps
 
 ## Development
 
@@ -243,11 +270,14 @@ lib/
     signal/         # Signal client, message models
     agent/          # Agent loop, system prompt, tool registry, conversation history
     mcp/            # MCP subprocess manager
+    memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
-    tools/          # Custom tool definitions (identity, chat config)
-    db/             # SQLite database, schema, queries, message repository
-    cron/           # Scheduled jobs (not yet built)
-    bot/            # Message handler, rate limiting (not yet built)
+    tools/          # Custom tool definitions (identity, chat config, standup, kickstart)
+    db/             # SQLite database, schema, queries (11 mixins), message repository
+    dream/          # Dream cycle orchestrator, sleep stage prompts
+    kickstart/      # Guided onboarding detection, state, prompts
+    cron/           # Scheduled jobs (standup orchestration)
+    bot/            # Message handler, rate limiting, health check, deploy announcer
 bin/                # Entry point (dreamfinder.dart)
 test/               # Tests mirroring lib/src/ structure
 data/               # SQLite database (gitignored)

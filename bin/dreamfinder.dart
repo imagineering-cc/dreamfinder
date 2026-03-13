@@ -33,6 +33,10 @@ import 'package:dreamfinder/src/signal/signal_client.dart';
 import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
 import 'package:dreamfinder/src/tools/chat_config_tools.dart';
 import 'package:dreamfinder/src/tools/memory_tools.dart';
+import 'package:dreamfinder/src/kickstart/kickstart.dart';
+import 'package:dreamfinder/src/kickstart/kickstart_prompt.dart';
+import 'package:dreamfinder/src/kickstart/kickstart_state.dart';
+import 'package:dreamfinder/src/tools/kickstart_tools.dart';
 import 'package:dreamfinder/src/tools/standup_tools.dart';
 
 // Short backoff between poll cycles — the actual wait happens server-side
@@ -137,6 +141,8 @@ Future<void> main() async {
   registerBotIdentityTools(toolRegistry, queries);
   registerChatConfigTools(toolRegistry, queries);
   registerStandupTools(toolRegistry, queries);
+  final kickstartState = KickstartState(queries: queries);
+  registerKickstartTools(toolRegistry, kickstartState);
   // Memory tools registered after pipeline creation below.
 
   final history = ConversationHistory(repository: messageRepo);
@@ -455,16 +461,34 @@ Future<void> main() async {
               ? await calendarRetriever.fetchUpcoming()
               : <CalendarEvent>[];
 
+          // Detect kickstart triggers — admin + group + trigger phrase.
+          // Start before building the system prompt so the kickstart
+          // section is included on the very first response.
+          if (isGroup &&
+              senderIsAdmin &&
+              isKickstartMessage(text) &&
+              !kickstartState.isKickstartActive(envelope.chatId)) {
+            kickstartState.startKickstart(envelope.chatId);
+            log.info('Kickstart started', extra: {
+              'group': envelope.chatId,
+            });
+          }
+
+          // Build system prompt — append kickstart section if active.
+          final systemPromptText = _buildFullSystemPrompt(
+            input: input,
+            env: env,
+            queries: queries,
+            memories: memories,
+            events: events,
+            kickstartState: kickstartState,
+            chatId: envelope.chatId,
+            isGroup: isGroup,
+          );
+
           final response = await agentLoop.processMessage(
             input,
-            systemPrompt: buildSystemPrompt(
-              input,
-              botName: env.botName,
-              identity: queries.getBotIdentity(),
-              memories: memories,
-              events: events,
-              eventTimeZone: env.eventTimeZone,
-            ),
+            systemPrompt: systemPromptText,
           );
           health.recordClaudeSuccess();
 
@@ -687,4 +711,34 @@ Future<AgentResponse> _callClaude(
     inputTokens: response.usage?.inputTokens ?? 0,
     outputTokens: response.usage?.outputTokens ?? 0,
   );
+}
+
+/// Builds the full system prompt, appending the kickstart section if a
+/// kickstart is active for this chat.
+String _buildFullSystemPrompt({
+  required AgentInput input,
+  required Env env,
+  required Queries queries,
+  required List<MemorySearchResult> memories,
+  required List<CalendarEvent> events,
+  required KickstartState kickstartState,
+  required String chatId,
+  required bool isGroup,
+}) {
+  var prompt = buildSystemPrompt(
+    input,
+    botName: env.botName,
+    identity: queries.getBotIdentity(),
+    memories: memories,
+    events: events,
+    eventTimeZone: env.eventTimeZone,
+  );
+
+  final kickstartStep =
+      isGroup ? kickstartState.getActiveKickstart(chatId) : null;
+  if (kickstartStep != null) {
+    prompt += buildKickstartPromptSection(kickstartStep, chatId);
+  }
+
+  return prompt;
 }
