@@ -14,7 +14,7 @@ import 'kickstart_state.dart';
 /// tools to use and how to detect when to advance.
 String buildKickstartPromptSection(KickstartStep step, String groupId) {
   final header = '\n## Kickstart — Step ${step.number} of 5: ${step.label}\n\n'
-      'You are guiding this admin through setup via DM. '
+      'You are guiding this user through setup via DM. '
       'The group\'s `signal_group_id` is `$groupId` — use it for all tool calls. '
       'This is a guided conversation — ask questions, use tools, '
       'and advance when the step is complete.\n\n';
@@ -50,11 +50,11 @@ String _workspacePrompt(String groupId) => '''
 1. Call `get_chat_config` with `signal_group_id` = `$groupId` to check if a workspace is already linked.
 2. If no workspace is linked:
    - Call `kan_list_workspaces` to show available workspaces.
-   - Ask the admin which workspace to link.
+   - Ask the user which workspace to link.
    - Call `set_chat_config` to link it.
 3. If a workspace is linked but no default board:
    - Call `kan_list_boards` to show available boards in the workspace.
-   - Ask the admin which board to use as the default.
+   - Ask the user which board to use as the default.
    - Call `set_chat_config` to set the default board.
 4. If both are set, confirm and advance.
 
@@ -65,10 +65,10 @@ String _rosterPrompt(String groupId) => '''
 
 **Steps**:
 1. Call `list_user_mappings` with `signal_group_id` = `$groupId` to see existing mappings.
-2. Ask the admin about team members in this group:
+2. Ask the user about team members in this group:
    - "Who's on the team? I can map Signal users to their Kan accounts."
-3. For each team member the admin mentions, use `set_user_mapping` to create the mapping.
-4. When the admin says they're done (or says "done", "next", "skip"), advance.
+3. For each team member the user mentions, use `set_user_mapping` to create the mapping.
+4. When the user says they're done (or says "done", "next", "skip"), advance.
 
 **Tools**: `list_user_mappings`, `set_user_mapping`''';
 
@@ -77,12 +77,12 @@ String _projectsPrompt(String groupId) => '''
 
 **Steps**:
 1. Ask: "Tell me about your active projects — what's the team working on right now?"
-2. For each project the admin describes:
+2. For each project the user describes:
    - Search Kan for existing cards: `kan_search` with the project name.
    - If no card exists, create one: `kan_create_card` on the default board.
    - Create an Outline doc for the project: `outline_create_document`.
 3. Summarize what was created after each project.
-4. When the admin says they're done (or says "done", "next", "skip"), advance.
+4. When the user says they're done (or says "done", "next", "skip"), advance.
 
 **Tools**: `kan_search`, `kan_create_card`, `kan_create_list`, `outline_create_document`, `outline_search`''';
 
@@ -91,10 +91,10 @@ String _knowledgePrompt(String groupId) => '''
 
 **Steps**:
 1. Ask: "Any recent decisions, conventions, or context I should know about? Things like coding standards, deployment processes, or recent architectural decisions."
-2. For each piece of knowledge the admin shares:
+2. For each piece of knowledge the user shares:
    - File it as an Outline document: `outline_create_document`.
    - Save key facts to memory: `save_memory` with `visibility` = `cross_chat`.
-3. When the admin says they're done (or says "done", "next", "skip"), advance.
+3. When the user says they're done (or says "done", "next", "skip"), advance.
 
 **Tools**: `outline_create_document`, `outline_search`, `save_memory`''';
 

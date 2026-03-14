@@ -48,12 +48,12 @@ void main() {
     });
 
     test('returns the current step after starting', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       expect(state.getActiveKickstart(groupId), KickstartStep.workspace);
     });
 
     test('returns null after completing', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.completeKickstart(groupId);
       expect(state.getActiveKickstart(groupId), isNull);
     });
@@ -65,12 +65,12 @@ void main() {
     });
 
     test('returns true when kickstart is active', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       expect(state.isKickstartActive(groupId), isTrue);
     });
 
     test('returns false after completing', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.completeKickstart(groupId);
       expect(state.isKickstartActive(groupId), isFalse);
     });
@@ -79,31 +79,31 @@ void main() {
   group('startKickstart', () {
     test('starts at step 1', () {
       final started =
-          state.startKickstart(groupId, adminUuid: 'admin-uuid');
+          state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       expect(started, isTrue);
       expect(state.getActiveKickstart(groupId), KickstartStep.workspace);
     });
 
-    test('stores adminUuid in payload', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
-      final info = state.getKickstartForAdmin('admin-uuid');
+    test('stores initiatorUuid in payload', () {
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
+      final info = state.getKickstartForUser('admin-uuid');
       expect(info, isNotNull);
       expect(info!.groupId, groupId);
       expect(info.step, KickstartStep.workspace);
     });
 
     test('returns false if already active', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       final startedAgain =
-          state.startKickstart(groupId, adminUuid: 'admin-uuid');
+          state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       expect(startedAgain, isFalse);
     });
 
     test('can restart after completing', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.completeKickstart(groupId);
       final restarted =
-          state.startKickstart(groupId, adminUuid: 'admin-uuid-2');
+          state.startKickstart(groupId, initiatorUuid: 'admin-uuid-2');
       expect(restarted, isTrue);
       expect(state.getActiveKickstart(groupId), KickstartStep.workspace);
     });
@@ -111,14 +111,14 @@ void main() {
 
   group('advanceKickstart', () {
     test('advances from workspace to roster', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       final next = state.advanceKickstart(groupId);
       expect(next, KickstartStep.roster);
       expect(state.getActiveKickstart(groupId), KickstartStep.roster);
     });
 
     test('advances through all steps', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
 
       expect(state.advanceKickstart(groupId), KickstartStep.roster);
       expect(state.advanceKickstart(groupId), KickstartStep.projects);
@@ -127,7 +127,7 @@ void main() {
     });
 
     test('returns null when on the final step', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.advanceKickstart(groupId); // → roster
       state.advanceKickstart(groupId); // → projects
       state.advanceKickstart(groupId); // → knowledge
@@ -143,45 +143,45 @@ void main() {
     });
 
     test('DM lookup reflects new step after advance', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.advanceKickstart(groupId);
-      final info = state.getKickstartForAdmin('admin-uuid');
+      final info = state.getKickstartForUser('admin-uuid');
       expect(info!.step, KickstartStep.roster);
     });
   });
 
   group('completeKickstart', () {
     test('marks the kickstart as done', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.completeKickstart(groupId);
       expect(state.isKickstartActive(groupId), isFalse);
       expect(state.getActiveKickstart(groupId), isNull);
     });
 
     test('clears DM reverse-lookup key', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.completeKickstart(groupId);
-      expect(state.getKickstartForAdmin('admin-uuid'), isNull);
+      expect(state.getKickstartForUser('admin-uuid'), isNull);
     });
   });
 
-  group('getKickstartForAdmin', () {
+  group('getKickstartForUser', () {
     test('returns group ID and step for active kickstart', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
-      final info = state.getKickstartForAdmin('admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
+      final info = state.getKickstartForUser('admin-uuid');
       expect(info, isNotNull);
       expect(info!.groupId, groupId);
       expect(info.step, KickstartStep.workspace);
     });
 
     test('returns null when no active kickstart', () {
-      expect(state.getKickstartForAdmin('admin-uuid'), isNull);
+      expect(state.getKickstartForUser('admin-uuid'), isNull);
     });
 
     test('returns null after kickstart is completed', () {
-      state.startKickstart(groupId, adminUuid: 'admin-uuid');
+      state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.completeKickstart(groupId);
-      expect(state.getKickstartForAdmin('admin-uuid'), isNull);
+      expect(state.getKickstartForUser('admin-uuid'), isNull);
     });
   });
 
@@ -190,11 +190,11 @@ void main() {
       const groupA = 'group-a';
       const groupB = 'group-b';
 
-      state.startKickstart(groupA, adminUuid: 'admin-a');
+      state.startKickstart(groupA, initiatorUuid: 'admin-a');
       expect(state.isKickstartActive(groupA), isTrue);
       expect(state.isKickstartActive(groupB), isFalse);
 
-      state.startKickstart(groupB, adminUuid: 'admin-b');
+      state.startKickstart(groupB, initiatorUuid: 'admin-b');
       state.advanceKickstart(groupB);
 
       expect(state.getActiveKickstart(groupA), KickstartStep.workspace);

@@ -466,19 +466,18 @@ Future<void> main() async {
               ? await calendarRetriever.fetchUpcoming()
               : <CalendarEvent>[];
 
-          // Detect kickstart triggers — admin + group + trigger phrase.
+          // Detect kickstart triggers — any group member + trigger phrase.
           // Redirect to DMs: ack in group, run agent loop for opening DM.
           if (isGroup &&
-              senderIsAdmin &&
               isKickstartMessage(text) &&
               !kickstartState.isKickstartActive(envelope.chatId)) {
             kickstartState.startKickstart(
               envelope.chatId,
-              adminUuid: envelope.sourceUuid,
+              initiatorUuid: envelope.sourceUuid,
             );
             log.info('Kickstart started (DM flow)', extra: {
               'group': envelope.chatId,
-              'admin': envelope.sourceUuid,
+              'sender': envelope.sourceUuid,
             });
             // Group acknowledgment.
             await signalClient.sendMessage(
@@ -787,7 +786,7 @@ String _buildFullSystemPrompt({
     kickstartStep = kickstartState.getActiveKickstart(chatId);
     kickstartGroupId = chatId;
   } else {
-    final info = kickstartState.getKickstartForAdmin(senderUuid);
+    final info = kickstartState.getKickstartForUser(senderUuid);
     kickstartStep = info?.step;
     kickstartGroupId = info?.groupId;
   }
