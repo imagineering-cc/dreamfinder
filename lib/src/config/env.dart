@@ -24,6 +24,8 @@ class Env {
     this.healthPort = 8081,
     this.deployAnnounceGroupId,
     this.voyageApiKey,
+    this.githubToken,
+    this.githubRepo,
   });
 
   factory Env.load() {
@@ -66,6 +68,8 @@ class Env {
       healthPort: int.tryParse(dotEnv['HEALTH_PORT'] ?? '') ?? 8081,
       deployAnnounceGroupId: dotEnv['DEPLOY_ANNOUNCE_GROUP_ID'],
       voyageApiKey: dotEnv['VOYAGE_API_KEY'],
+      githubToken: dotEnv['GITHUB_TOKEN'],
+      githubRepo: dotEnv['GITHUB_REPO'],
     );
   }
 
@@ -91,6 +95,8 @@ class Env {
     int healthPort = 8081,
     String? deployAnnounceGroupId,
     String? voyageApiKey,
+    String? githubToken,
+    String? githubRepo,
   }) =>
       Env._(
         anthropicApiKey: anthropicApiKey,
@@ -114,6 +120,8 @@ class Env {
         healthPort: healthPort,
         deployAnnounceGroupId: deployAnnounceGroupId,
         voyageApiKey: voyageApiKey,
+        githubToken: githubToken,
+        githubRepo: githubRepo,
       );
 
   /// Anthropic API key. Null when using OAuth auth.
@@ -165,6 +173,14 @@ class Env {
   /// If null, the RAG memory system is disabled.
   final String? voyageApiKey;
 
+  /// GitHub fine-grained PAT for reading repo contents and managing issues.
+  /// If null, GitHub tools are disabled.
+  final String? githubToken;
+
+  /// Default GitHub repository in `owner/name` format (from `GITHUB_REPO`).
+  /// Defaults to `imagineering-cc/dreamfinder` if not set.
+  final String? githubRepo;
+
   /// Returns `true` if [signalUuid] is in the configured admin list.
   bool isAdmin(String? signalUuid) =>
       signalUuid != null && adminUuids.contains(signalUuid);
@@ -174,6 +190,7 @@ class Env {
   bool get radicaleEnabled =>
       radicalePassword != null && radicalePassword!.isNotEmpty;
   bool get voyageEnabled => voyageApiKey != null && voyageApiKey!.isNotEmpty;
+  bool get githubEnabled => githubToken != null && githubToken!.isNotEmpty;
 
   /// Parses a comma-separated string into a trimmed list.
   static List<String> _parseList(String? value) {

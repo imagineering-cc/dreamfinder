@@ -36,6 +36,7 @@ import 'package:dreamfinder/src/tools/memory_tools.dart';
 import 'package:dreamfinder/src/kickstart/kickstart.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_prompt.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_state.dart';
+import 'package:dreamfinder/src/tools/github_tools.dart';
 import 'package:dreamfinder/src/tools/kickstart_tools.dart';
 import 'package:dreamfinder/src/tools/standup_tools.dart';
 
@@ -148,6 +149,14 @@ Future<void> main() async {
     sendGroupMessage: (groupId, message) =>
         signalClient.sendMessage(recipient: groupId, message: message),
   );
+  registerGitHubTools(
+    toolRegistry,
+    token: env.githubToken,
+    defaultRepo: env.githubRepo ?? 'imagineering-cc/dreamfinder',
+  );
+  if (env.githubEnabled) {
+    log.info('GitHub tools enabled');
+  }
   // Memory tools registered after pipeline creation below.
 
   final history = ConversationHistory(repository: messageRepo);
