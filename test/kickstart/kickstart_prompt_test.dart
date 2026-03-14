@@ -11,7 +11,7 @@ void main() {
         KickstartStep.workspace,
         groupId,
       );
-      expect(section, contains('Step 1 of 5: Workspace Setup'));
+      expect(section, contains('Step 1 of 6: Workspace Setup'));
     });
 
     test('workspace step mentions get_chat_config tool', () {
@@ -32,12 +32,41 @@ void main() {
       expect(section, contains(groupId));
     });
 
+    test('meet and greet step mentions radicale tools', () {
+      final section = buildKickstartPromptSection(
+        KickstartStep.meetAndGreet,
+        groupId,
+      );
+      expect(section, contains('Step 2 of 6: Meet & Greet'));
+      expect(section, contains('radicale_create_contact'));
+      expect(section, contains('radicale_list_address_books'));
+      expect(section, contains(kickstartAddressBook));
+    });
+
+    test('meet and greet asks about timezone and role', () {
+      final section = buildKickstartPromptSection(
+        KickstartStep.meetAndGreet,
+        groupId,
+      );
+      expect(section, contains('timezone'));
+      expect(section, contains('role'));
+    });
+
+    test('meet and greet has warm conversational tone guidance', () {
+      final section = buildKickstartPromptSection(
+        KickstartStep.meetAndGreet,
+        groupId,
+      );
+      expect(section, contains('coffee chat'));
+      expect(section, contains('not a form'));
+    });
+
     test('roster step mentions user mapping tools', () {
       final section = buildKickstartPromptSection(
         KickstartStep.roster,
         groupId,
       );
-      expect(section, contains('Step 2 of 5: Team Roster'));
+      expect(section, contains('Step 3 of 6: Team Roster'));
       expect(section, contains('list_user_mappings'));
       expect(section, contains('set_user_mapping'));
     });
@@ -47,7 +76,7 @@ void main() {
         KickstartStep.projects,
         groupId,
       );
-      expect(section, contains('Step 3 of 5: Project Seeding'));
+      expect(section, contains('Step 4 of 6: Project Seeding'));
       expect(section, contains('kan_search'));
       expect(section, contains('kan_create_card'));
       expect(section, contains('outline_create_document'));
@@ -58,7 +87,7 @@ void main() {
         KickstartStep.knowledge,
         groupId,
       );
-      expect(section, contains('Step 4 of 5: Knowledge Dump'));
+      expect(section, contains('Step 5 of 6: Knowledge Dump'));
       expect(section, contains('save_memory'));
       expect(section, contains('outline_create_document'));
     });
@@ -68,7 +97,7 @@ void main() {
         KickstartStep.primer,
         groupId,
       );
-      expect(section, contains('Step 5 of 5: Dream Primer'));
+      expect(section, contains('Step 6 of 6: Dream Primer'));
       expect(section, contains('complete_kickstart'));
       // Primer should NOT have advance instruction.
       expect(section, isNot(contains('advance_kickstart')));
@@ -80,6 +109,14 @@ void main() {
         groupId,
       );
       expect(section, contains('dream cycle'));
+    });
+
+    test('primer step mentions user profile in summary', () {
+      final section = buildKickstartPromptSection(
+        KickstartStep.primer,
+        groupId,
+      );
+      expect(section, contains('profile'));
     });
 
     test('all steps include guided conversation note', () {

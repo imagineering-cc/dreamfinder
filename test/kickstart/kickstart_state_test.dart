@@ -21,20 +21,22 @@ void main() {
   group('KickstartStep', () {
     test('fromNumber returns correct step', () {
       expect(KickstartStep.fromNumber(1), KickstartStep.workspace);
-      expect(KickstartStep.fromNumber(2), KickstartStep.roster);
-      expect(KickstartStep.fromNumber(3), KickstartStep.projects);
-      expect(KickstartStep.fromNumber(4), KickstartStep.knowledge);
-      expect(KickstartStep.fromNumber(5), KickstartStep.primer);
+      expect(KickstartStep.fromNumber(2), KickstartStep.meetAndGreet);
+      expect(KickstartStep.fromNumber(3), KickstartStep.roster);
+      expect(KickstartStep.fromNumber(4), KickstartStep.projects);
+      expect(KickstartStep.fromNumber(5), KickstartStep.knowledge);
+      expect(KickstartStep.fromNumber(6), KickstartStep.primer);
     });
 
     test('fromNumber returns null for out-of-range', () {
       expect(KickstartStep.fromNumber(0), isNull);
-      expect(KickstartStep.fromNumber(6), isNull);
+      expect(KickstartStep.fromNumber(7), isNull);
       expect(KickstartStep.fromNumber(-1), isNull);
     });
 
     test('has correct labels', () {
       expect(KickstartStep.workspace.label, 'Workspace Setup');
+      expect(KickstartStep.meetAndGreet.label, 'Meet & Greet');
       expect(KickstartStep.roster.label, 'Team Roster');
       expect(KickstartStep.projects.label, 'Project Seeding');
       expect(KickstartStep.knowledge.label, 'Knowledge Dump');
@@ -110,16 +112,17 @@ void main() {
   });
 
   group('advanceKickstart', () {
-    test('advances from workspace to roster', () {
+    test('advances from workspace to meet and greet', () {
       state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       final next = state.advanceKickstart(groupId);
-      expect(next, KickstartStep.roster);
-      expect(state.getActiveKickstart(groupId), KickstartStep.roster);
+      expect(next, KickstartStep.meetAndGreet);
+      expect(state.getActiveKickstart(groupId), KickstartStep.meetAndGreet);
     });
 
     test('advances through all steps', () {
       state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
 
+      expect(state.advanceKickstart(groupId), KickstartStep.meetAndGreet);
       expect(state.advanceKickstart(groupId), KickstartStep.roster);
       expect(state.advanceKickstart(groupId), KickstartStep.projects);
       expect(state.advanceKickstart(groupId), KickstartStep.knowledge);
@@ -128,6 +131,7 @@ void main() {
 
     test('returns null when on the final step', () {
       state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
+      state.advanceKickstart(groupId); // → meet & greet
       state.advanceKickstart(groupId); // → roster
       state.advanceKickstart(groupId); // → projects
       state.advanceKickstart(groupId); // → knowledge
@@ -146,7 +150,7 @@ void main() {
       state.startKickstart(groupId, initiatorUuid: 'admin-uuid');
       state.advanceKickstart(groupId);
       final info = state.getKickstartForUser('admin-uuid');
-      expect(info!.step, KickstartStep.roster);
+      expect(info!.step, KickstartStep.meetAndGreet);
     });
   });
 
@@ -198,7 +202,7 @@ void main() {
       state.advanceKickstart(groupB);
 
       expect(state.getActiveKickstart(groupA), KickstartStep.workspace);
-      expect(state.getActiveKickstart(groupB), KickstartStep.roster);
+      expect(state.getActiveKickstart(groupB), KickstartStep.meetAndGreet);
     });
   });
 }

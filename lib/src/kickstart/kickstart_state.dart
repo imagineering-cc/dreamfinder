@@ -17,10 +17,11 @@ import '../db/queries.dart';
 /// capturing knowledge, and delivering the dream primer.
 enum KickstartStep {
   workspace(1, 'Workspace Setup'),
-  roster(2, 'Team Roster'),
-  projects(3, 'Project Seeding'),
-  knowledge(4, 'Knowledge Dump'),
-  primer(5, 'Dream Primer');
+  meetAndGreet(2, 'Meet & Greet'),
+  roster(3, 'Team Roster'),
+  projects(4, 'Project Seeding'),
+  knowledge(5, 'Knowledge Dump'),
+  primer(6, 'Dream Primer');
 
   const KickstartStep(this.number, this.label);
 

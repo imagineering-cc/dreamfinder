@@ -7,13 +7,18 @@ library;
 
 import 'kickstart_state.dart';
 
+/// The Radicale address book path for storing user profiles as vCards.
+const kickstartAddressBook = 'dreamfinder/team-profiles';
+
 /// Builds a system prompt section for the active kickstart step.
 ///
 /// This section is appended to the normal system prompt when a kickstart is
 /// active. It provides step-specific guidance for the agent, including which
 /// tools to use and how to detect when to advance.
 String buildKickstartPromptSection(KickstartStep step, String groupId) {
-  final header = '\n## Kickstart — Step ${step.number} of 5: ${step.label}\n\n'
+  final total = KickstartStep.values.length;
+  final header =
+      '\n## Kickstart — Step ${step.number} of $total: ${step.label}\n\n'
       'You are guiding this user through setup via DM. '
       'The group\'s `signal_group_id` is `$groupId` — use it for all tool calls. '
       'This is a guided conversation — ask questions, use tools, '
@@ -24,7 +29,8 @@ String buildKickstartPromptSection(KickstartStep step, String groupId) {
       'If the user says "skip", "next", or "done", treat the step as complete '
       'and advance.\n';
 
-  final completeNote = '\n\n**Completing**: When you finish the primer, call the '
+  final completeNote =
+      '\n\n**Completing**: When you finish the primer, call the '
       '`complete_kickstart` tool with `signal_group_id` set to `$groupId` '
       'to mark onboarding as done. Then compose a summary of everything that '
       'was set up and call `post_kickstart_summary` with `signal_group_id` '
@@ -32,6 +38,7 @@ String buildKickstartPromptSection(KickstartStep step, String groupId) {
 
   final body = switch (step) {
     KickstartStep.workspace => _workspacePrompt(groupId),
+    KickstartStep.meetAndGreet => _meetAndGreetPrompt(groupId),
     KickstartStep.roster => _rosterPrompt(groupId),
     KickstartStep.projects => _projectsPrompt(groupId),
     KickstartStep.knowledge => _knowledgePrompt(groupId),
@@ -59,6 +66,40 @@ String _workspacePrompt(String groupId) => '''
 4. If both are set, confirm and advance.
 
 **Tools**: `get_chat_config`, `set_chat_config`, `kan_list_workspaces`, `kan_list_boards`''';
+
+String _meetAndGreetPrompt(String groupId) => '''
+**Goal**: Get to know this user and save their profile as a CardDAV contact.
+
+This is a personal, conversational step — you're building a relationship.
+Be warm and curious, not interrogative. Share a little about yourself too.
+
+**What to ask about** (naturally, not as a checklist):
+- What they'd like to be called (name / nickname)
+- Their timezone (so you can be mindful of when you reach out)
+- Their role on the team
+- What they're working on or excited about
+- Anything else they'd like you to know about them
+- How much context they're comfortable having you remember
+
+**Storing the profile**:
+Use the address book `$kickstartAddressBook`.
+First, try `radicale_list_address_books` to check if it exists.
+If not, create it with `radicale_create_address_book` (name: "Team Profiles").
+
+Then create a contact with `radicale_create_contact`:
+- `address_book`: `$kickstartAddressBook`
+- `full_name`: their preferred name
+- `nickname`: if they mention one
+- `note`: a brief profile summary including role, interests, and preferences
+- `timezone`: their IANA timezone (e.g., "Australia/Melbourne")
+
+If the contact already exists (from a previous kickstart), update it with
+`radicale_update_contact` instead.
+
+**Tone**: This should feel like a first coffee chat, not a form to fill out.
+Let the conversation flow naturally and collect details as they come up.
+
+**Tools**: `radicale_list_address_books`, `radicale_create_address_book`, `radicale_create_contact`, `radicale_update_contact`, `radicale_list_contacts`''';
 
 String _rosterPrompt(String groupId) => '''
 **Goal**: Map Signal users to Kan workspace members.
@@ -104,6 +145,7 @@ String _primerPrompt(String groupId) => '''
 **Steps**:
 1. Summarize everything that was configured during kickstart:
    - Workspace and board linkage
+   - Their profile (what you learned about them)
    - Team member mappings
    - Projects seeded
    - Knowledge captured
