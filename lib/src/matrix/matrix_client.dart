@@ -315,19 +315,49 @@ class MatrixClient {
   /// Generates a unique transaction ID for idempotent message sends.
   static String _generateTxnId() {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final random = Random().nextInt(0xFFFFFF).toRadixString(16).padLeft(6, '0');
+    final random =
+        Random.secure().nextInt(0xFFFFFF).toRadixString(16).padLeft(6, '0');
     return 'txn_${timestamp}_$random';
   }
 
-  /// Converts plain text to basic HTML for `formatted_body`.
+  /// Converts plain text to HTML for `formatted_body`.
   ///
-  /// Preserves line breaks and escapes HTML entities.
+  /// Supports basic Markdown: **bold**, *italic*, `inline code`,
+  /// ```code blocks```, and line breaks. Escapes HTML entities first.
   static String _textToHtml(String text) {
-    return text
+    var html = text
         .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('\n', '<br/>');
+        .replaceAll('>', '&gt;');
+
+    // Code blocks (``` ... ```) — must come before inline code.
+    html = html.replaceAllMapped(
+      RegExp(r'```(\w*)\n?([\s\S]*?)```'),
+      (m) => '<pre><code>${m.group(2)}</code></pre>',
+    );
+
+    // Inline code (` ... `).
+    html = html.replaceAllMapped(
+      RegExp(r'`([^`]+)`'),
+      (m) => '<code>${m.group(1)}</code>',
+    );
+
+    // Bold (**text**).
+    html = html.replaceAllMapped(
+      RegExp(r'\*\*(.+?)\*\*'),
+      (m) => '<strong>${m.group(1)}</strong>',
+    );
+
+    // Italic (*text*) — after bold to avoid conflicts.
+    html = html.replaceAllMapped(
+      RegExp(r'\*(.+?)\*'),
+      (m) => '<em>${m.group(1)}</em>',
+    );
+
+    // Line breaks.
+    html = html.replaceAll('\n', '<br/>');
+
+    return html;
   }
 }
 

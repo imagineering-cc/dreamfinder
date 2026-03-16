@@ -198,6 +198,33 @@ void main() {
       expect(body['formatted_body'], contains('<br/>'));
     });
 
+    test('sendMessage converts Markdown to HTML', () async {
+      http.Request? capturedRequest;
+
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'send': (req) {
+            capturedRequest = req;
+            return _jsonResponse({'event_id': '\$sent2'});
+          },
+        }),
+      );
+
+      await client.sendMessage(
+        roomId: '!room:test',
+        message: '**bold** and *italic* and `code`',
+      );
+
+      final body =
+          jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
+      final html = body['formatted_body'] as String;
+      expect(html, contains('<strong>bold</strong>'));
+      expect(html, contains('<em>italic</em>'));
+      expect(html, contains('<code>code</code>'));
+    });
+
     test('joinRoom sends POST to join endpoint', () async {
       http.Request? capturedRequest;
 

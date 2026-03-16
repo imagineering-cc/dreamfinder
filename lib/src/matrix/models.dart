@@ -16,6 +16,11 @@ class MatrixEvent {
   });
 
   /// Parses a timeline event from the `/sync` response JSON.
+  ///
+  /// Missing fields default to empty values rather than throwing, since
+  /// partial events can occur in sync responses (e.g., redacted events,
+  /// stripped state). The caller should check [hasTextMessage] before
+  /// accessing [body].
   factory MatrixEvent.fromJson(
     Map<String, dynamic> json, {
     required String roomId,
