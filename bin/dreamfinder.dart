@@ -450,6 +450,8 @@ Future<void> main() async {
         if (!event.hasTextMessage) continue;
         if (event.sender == botUserId) continue; // Ignore own messages.
         if (ignoreRooms.contains(event.roomId)) continue;
+        // Ignore relay bot puppets to prevent cross-room echo loops.
+        if (event.sender.startsWith('@_relay_')) continue;
 
         final text = event.body!;
         final isDm = matrixClient.isDm(event.roomId);
