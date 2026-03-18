@@ -708,7 +708,7 @@ Future<AgentResponse> _callClaude(
 
   final response = await client.createMessage(
     request: anthropic.CreateMessageRequest(
-      model: const anthropic.Model.modelId('claude-sonnet-4-6'),
+      model: const anthropic.Model.modelId('claude-haiku-4-5-20251001'),
       maxTokens: 2048,
       system: anthropic.CreateMessageRequestSystem.text(systemPrompt),
       messages: sdkMessages,
