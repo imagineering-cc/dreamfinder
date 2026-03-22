@@ -20,7 +20,6 @@ class Env {
     this.calendarUrl,
     this.eventTimeZone,
     this.adminIds = const [],
-    this.kanMcpPath,
     this.botName = 'Dreamfinder',
     this.databasePath = './data/bot.db',
     this.logLevel = 'info',
@@ -73,7 +72,6 @@ class Env {
       calendarUrl: dotEnv['CALENDAR_URL'],
       eventTimeZone: dotEnv['EVENT_TIMEZONE'],
       adminIds: _parseList(dotEnv['ADMIN_IDS'] ?? dotEnv['ADMIN_UUIDS']),
-      kanMcpPath: dotEnv['KAN_MCP_PATH'],
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
       databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
@@ -103,7 +101,6 @@ class Env {
     String? calendarUrl,
     String? eventTimeZone,
     List<String> adminIds = const [],
-    String? kanMcpPath,
     String botName = 'Dreamfinder',
     String databasePath = './data/bot.db',
     String logLevel = 'info',
@@ -131,7 +128,6 @@ class Env {
         calendarUrl: calendarUrl,
         eventTimeZone: eventTimeZone,
         adminIds: adminIds,
-        kanMcpPath: kanMcpPath,
         botName: botName,
         databasePath: databasePath,
         logLevel: logLevel,
@@ -189,8 +185,6 @@ class Env {
   /// falls back to `ADMIN_UUIDS` for backward compatibility).
   final List<String> adminIds;
 
-  /// Path to the Kan MCP server entry point (from `KAN_MCP_PATH` env var).
-  final String? kanMcpPath;
   final String botName;
   final String databasePath;
   final String logLevel;

@@ -159,12 +159,20 @@ Light (N1→N2) → Deep (N2→N3) → Branch per spark (parallel) → REM (conv
 ### Installation
 
 ```bash
-# Clone the repo
-git clone git@github.com:imagineering-cc/dreamfinder.git
+# Clone the repo (--recurse-submodules pulls the shared MCP servers)
+git clone --recurse-submodules git@github.com:imagineering-cc/dreamfinder.git
 cd dreamfinder
 
-# Install dependencies
+# If you already cloned without --recurse-submodules:
+git submodule update --init
+
+# Install Dart dependencies
 dart pub get
+
+# Install MCP server dependencies
+for pkg in kan outline radicale; do
+  (cd mcp-servers/packages/$pkg && npm install)
+done
 
 # Set up environment
 cp .env.example .env
@@ -236,8 +244,14 @@ indirect communication.
 ## MCP Integration
 
 MCP (Model Context Protocol) servers run as child processes managed by `McpManager`.
-The `dart_mcp` package provides the Dart client for MCP protocol communication — STDIO
-transport wiring is in progress.
+The `dart_mcp` package provides the Dart client for MCP protocol communication via
+STDIO transport.
+
+The MCP server packages (Kan, Outline, Radicale) are shared with
+[Gremlin](https://github.com/10xdeca/gremlin) (xdeca's Telegram bot) via a
+[git submodule](https://github.com/nickmeinhold/mcp-servers) at `mcp-servers/`. Updates
+to the shared repo benefit both bots — run `git submodule update --remote` to pull
+the latest.
 
 ### Available Tool Sets (~75 tools total)
 
