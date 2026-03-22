@@ -103,7 +103,7 @@ Future<void> main() async {
   final mcpManager = McpManager();
 
   if (env.kanEnabled) {
-    final kanPath = env.kanMcpPath ?? 'mcp-servers/kan/index.js';
+    final kanPath = env.kanMcpPath ?? 'mcp-servers/packages/kan/index.js';
     await mcpManager.startServer(McpServerConfig(
       name: 'kan',
       command: 'node',
