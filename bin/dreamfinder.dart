@@ -474,11 +474,34 @@ Future<void> main() async {
 
       // Process timeline events.
       for (final event in sync.events) {
-        if (!event.hasTextMessage) continue;
         if (event.sender == botUserId) continue; // Ignore own messages.
         if (ignoreRooms.contains(event.roomId)) continue;
         // Ignore relay bot puppets to prevent cross-room echo loops.
         if (event.sender.startsWith('@_relay_')) continue;
+
+        // Welcome new members joining a group room.
+        if (event.isMemberJoin && !matrixClient.isDm(event.roomId)) {
+          final displayName =
+              event.memberDisplayName ?? event.sender.split(':').first.substring(1);
+          log.info('New member joined', extra: {
+            'room': event.roomId,
+            'user': event.sender,
+            'name': displayName,
+          });
+
+          try {
+            await matrixClient.sendMessage(
+              roomId: event.roomId,
+              message: 'Welcome $displayName! '
+                  "Send me a DM and I'll get you set up. ✨",
+            );
+          } on Exception catch (e) {
+            log.warning('Failed to send welcome message: $e');
+          }
+          continue;
+        }
+
+        if (!event.hasTextMessage) continue;
 
         final text = event.body!;
         final isDm = matrixClient.isDm(event.roomId);
