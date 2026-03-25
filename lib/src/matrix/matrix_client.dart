@@ -84,7 +84,9 @@ class MatrixClient {
 
     final uri = Uri.parse('$homeserver/_matrix/client/v3/sync')
         .replace(queryParameters: queryParams);
-    final response = await _getUri(uri);
+    // Client-side timeout = server long-poll timeout + 30s buffer.
+    final clientTimeout = Duration(milliseconds: timeout + 30000);
+    final response = await _getUri(uri, timeout: clientTimeout);
     final json = jsonDecode(response.body) as Map<String, dynamic>;
 
     return _parseSyncResponse(json);
@@ -279,32 +281,47 @@ class MatrixClient {
   // HTTP helpers
   // ---------------------------------------------------------------------------
 
+  /// Default client-side timeout for Matrix API calls.
+  static const _defaultTimeout = Duration(seconds: 30);
+
   Map<String, String> get _headers => {
         'Authorization': 'Bearer $accessToken',
         'Content-Type': 'application/json',
       };
 
-  Future<http.Response> _get(String path) async {
-    final response = await _client.get(
-      Uri.parse('$homeserver$path'),
-      headers: _headers,
-    );
+  Future<http.Response> _get(
+    String path, {
+    Duration timeout = _defaultTimeout,
+  }) async {
+    final response = await _client
+        .get(Uri.parse('$homeserver$path'), headers: _headers)
+        .timeout(timeout);
     _ensureSuccess(response);
     return response;
   }
 
-  Future<http.Response> _getUri(Uri uri) async {
-    final response = await _client.get(uri, headers: _headers);
+  Future<http.Response> _getUri(
+    Uri uri, {
+    Duration timeout = _defaultTimeout,
+  }) async {
+    final response =
+        await _client.get(uri, headers: _headers).timeout(timeout);
     _ensureSuccess(response);
     return response;
   }
 
-  Future<http.Response> _post(String path, {Map<String, dynamic>? body}) async {
-    final response = await _client.post(
-      Uri.parse('$homeserver$path'),
-      headers: _headers,
-      body: body != null ? jsonEncode(body) : null,
-    );
+  Future<http.Response> _post(
+    String path, {
+    Map<String, dynamic>? body,
+    Duration timeout = _defaultTimeout,
+  }) async {
+    final response = await _client
+        .post(
+          Uri.parse('$homeserver$path'),
+          headers: _headers,
+          body: body != null ? jsonEncode(body) : null,
+        )
+        .timeout(timeout);
     _ensureSuccess(response);
     return response;
   }
@@ -312,12 +329,15 @@ class MatrixClient {
   Future<http.Response> _put(
     String path, {
     required Map<String, dynamic> body,
+    Duration timeout = _defaultTimeout,
   }) async {
-    final response = await _client.put(
-      Uri.parse('$homeserver$path'),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
+    final response = await _client
+        .put(
+          Uri.parse('$homeserver$path'),
+          headers: _headers,
+          body: jsonEncode(body),
+        )
+        .timeout(timeout);
     _ensureSuccess(response);
     return response;
   }

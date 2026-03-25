@@ -452,6 +452,13 @@ Future<void> main() async {
       health.recordPoll();
       backoff = const Duration(seconds: 1); // Reset on success.
 
+      if (sync.events.isNotEmpty || sync.invites.isNotEmpty) {
+        log.debug('Sync returned', extra: {
+          'events': sync.events.length,
+          'invites': sync.invites.length,
+        });
+      }
+
       // Persist sync token for resumption.
       nextBatch = sync.nextBatch;
       queries.setMetadata('matrix_next_batch', nextBatch);
@@ -559,17 +566,26 @@ Future<void> main() async {
           );
 
           // Retrieve relevant long-term memories for context injection.
+          // Timeout gracefully — empty results are better than a hung loop.
           final memories = memoryRetriever != null
-              ? await memoryRetriever.retrieve(
-                  text,
-                  event.roomId,
-                  skipRecentMinutes: history.ttl.inMinutes,
-                )
+              ? await memoryRetriever
+                    .retrieve(
+                      text,
+                      event.roomId,
+                      skipRecentMinutes: history.ttl.inMinutes,
+                    )
+                    .timeout(
+                      const Duration(seconds: 10),
+                      onTimeout: () => <MemorySearchResult>[],
+                    )
               : <MemorySearchResult>[];
 
           // Fetch upcoming calendar events for awareness.
           final events = calendarRetriever != null
-              ? await calendarRetriever.fetchUpcoming()
+              ? await calendarRetriever.fetchUpcoming().timeout(
+                    const Duration(seconds: 10),
+                    onTimeout: () => <CalendarEvent>[],
+                  )
               : <CalendarEvent>[];
 
           // Detect kickstart triggers — any group member + trigger phrase.
@@ -609,10 +625,14 @@ Future<void> main() async {
             isGroup: isGroup,
           );
 
-          final response = await agentLoop.processMessage(
-            input,
-            systemPrompt: systemPromptText,
-          );
+          health.recordProcessingStart();
+          final stopwatch = Stopwatch()..start();
+          final response = await agentLoop
+              .processMessage(
+                input,
+                systemPrompt: systemPromptText,
+              )
+              .timeout(const Duration(minutes: 5));
           health.recordClaudeSuccess();
 
           if (response.isNotEmpty) {
@@ -627,7 +647,6 @@ Future<void> main() async {
             if (isGroup) {
               continuation.recordBotResponse(chatId: event.roomId);
             }
-            log.debug('Response sent');
 
             // Check for goodnight messages in group chats → trigger dream.
             if (isGroup && isGoodnightMessage(text)) {
@@ -646,10 +665,16 @@ Future<void> main() async {
               }
             }
           }
-        } on Exception catch (e) {
+          stopwatch.stop();
+          log.info('Message processed', extra: {
+            'room': event.roomId,
+            'elapsed_ms': stopwatch.elapsedMilliseconds,
+          });
+        } on Object catch (e, st) {
           health.recordError();
           log.error('Error processing message: $e', extra: {
             'room': event.roomId,
+            'stackTrace': '$st',
           });
 
           // Self-heal: clear corrupt conversation history.
@@ -667,14 +692,16 @@ Future<void> main() async {
               roomId: event.roomId,
               message: 'Something went wrong. Please try again.',
             );
-          } on Exception catch (sendErr) {
+          } on Object catch (sendErr) {
             log.error('Failed to send error message: $sendErr');
           }
+        } finally {
+          health.recordProcessingEnd();
         }
       }
-    } on Exception catch (e) {
+    } on Object catch (e, st) {
       health.recordError();
-      log.error('Sync error: $e');
+      log.error('Sync error: $e', extra: {'stackTrace': '$st'});
 
       // Exponential backoff on sync failure (1s → 2s → 4s → ... → 30s).
       await Future<void>.delayed(backoff);

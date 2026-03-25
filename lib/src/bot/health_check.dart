@@ -38,7 +38,11 @@ class HealthCheck {
 
   DateTime? _lastPoll;
   DateTime? _lastClaudeSuccess;
+  DateTime? _processingStart;
   int _errorCount = 0;
+
+  /// How long before in-flight message processing is considered stuck.
+  static const _stuckProcessingThreshold = Duration(minutes: 5);
 
   /// Starts the health check HTTP server.
   ///
@@ -65,6 +69,16 @@ class HealthCheck {
     _lastClaudeSuccess = DateTime.now();
   }
 
+  /// Records that message processing has started.
+  void recordProcessingStart() {
+    _processingStart = DateTime.now();
+  }
+
+  /// Records that message processing has finished (or failed).
+  void recordProcessingEnd() {
+    _processingStart = null;
+  }
+
   /// Increments the cumulative error counter.
   void recordError() {
     _errorCount++;
@@ -76,10 +90,13 @@ class HealthCheck {
       final uptime = now.difference(_startTime);
       final pollStale = _lastPoll != null &&
           now.difference(_lastPoll!) >= _stalePollThreshold;
-      final status = pollStale ? 'degraded' : 'ok';
+      final processingStuck = _processingStart != null &&
+          now.difference(_processingStart!) >= _stuckProcessingThreshold;
+      final isDegraded = pollStale || processingStuck;
+      final status = isDegraded ? 'degraded' : 'ok';
 
       request.response
-        ..statusCode = pollStale
+        ..statusCode = isDegraded
             ? HttpStatus.serviceUnavailable
             : HttpStatus.ok
         ..headers.contentType = ContentType.json
@@ -92,6 +109,8 @@ class HealthCheck {
           'last_poll': _lastPoll?.toUtc().toIso8601String(),
           'last_claude_success':
               _lastClaudeSuccess?.toUtc().toIso8601String(),
+          'processing_since':
+              _processingStart?.toUtc().toIso8601String(),
           'error_count': _errorCount,
         }))
         ..close();
