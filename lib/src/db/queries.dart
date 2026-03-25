@@ -14,6 +14,7 @@ import 'queries/identity_queries.dart';
 import 'queries/memory_queries.dart';
 import 'queries/metadata_queries.dart';
 import 'queries/oauth_queries.dart';
+import 'queries/radar_queries.dart';
 import 'queries/reminder_queries.dart';
 import 'queries/standup_queries.dart';
 import 'queries/user_link_queries.dart';
@@ -26,6 +27,7 @@ export 'queries/identity_queries.dart';
 export 'queries/memory_queries.dart';
 export 'queries/metadata_queries.dart';
 export 'queries/oauth_queries.dart';
+export 'queries/radar_queries.dart';
 export 'queries/reminder_queries.dart';
 export 'queries/standup_queries.dart';
 export 'queries/user_link_queries.dart';
@@ -47,7 +49,8 @@ class Queries
         MetadataQueries,
         StandupQueries,
         CalendarQueries,
-        DreamQueries
+        DreamQueries,
+        RadarQueries
     implements MemoryQueryAccessor {
   Queries(this.db);
 

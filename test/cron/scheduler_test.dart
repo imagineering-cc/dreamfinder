@@ -393,6 +393,113 @@ void main() {
       expect(consolidateCalled, isTrue);
     });
   });
+
+  group('Scheduler Repo Radar digest', () {
+    test('sends digest via agent for tracked repos during cleanup', () async {
+      queries.upsertTrackedRepo(
+        repo: 'dart-lang/sdk',
+        reason: 'Core SDK',
+        sourceChatId: 'room-1',
+      );
+      queries.upsertTrackedRepo(
+        repo: 'flutter/flutter',
+        reason: 'Mobile framework',
+        sourceChatId: 'room-1',
+      );
+
+      final composedTasks = <MapEntry<String, String>>[];
+      final sentMessages = <MapEntry<String, String>>[];
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        composeViaAgent: (groupId, taskDescription) async {
+          composedTasks.add(MapEntry(groupId, taskDescription));
+          return 'Here is your repo radar digest!';
+        },
+      );
+
+      // Tick at 3 AM to trigger daily cleanup + digest.
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      expect(composedTasks, hasLength(1));
+      expect(composedTasks.first.key, 'room-1');
+      expect(composedTasks.first.value, contains('dart-lang/sdk'));
+      expect(composedTasks.first.value, contains('flutter/flutter'));
+      expect(sentMessages, hasLength(1));
+      expect(sentMessages.first.value, 'Here is your repo radar digest!');
+    });
+
+    test('groups digest by source chat', () async {
+      queries.upsertTrackedRepo(
+        repo: 'dart-lang/sdk',
+        reason: 'SDK',
+        sourceChatId: 'room-1',
+      );
+      queries.upsertTrackedRepo(
+        repo: 'flutter/flutter',
+        reason: 'Flutter',
+        sourceChatId: 'room-2',
+      );
+
+      final composedChats = <String>[];
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          composedChats.add(groupId);
+          return 'Digest for $groupId';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      expect(composedChats, containsAll(['room-1', 'room-2']));
+    });
+
+    test('skips digest when no tracked repos', () async {
+      var composeCalled = false;
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          composeCalled = true;
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      expect(composeCalled, isFalse);
+    });
+
+    test('skips digest when composeViaAgent is null', () async {
+      queries.upsertTrackedRepo(
+        repo: 'dart-lang/sdk',
+        reason: 'SDK',
+        sourceChatId: 'room-1',
+      );
+
+      final sentMessages = <String>[];
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(message);
+        },
+        // No composeViaAgent — digest should be skipped.
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      // Only cleanup runs, no digest message sent.
+      expect(sentMessages, isEmpty);
+    });
+  });
 }
 
 /// Fake backfill for scheduler tests.

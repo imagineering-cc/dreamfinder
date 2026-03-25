@@ -40,6 +40,7 @@ import 'package:dreamfinder/src/tools/chat_config_tools.dart';
 import 'package:dreamfinder/src/tools/github_tools.dart';
 import 'package:dreamfinder/src/tools/kickstart_tools.dart';
 import 'package:dreamfinder/src/tools/memory_tools.dart';
+import 'package:dreamfinder/src/tools/radar_tools.dart';
 import 'package:dreamfinder/src/tools/standup_tools.dart';
 
 /// Maximum backoff for sync retry (30 seconds).
@@ -161,8 +162,13 @@ Future<void> main() async {
     token: env.githubToken,
     defaultRepo: env.githubRepo ?? 'imagineering-cc/dreamfinder',
   );
+  registerRadarTools(
+    toolRegistry,
+    queries: queries,
+    token: env.githubToken,
+  );
   if (env.githubEnabled) {
-    log.info('GitHub tools enabled');
+    log.info('GitHub tools enabled (includes Repo Radar)');
   }
   // Memory tools registered after pipeline creation below.
 
@@ -758,6 +764,15 @@ String _buildFullSystemPrompt({
   required String senderId,
   required bool isGroup,
 }) {
+  // Build tracked repo summaries for the Repo Radar system prompt section.
+  final trackedRepos = queries.getAllTrackedRepos().map((r) {
+    return TrackedRepoSummary(
+      repo: r.repo,
+      reason: r.reason,
+      starred: r.starred,
+    );
+  }).toList();
+
   var prompt = buildSystemPrompt(
     input,
     botName: env.botName,
@@ -765,6 +780,7 @@ String _buildFullSystemPrompt({
     memories: memories,
     events: events,
     eventTimeZone: env.eventTimeZone,
+    trackedRepos: trackedRepos,
   );
 
   // Kickstart prompt injection — check group key or DM reverse-lookup.

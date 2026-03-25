@@ -325,3 +325,127 @@ class CalendarReminderRecord {
   final CalendarReminderWindow reminderWindow;
   final String sentAt;
 }
+
+// ---------------------------------------------------------------------------
+// Repo Radar — tracked repositories and contribution drafts
+// ---------------------------------------------------------------------------
+
+/// Status of a contribution draft.
+enum ContributionDraftStatus {
+  draft,
+  submitted,
+  rejected;
+
+  /// Database column value.
+  String get dbValue => name;
+
+  /// Parses a database column value into a [ContributionDraftStatus].
+  static ContributionDraftStatus fromDb(String value) => switch (value) {
+        'draft' => draft,
+        'submitted' => submitted,
+        'rejected' => rejected,
+        _ => throw ArgumentError('Unknown contribution draft status: $value'),
+      };
+}
+
+/// Type of contribution (PR or issue).
+enum ContributionType {
+  pr,
+  issue;
+
+  /// Database column value.
+  String get dbValue => name;
+
+  /// Parses a database column value into a [ContributionType].
+  static ContributionType fromDb(String value) => switch (value) {
+        'pr' => pr,
+        'issue' => issue,
+        _ => throw ArgumentError('Unknown contribution type: $value'),
+      };
+}
+
+/// A GitHub repository tracked by the Repo Radar.
+class TrackedRepoRecord {
+  const TrackedRepoRecord({
+    required this.id,
+    required this.repo,
+    required this.reason,
+    required this.sourceChatId,
+    this.sourceMessage,
+    required this.starred,
+    this.metadata,
+    required this.trackedAt,
+    this.lastCrawledAt,
+  });
+
+  final int id;
+
+  /// Repository in `owner/name` format.
+  final String repo;
+
+  /// Why this repo is interesting (from conversation context).
+  final String reason;
+
+  /// The chat where this repo was first spotted.
+  final String sourceChatId;
+
+  /// The message that triggered tracking.
+  final String? sourceMessage;
+
+  /// Whether Dreamfinder has starred this repo on GitHub.
+  final bool starred;
+
+  /// JSON blob: stars, description, language, topics, open_issues, etc.
+  final String? metadata;
+
+  /// When the repo was first tracked.
+  final String trackedAt;
+
+  /// When metadata was last refreshed from GitHub.
+  final String? lastCrawledAt;
+}
+
+/// A draft PR or issue prepared for human review before submission.
+class ContributionDraftRecord {
+  const ContributionDraftRecord({
+    required this.id,
+    required this.repo,
+    required this.type,
+    required this.title,
+    required this.body,
+    this.targetBranch,
+    required this.status,
+    required this.createdAt,
+    this.submittedAt,
+    this.submittedUrl,
+  });
+
+  final int id;
+
+  /// Repository in `owner/name` format.
+  final String repo;
+
+  /// Whether this is a PR or issue draft.
+  final ContributionType type;
+
+  /// Title for the PR or issue.
+  final String title;
+
+  /// Body/description (GitHub Markdown).
+  final String body;
+
+  /// Target branch for PRs (e.g. `main`).
+  final String? targetBranch;
+
+  /// Current status: draft → submitted or rejected.
+  final ContributionDraftStatus status;
+
+  /// When the draft was created.
+  final String createdAt;
+
+  /// When the draft was submitted to GitHub.
+  final String? submittedAt;
+
+  /// URL of the created PR/issue on GitHub.
+  final String? submittedUrl;
+}

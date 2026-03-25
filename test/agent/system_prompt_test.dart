@@ -129,5 +129,61 @@ void main() {
       expect(prompt, contains('Requesting user:'));
       expect(prompt, isNot(contains('System-Initiated Reminder')));
     });
+
+    test('includes Repo Radar section when tracked repos provided', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(
+        input,
+        trackedRepos: const [
+          TrackedRepoSummary(
+            repo: 'dart-lang/sdk',
+            reason: 'Core Dart SDK',
+            starred: true,
+          ),
+          TrackedRepoSummary(
+            repo: 'flutter/flutter',
+            reason: 'Mobile framework',
+            starred: false,
+          ),
+        ],
+      );
+
+      expect(prompt, contains('## Repo Radar'));
+      expect(prompt, contains('**dart-lang/sdk** ★'));
+      expect(prompt, contains('Core Dart SDK'));
+      expect(prompt, contains('**flutter/flutter**:'));
+      expect(prompt, isNot(contains('flutter/flutter** ★')));
+    });
+
+    test('omits Repo Radar context section when no tracked repos', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+      // Capabilities mention Repo Radar, but the context section should not
+      // appear when there are no tracked repos.
+      expect(prompt, isNot(contains('## Repo Radar')));
+    });
+
+    test('mentions Repo Radar in capabilities', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+      expect(prompt, contains('track_repo'));
+      expect(prompt, contains('draft_contribution'));
+      expect(prompt, contains('human-in-the-loop'));
+    });
   });
 }
