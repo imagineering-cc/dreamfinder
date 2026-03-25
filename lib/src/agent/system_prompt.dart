@@ -182,15 +182,24 @@ You have tools for:
   }
 
   if (trackedRepos.isNotEmpty) {
+    // Cap at 15 repos to avoid bloating the system prompt. Most recent first
+    // (list is already sorted by tracked_at DESC from the query).
+    final capped = trackedRepos.take(15).toList();
     parts.add('\n## Repo Radar\n');
     parts.add(
       'You are currently tracking these repositories. When they come up in '
       'conversation, you can reference what you know. Use crawl_repo to '
       'refresh metadata if someone asks about a tracked repo.\n',
     );
-    for (final repo in trackedRepos) {
+    for (final repo in capped) {
       final star = repo.starred ? ' ★' : '';
       parts.add('- **${repo.repo}**$star: ${repo.reason}\n');
+    }
+    if (trackedRepos.length > 15) {
+      parts.add(
+        '\n(${trackedRepos.length - 15} more tracked — '
+        'use list_tracked_repos to see all)\n',
+      );
     }
   }
 
