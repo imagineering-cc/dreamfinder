@@ -27,6 +27,7 @@ import 'package:dreamfinder/src/kickstart/kickstart_state.dart';
 import 'package:dreamfinder/src/logging/logger.dart';
 import 'package:dreamfinder/src/matrix/matrix_auth.dart';
 import 'package:dreamfinder/src/matrix/matrix_client.dart';
+import 'package:dreamfinder/src/mcp/mcp_config.dart';
 import 'package:dreamfinder/src/mcp/mcp_manager.dart';
 import 'package:dreamfinder/src/memory/embedding_backfill.dart';
 import 'package:dreamfinder/src/memory/embedding_client.dart';
@@ -103,30 +104,41 @@ Future<void> main() async {
 
   final mcpManager = McpManager();
 
-  if (env.kanEnabled) {
-    await mcpManager.startServer(McpServerConfig(
-      name: 'kan',
-      command: 'node',
-      args: <String>['mcp-servers/packages/kan/index.js'],
-      env: <String, String>{
-        'KAN_BASE_URL': env.kanBaseUrl!,
-        'KAN_API_KEY': env.kanApiKey!,
-      },
-    ));
-  }
-  if (env.outlineEnabled) {
-    await mcpManager.startServer(const McpServerConfig(
-      name: 'outline',
-      command: 'node',
-      args: <String>['mcp-servers/packages/outline/index.js'],
-    ));
-  }
-  if (env.radicaleEnabled) {
-    await mcpManager.startServer(const McpServerConfig(
-      name: 'radicale',
-      command: 'node',
-      args: <String>['mcp-servers/packages/radicale/index.js'],
-    ));
+  // Load MCP servers from config file. Servers with unresolved env vars
+  // are silently skipped — this lets the same config work across
+  // environments (dev without Kan, prod with everything).
+  final mcpConfigs = loadMcpConfig();
+  if (mcpConfigs.isNotEmpty) {
+    for (final config in mcpConfigs) {
+      await mcpManager.startServer(config);
+    }
+  } else {
+    // Fallback: no config file, use legacy env-var-based setup.
+    if (env.kanEnabled) {
+      await mcpManager.startServer(McpServerConfig(
+        name: 'kan',
+        command: 'node',
+        args: <String>['mcp-servers/packages/kan/index.js'],
+        env: <String, String>{
+          'KAN_BASE_URL': env.kanBaseUrl!,
+          'KAN_API_KEY': env.kanApiKey!,
+        },
+      ));
+    }
+    if (env.outlineEnabled) {
+      await mcpManager.startServer(const McpServerConfig(
+        name: 'outline',
+        command: 'node',
+        args: <String>['mcp-servers/packages/outline/index.js'],
+      ));
+    }
+    if (env.radicaleEnabled) {
+      await mcpManager.startServer(const McpServerConfig(
+        name: 'radicale',
+        command: 'node',
+        args: <String>['mcp-servers/packages/radicale/index.js'],
+      ));
+    }
   }
 
   final serverNames = mcpManager.getServerNames();
@@ -135,7 +147,7 @@ Future<void> main() async {
   // Set up calendar event awareness — optional, enabled when CALENDAR_URL is
   // set and Radicale MCP is running.
   CalendarRetriever? calendarRetriever;
-  if (env.calendarUrl != null && env.radicaleEnabled) {
+  if (env.calendarUrl != null && serverNames.contains('radicale')) {
     calendarRetriever = CalendarRetriever(
       mcpManager: mcpManager,
       calendarUrl: env.calendarUrl!,

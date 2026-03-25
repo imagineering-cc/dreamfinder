@@ -1,0 +1,30 @@
+[
+  {
+    "name": "kan",
+    "command": "node",
+    "args": ["mcp-servers/packages/kan/index.js"],
+    "env": {
+      "KAN_BASE_URL": "$KAN_BASE_URL",
+      "KAN_API_KEY": "$KAN_API_KEY"
+    }
+  },
+  {
+    "name": "outline",
+    "command": "node",
+    "args": ["mcp-servers/packages/outline/index.js"],
+    "env": {
+      "OUTLINE_BASE_URL": "$OUTLINE_BASE_URL",
+      "OUTLINE_API_KEY": "$OUTLINE_API_KEY"
+    }
+  },
+  {
+    "name": "radicale",
+    "command": "node",
+    "args": ["mcp-servers/packages/radicale/index.js"],
+    "env": {
+      "RADICALE_URL": "$RADICALE_BASE_URL",
+      "RADICALE_USERNAME": "$RADICALE_USERNAME",
+      "RADICALE_PASSWORD": "$RADICALE_PASSWORD"
+    }
+  }
+]

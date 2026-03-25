@@ -55,8 +55,9 @@ COPY mcp-servers/packages/radicale/package.json mcp-servers/packages/radicale/
 COPY mcp-servers/packages/radicale/ mcp-servers/packages/radicale/
 RUN cd mcp-servers/packages/radicale && npm install --omit=dev 2>/dev/null || true
 
-# Copy compiled binary from build stage.
+# Copy compiled binary and MCP config from build stage.
 COPY --from=build /app/bin/dreamfinder /app/bin/dreamfinder
+COPY mcp-config.json /app/mcp-config.json
 
 RUN mkdir -p /app/data
 
