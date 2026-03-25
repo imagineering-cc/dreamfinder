@@ -32,6 +32,7 @@ void registerRadarTools(
 
   final client = httpClient ?? http.Client();
 
+  registry.registerCustomTool(_searchGitHubReposTool(token, client));
   registry.registerCustomTool(_trackRepoTool(registry, queries));
   registry.registerCustomTool(_listTrackedReposTool(queries));
   registry.registerCustomTool(_crawlRepoTool(registry, queries, token, client));
@@ -69,6 +70,119 @@ Future<http.Response> _ghApi(
     default:
       return client.get(uri, headers: headers);
   }
+}
+
+// ---------------------------------------------------------------------------
+// search_github_repos
+// ---------------------------------------------------------------------------
+
+CustomToolDef _searchGitHubReposTool(
+  String token,
+  http.Client client,
+) {
+  return CustomToolDef(
+    name: 'search_github_repos',
+    description: 'Search GitHub for repositories matching a concept, topic, or '
+        'technology. Use this proactively when conversation touches on '
+        'interesting problems, tools, or ideas — find repos the team '
+        'might benefit from. Returns top results with stars, description, '
+        'and language. Follow up with track_repo on interesting finds.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'query': <String, dynamic>{
+          'type': 'string',
+          'description': 'Search query — can be concepts, keywords, or '
+              "technology names (e.g. 'dart error handling', "
+              "'flutter state management', 'matrix bot SDK')",
+        },
+        'language': <String, dynamic>{
+          'type': 'string',
+          'description': 'Filter by programming language (e.g. Dart, Go, Rust)',
+        },
+        'sort': <String, dynamic>{
+          'type': 'string',
+          'enum': ['stars', 'updated', 'best-match'],
+          'description': 'Sort results by: stars, updated, or best-match '
+              '(default: best-match)',
+        },
+        'limit': <String, dynamic>{
+          'type': 'integer',
+          'description': 'Number of results to return (default: 5, max: 10)',
+        },
+      },
+      'required': <String>['query'],
+    },
+    handler: (args) async {
+      final query = args['query'] as String;
+      final language = args['language'] as String?;
+      final sort = args['sort'] as String? ?? 'best-match';
+      final limit = ((args['limit'] as num?)?.toInt() ?? 5).clamp(1, 10);
+
+      // Build the search query with optional language filter.
+      var searchQuery = query;
+      if (language != null && language.isNotEmpty) {
+        searchQuery += ' language:$language';
+      }
+
+      final params = <String, String>{
+        'q': searchQuery,
+        'per_page': '$limit',
+      };
+      if (sort != 'best-match') {
+        params['sort'] = sort;
+        params['order'] = 'desc';
+      }
+
+      final queryString =
+          params.entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}').join('&');
+      final res = await _ghApi(
+        client,
+        token,
+        '/search/repositories?$queryString',
+      );
+
+      if (res.statusCode != 200) {
+        return jsonEncode(<String, dynamic>{
+          'error':
+              'GitHub search API error: ${res.statusCode} ${res.reasonPhrase}',
+        });
+      }
+
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final totalCount = data['total_count'] as int? ?? 0;
+      final items =
+          (data['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+
+      if (items.isEmpty) {
+        return jsonEncode(<String, dynamic>{
+          'results': <dynamic>[],
+          'total_count': 0,
+          'message': 'No repositories found for "$query".',
+        });
+      }
+
+      final results = items.map((item) {
+        return <String, dynamic>{
+          'repo': item['full_name'] as String,
+          'description': item['description'],
+          'stars': item['stargazers_count'],
+          'language': item['language'],
+          'updated_at': (item['updated_at'] as String?)?.substring(0, 10),
+          'topics': item['topics'] ?? <String>[],
+          'open_issues': item['open_issues_count'],
+          if (item['license'] is Map)
+            'license': (item['license'] as Map)['spdx_id'],
+        };
+      }).toList();
+
+      return jsonEncode(<String, dynamic>{
+        'results': results,
+        'total_count': totalCount,
+        'query': query,
+      });
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
