@@ -4,6 +4,11 @@
 /// - **Standup prompts**: Sends a prompt message at the configured hour.
 /// - **Standup summaries**: Composes and sends a summary at the configured
 ///   summary hour, including all responses collected during the day.
+/// - **Proactive nudges**: At the configured nudge hour, asks the agent to
+///   check Kan for overdue/stale cards and nudge the team. Daily dedup
+///   via `bot_metadata`.
+/// - **Nightly dreams**: Triggers the dream cycle for workspace-linked
+///   groups during the 3 AM cleanup window.
 /// - **Data cleanup**: Removes old reminders and calendar reminder records.
 ///
 /// The scheduler checks all standup configs every minute and fires actions

@@ -62,6 +62,12 @@ CustomToolDef _configureStandupTool(Queries queries) {
           'type': 'boolean',
           'description': 'Skip standups on weekends (default: true).',
         },
+        'nudge_hour': <String, dynamic>{
+          'type': 'integer',
+          'description':
+              'Hour (0-23) to send proactive nudges about overdue Kan '
+                  'cards. Set to null to disable nudges.',
+        },
       },
       'required': <String>['group_id'],
     },
@@ -76,6 +82,7 @@ CustomToolDef _configureStandupTool(Queries queries) {
         summaryHour: args['summary_hour'] as int?,
         timezone: args['timezone'] as String?,
         skipWeekends: args['skip_weekends'] as bool?,
+        nudgeHour: args['nudge_hour'] as int?,
       );
 
       final config = queries.getStandupConfig(groupId);
@@ -86,6 +93,7 @@ CustomToolDef _configureStandupTool(Queries queries) {
         'summary_hour': config.summaryHour,
         'timezone': config.timezone,
         'skip_weekends': config.skipWeekends,
+        'nudge_hour': config.nudgeHour,
       });
     },
   );
