@@ -134,6 +134,25 @@ class MatrixClient {
     );
   }
 
+  /// Creates a direct message room with [userId] and returns the room ID.
+  ///
+  /// If a DM room already exists with this user, Matrix may return the
+  /// existing room. The room is marked as `is_direct` so clients display
+  /// it as a DM.
+  Future<String> createDm(String userId) async {
+    final response = await _post(
+      '/_matrix/client/v3/createRoom',
+      body: <String, dynamic>{
+        'is_direct': true,
+        'invite': <String>[userId],
+        'preset': 'trusted_private_chat',
+      },
+    );
+
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return json['room_id'] as String;
+  }
+
   /// Joins a room by ID or alias.
   Future<void> joinRoom(String roomIdOrAlias) async {
     final encoded = Uri.encodeComponent(roomIdOrAlias);
