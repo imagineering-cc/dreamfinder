@@ -10,7 +10,7 @@ void main() {
   );
 
   group('buildDreamCyclePrompt', () {
-    test('light cycle includes N1 and N2 stages', () {
+    test('light cycle includes triage instructions', () {
       final prompt = buildDreamCyclePrompt(
         context: defaultContext,
         cycle: SleepCycle.light,
@@ -20,13 +20,14 @@ void main() {
       expect(prompt, contains('Light Sleep'));
       expect(prompt, contains('N1→N2'));
       expect(prompt, contains('Stage N1'));
-      expect(prompt, contains('Drift'));
+      expect(prompt, contains('Triage'));
+      expect(prompt, contains('overdue'));
       expect(prompt, contains('Stage N2'));
-      expect(prompt, contains('Settle'));
-      expect(prompt, contains('Do NOT send any Signal messages'));
+      expect(prompt, contains('File'));
+      expect(prompt, contains('Do NOT send messages to chat rooms'));
     });
 
-    test('deep cycle outputs spark format instructions', () {
+    test('deep cycle outputs task format instructions', () {
       final prompt = buildDreamCyclePrompt(
         context: defaultContext,
         cycle: SleepCycle.deep,
@@ -37,8 +38,7 @@ void main() {
       expect(prompt, contains('Deep Sleep'));
       expect(prompt, contains('N2→N3'));
       expect(prompt, contains('Restore'));
-      expect(prompt, contains('[SPARK]'));
-      expect(prompt, contains('dream thread'));
+      expect(prompt, contains('[TASK:'));
       // Should include previous summary.
       expect(prompt, contains('Filed 3 items.'));
     });
@@ -108,10 +108,13 @@ void main() {
   });
 
   group('buildDreamBranchPrompt', () {
-    test('includes spark and branch number', () {
+    test('includes task and branch number', () {
       final prompt = buildDreamBranchPrompt(
         context: defaultContext,
-        spark: 'Auth refactor shares session logic with onboarding',
+        task: const DreamTask(
+          DreamTaskType.review,
+          'Auth refactor shares session logic with onboarding',
+        ),
         branchNumber: 1,
         totalBranches: 3,
         deepSummary: 'Found 3 connections.',
@@ -124,17 +127,63 @@ void main() {
       expect(prompt, contains('dream::group-1::branch-1'));
     });
 
-    test('instructs agent to focus on single spark', () {
+    test('instructs agent to focus on single task', () {
       final prompt = buildDreamBranchPrompt(
         context: defaultContext,
-        spark: 'Test spark',
+        task: const DreamTask(DreamTaskType.nudge, 'Test task'),
         branchNumber: 2,
         totalBranches: 2,
         deepSummary: 'Summary.',
       );
 
       expect(prompt, contains('no awareness of any other dream threads'));
-      expect(prompt, contains('Do NOT explore other sparks'));
+      expect(prompt, contains('Do NOT work on other tasks'));
+    });
+
+    test('includes task-type-specific instructions for triage', () {
+      final prompt = buildDreamBranchPrompt(
+        context: defaultContext,
+        task: const DreamTask(
+          DreamTaskType.triage,
+          'Update overdue cards on the Sprint board',
+        ),
+        branchNumber: 1,
+        totalBranches: 1,
+        deepSummary: 'Summary.',
+      );
+
+      expect(prompt, contains('overdue'));
+      expect(prompt, contains('status'));
+    });
+
+    test('includes task-type-specific instructions for prep', () {
+      final prompt = buildDreamBranchPrompt(
+        context: defaultContext,
+        task: const DreamTask(
+          DreamTaskType.prep,
+          'Prepare for tomorrow standup meeting',
+        ),
+        branchNumber: 1,
+        totalBranches: 1,
+        deepSummary: 'Summary.',
+      );
+
+      expect(prompt, contains('agenda'));
+    });
+
+    test('includes task-type-specific instructions for draft', () {
+      final prompt = buildDreamBranchPrompt(
+        context: defaultContext,
+        task: const DreamTask(
+          DreamTaskType.draft,
+          'Write weekly progress summary',
+        ),
+        branchNumber: 1,
+        totalBranches: 1,
+        deepSummary: 'Summary.',
+      );
+
+      expect(prompt, contains('Outline'));
     });
   });
 
@@ -155,7 +204,7 @@ void main() {
       expect(prompt, contains('Explored auth: created doc.'));
       expect(prompt, contains('Explored calendar: updated cards.'));
       expect(prompt, contains('Deep findings.'));
-      expect(prompt, contains('meta-patterns'));
+      expect(prompt, contains('morning briefing'));
       expect(prompt, contains('dream::group-1::rem'));
     });
 
@@ -166,35 +215,70 @@ void main() {
         deepSummary: 'Summary.',
       );
 
-      expect(prompt, contains('3 sparks'));
+      expect(prompt, contains('3 tasks'));
+    });
+
+    test('includes morning briefing instructions', () {
+      final prompt = buildDreamConvergencePrompt(
+        context: defaultContext,
+        branchReports: ['Done A.'],
+        deepSummary: 'Summary.',
+      );
+
+      expect(prompt, contains('morning briefing'));
+      expect(prompt, contains('Do NOT send messages to chat rooms'));
     });
   });
 
-  group('parseSparks', () {
-    test('extracts spark lines', () {
-      final sparks = parseSparks(
-        'Found connections.\n'
-        '[SPARK] Auth × onboarding session tokens\n'
-        '[SPARK] Calendar timing overlap\n'
+  group('parseTasks', () {
+    test('extracts typed task lines', () {
+      final tasks = parseTasks(
+        'Found work to do.\n'
+        '[TASK:triage] Update overdue cards on Sprint board\n'
+        '[TASK:prep] Prepare for tomorrow standup meeting\n'
         'Summary done.',
       );
 
-      expect(sparks, hasLength(2));
-      expect(sparks[0], equals('Auth × onboarding session tokens'));
-      expect(sparks[1], equals('Calendar timing overlap'));
+      expect(tasks, hasLength(2));
+      expect(tasks[0].type, equals(DreamTaskType.triage));
+      expect(tasks[0].description, equals('Update overdue cards on Sprint board'));
+      expect(tasks[1].type, equals(DreamTaskType.prep));
+      expect(tasks[1].description, equals('Prepare for tomorrow standup meeting'));
     });
 
     test('caps at maxDreamBranches', () {
-      final sparks = parseSparks(
-        '[SPARK] One\n[SPARK] Two\n[SPARK] Three\n'
-        '[SPARK] Four\n[SPARK] Five\n[SPARK] Six\n',
+      final tasks = parseTasks(
+        '[TASK:triage] One\n[TASK:nudge] Two\n[TASK:draft] Three\n'
+        '[TASK:review] Four\n[TASK:prep] Five\n[TASK:explore] Six\n',
       );
 
-      expect(sparks, hasLength(maxDreamBranches));
+      expect(tasks, hasLength(maxDreamBranches));
     });
 
-    test('returns empty list when no sparks', () {
-      expect(parseSparks('No sparks today.'), isEmpty);
+    test('returns empty list when no tasks', () {
+      expect(parseTasks('Nothing to do tonight.'), isEmpty);
+    });
+
+    test('unknown type defaults to explore', () {
+      final tasks = parseTasks('[TASK:banana] Something unusual');
+
+      expect(tasks, hasLength(1));
+      expect(tasks[0].type, equals(DreamTaskType.explore));
+      expect(tasks[0].description, equals('Something unusual'));
+    });
+
+    test('handles all known task types', () {
+      final tasks = parseTasks(
+        '[TASK:triage] A\n'
+        '[TASK:prep] B\n'
+        '[TASK:draft] C\n'
+        '[TASK:nudge] D\n',
+      );
+
+      expect(tasks[0].type, equals(DreamTaskType.triage));
+      expect(tasks[1].type, equals(DreamTaskType.prep));
+      expect(tasks[2].type, equals(DreamTaskType.draft));
+      expect(tasks[3].type, equals(DreamTaskType.nudge));
     });
   });
 

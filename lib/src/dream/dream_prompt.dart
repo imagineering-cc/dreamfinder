@@ -52,8 +52,52 @@ enum SleepCycle {
   final String stages;
 }
 
-/// Maximum number of dream branches to spawn from sparks.
+/// Maximum number of dream branches to spawn from tasks.
 const maxDreamBranches = 4;
+
+/// Types of concrete work a dream branch can perform.
+enum DreamTaskType {
+  /// Update overdue or stale cards — add status comments, flag blockers.
+  triage('triage'),
+
+  /// Meeting prep — create agenda doc with relevant Kan card status.
+  prep('prep'),
+
+  /// Write or update Outline summary documents.
+  draft('draft'),
+
+  /// Comment on stale cards asking for status updates.
+  nudge('nudge'),
+
+  /// Review a PR, document, or design — add findings.
+  review('review'),
+
+  /// Fallback for unrecognized types — open-ended exploration.
+  explore('explore');
+
+  const DreamTaskType(this.value);
+
+  /// The string value used in `[TASK:value]` tags.
+  final String value;
+
+  /// Parses a string into a [DreamTaskType], defaulting to [explore].
+  static DreamTaskType fromString(String s) =>
+      DreamTaskType.values.cast<DreamTaskType?>().firstWhere(
+            (t) => t!.value == s,
+            orElse: () => DreamTaskType.explore,
+          )!;
+}
+
+/// A concrete task for a dream branch to execute.
+class DreamTask {
+  const DreamTask(this.type, this.description);
+
+  /// What kind of work this branch should do.
+  final DreamTaskType type;
+
+  /// Human-readable description of the task.
+  final String description;
+}
 
 // ---------------------------------------------------------------------------
 // Sequential cycle prompts (Light + Deep)
@@ -116,7 +160,8 @@ String buildDreamCyclePrompt({
     '',
     '## Constraints',
     '',
-    '- Do NOT send any Signal messages. All output goes to Outline and Kan.',
+    '- Do NOT send messages to chat rooms directly. All output goes to '
+        'Outline and Kan.',
     '- Do NOT create tasks that duplicate existing ones — search first.',
     '- Be thorough but efficient. Skip work if there is nothing to do.',
     '- End your response with `[DEPTH: continue]` if you filed or found items '
@@ -132,30 +177,18 @@ String buildDreamCyclePrompt({
   return parts.join('\n');
 }
 
-/// Backward-compatible single-prompt builder.
-String buildDreamSystemPrompt({
-  required DreamContext context,
-  required List<PersistedMessage> chatHistory,
-}) {
-  return buildDreamCyclePrompt(
-    context: context,
-    cycle: SleepCycle.light,
-    chatHistory: chatHistory,
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Branch prompt — one per spark, runs in parallel
 // ---------------------------------------------------------------------------
 
 /// Builds the system prompt for a single dream branch.
 ///
-/// Each branch explores one spark in isolation — like a dream jump-cut
-/// where you suddenly find yourself somewhere new, fully immersed, without
-/// any memory of the other threads running in parallel.
+/// Each branch executes one concrete task in isolation — like a dream
+/// jump-cut where you suddenly find yourself somewhere new, fully immersed,
+/// without any memory of the other threads running in parallel.
 String buildDreamBranchPrompt({
   required DreamContext context,
-  required String spark,
+  required DreamTask task,
   required int branchNumber,
   required int totalBranches,
   required String deepSummary,
@@ -172,13 +205,13 @@ String buildDreamBranchPrompt({
     '',
     '## Dream Branch $branchNumber of $totalBranches — N3 (Restore)',
     '',
-    'You are dreaming about a single spark — a connection your deeper self '
-        'noticed. You have no awareness of any other dream threads. Just this '
-        'one idea, and all your attention on it.',
+    'You are dreaming about a single task — work your deeper self '
+        'identified as needed. You have no awareness of any other dream '
+        'threads. Just this one task, and all your attention on it.',
     '',
-    '## The Spark',
+    '## The Task',
     '',
-    spark,
+    '[${task.type.value}] ${task.description}',
     '',
     '## What Your Deeper Self Found (for context)',
     '',
@@ -186,20 +219,16 @@ String buildDreamBranchPrompt({
     '',
     '## Instructions',
     '',
-    '- Explore this spark fully. Go where it leads.',
-    '- Search Outline and Kan for related existing content.',
-    '- Create or update documents and cards as appropriate.',
-    '- Follow the thread — if exploring this spark surfaces a deeper '
-        'insight, follow it.',
-    '- Do NOT explore other sparks. This is your only thread.',
+    ..._branchInstructionsForType(task.type),
+    '- Do NOT work on other tasks. This is your only thread.',
     '',
     '## Constraints',
     '',
-    '- Do NOT send any Signal messages.',
+    '- Do NOT send messages to chat rooms directly.',
     '- Do NOT create tasks that duplicate existing ones — search first.',
     '',
-    'End with a brief summary of what you explored, what you filed, and '
-        'any insights that emerged.',
+    'End with a brief summary of what you did, what you filed or updated, '
+        'and any follow-ups that need human attention.',
     '',
     '## Context',
     '',
@@ -209,6 +238,46 @@ String buildDreamBranchPrompt({
 
   return parts.join('\n');
 }
+
+/// Returns task-type-specific instructions for a dream branch.
+List<String> _branchInstructionsForType(DreamTaskType type) => switch (type) {
+      DreamTaskType.triage => [
+          '- Search Kan for the overdue and stale cards described above.',
+          '- Add status comments to each card — what is the current state?',
+          '- Move cards if work is done. Flag blocked ones with a comment.',
+          '- Update due dates if they are clearly stale.',
+        ],
+      DreamTaskType.prep => [
+          '- Create an Outline document with a meeting agenda.',
+          '- Pull relevant Kan card status for topics on the agenda.',
+          '- List open questions and decisions needed.',
+          '- Link to relevant Outline docs for background reading.',
+        ],
+      DreamTaskType.draft => [
+          '- Create or update the relevant Outline document.',
+          '- Summarize recent progress, decisions, and open items.',
+          '- Pull data from Kan cards and recent chat to make it concrete.',
+          '- Keep the writing clear and actionable.',
+        ],
+      DreamTaskType.nudge => [
+          '- Find the stale cards described above in Kan.',
+          '- Add a comment to each asking for a status update.',
+          '- Note any blockers or dependencies you can identify.',
+          '- Be helpful, not nagging — frame as "checking in."',
+        ],
+      DreamTaskType.review => [
+          '- Find the item to review (PR, doc, or design).',
+          '- Read it thoroughly. Search for related context in Outline and Kan.',
+          '- Add comments with findings — what looks good, what needs attention.',
+          '- Create Kan cards for any action items that emerge.',
+        ],
+      DreamTaskType.explore => [
+          '- Explore this thread fully. Go where it leads.',
+          '- Search Outline and Kan for related existing content.',
+          '- Create or update documents and cards as appropriate.',
+          '- Follow the thread — if it surfaces a deeper insight, follow it.',
+        ],
+    };
 
 // ---------------------------------------------------------------------------
 // REM convergence prompt — merges branch outputs
@@ -236,8 +305,8 @@ String buildDreamConvergencePrompt({
     '',
     '## Stage REM — Dream',
     '',
-    'Your dream threads are converging. You explored '
-        '${branchReports.length} sparks in parallel — each in its own '
+    'Your dream threads are converging. You executed '
+        '${branchReports.length} tasks in parallel — each in its own '
         'isolated dream. Now the threads merge and you see the whole picture.',
     '',
   ];
@@ -251,18 +320,19 @@ String buildDreamConvergencePrompt({
     '### Deep Sleep Summary (for context)\n$deepSummary\n',
     '## Instructions',
     '',
-    '- Read all dream threads. Find the *meta-patterns* — connections '
-        'between branches that no individual thread could have seen.',
-    '- Surface items that need follow-up or nudging tomorrow.',
+    '- Read all dream threads. Synthesize what was accomplished overnight.',
+    '- Create a **morning briefing** — what was done, what needs human '
+        'attention, what\'s coming up today.',
+    '- Surface items that need follow-up or decisions from the team.',
     '- Identify blocked work or upcoming deadlines.',
-    '- Create any final Outline docs or Kan cards for cross-thread insights.',
-    '- Prepare a brief, in-character "dream report" for the team.',
+    '- Create an Outline doc titled "Morning Briefing" with the full briefing '
+        'if substantial work was done.',
     '',
     '## Constraints',
     '',
-    '- Do NOT send any Signal messages.',
-    '- The dream report should be 3-5 sentences — evocative but useful.',
-    '- Focus on what\'s *interesting*, not just what was filed.',
+    '- Do NOT send messages to chat rooms directly.',
+    '- The morning briefing should be 3-5 sentences — concise but useful.',
+    '- Focus on what was *done* and what needs *human attention*.',
     '',
     '## Context',
     '',
@@ -278,15 +348,15 @@ String buildDreamConvergencePrompt({
 // ---------------------------------------------------------------------------
 
 List<String> _lightSleepInstructions() => <String>[
-      '## Stage N1 — Drift',
+      '## Stage N1 — Triage',
       '',
-      'Light sleep. Let the day settle. Skim the chat history and identify:',
-      '- Decisions made',
-      '- Action items mentioned but not yet tracked',
-      '- Questions that were left unanswered',
-      '- Interesting ideas or recurring themes',
+      'Light sleep. Scan the workspace for what needs attention:',
+      '- Search Kan for **overdue cards** (past their due date)',
+      '- Search Kan for **stale cards** (no activity in 7+ days)',
+      '- Check Radicale for **tomorrow\'s calendar events**',
+      '- Skim the chat history for **untracked action items**',
       '',
-      '## Stage N2 — Settle',
+      '## Stage N2 — File',
       '',
       'Your brain begins to consolidate. File what you found:',
       '- Create or update Outline documents for knowledge, decisions, and notes',
@@ -298,33 +368,40 @@ List<String> _lightSleepInstructions() => <String>[
     ];
 
 List<String> _deepSleepInstructions() => <String>[
-      '## Stage N2 — Settle (deeper)',
+      '## Stage N2 — Analyze',
       '',
-      'You already filed the obvious items. Now go deeper:',
-      '- Search existing Outline docs for related content — update rather '
-          'than create',
-      '- Search Kan for cards that relate to what was discussed',
-      '- Link new items to existing context',
+      'You already filed the obvious items. Now analyze what needs action:',
+      '- Dig deeper into each area identified during triage',
+      '- Find **blocked work chains** (card A blocks card B)',
+      '- Identify **dependencies** and upcoming deadlines',
+      '- Cross-reference Outline docs with Kan card status',
       '',
       '## Stage N3 — Restore',
       '',
-      'Deep sleep. The restorative phase — this is where insight happens:',
-      '- Look for connections between today\'s items and older work',
-      '- Find patterns across topics that aren\'t obviously related',
+      'Deep sleep. The restorative phase — this is where real work gets '
+          'planned:',
+      '- Determine concrete tasks that can be done *right now* overnight',
+      '- Prioritize by impact: overdue items > stale items > prep work',
       '',
       '## Output Format',
       '',
-      'End your response with a summary and a list of sparks. Each spark is '
-          'a connection or creative idea worth exploring further. Format them '
-          'exactly like this:',
+      'End your response with a summary and a list of tasks. Each task is '
+          'a concrete piece of work to execute in a parallel dream branch. '
+          'Format them exactly like this, using the appropriate type:',
       '',
       '```',
-      '[SPARK] Brief description of the connection or idea',
-      '[SPARK] Another spark',
+      '[TASK:triage] Update overdue cards on the Sprint board',
+      '[TASK:prep] Prepare agenda for tomorrow\'s planning meeting',
+      '[TASK:draft] Write weekly progress summary in Outline',
+      '[TASK:nudge] Comment on stale cards asking for status',
+      '[TASK:review] Review the auth refactor design doc',
       '```',
       '',
-      'If you found no sparks, just end with your summary and `[DEPTH: wake]`.',
-      'Each spark will become its own dream thread, explored in parallel.',
+      'Task types: `triage`, `prep`, `draft`, `nudge`, `review`.',
+      '',
+      'If there is no actionable work, just end with your summary and '
+          '`[DEPTH: wake]`.',
+      'Each task will become its own dream thread, executed in parallel.',
     ];
 
 // ---------------------------------------------------------------------------
@@ -372,13 +449,17 @@ String stripDepthSignal(String text) {
       .trim();
 }
 
-/// Parses `[SPARK] ...` lines from the Deep cycle's output.
+/// Parses `[TASK:type] description` lines from the analysis output.
 ///
-/// Returns a list of spark descriptions, capped at [maxDreamBranches].
-List<String> parseSparks(String text) {
-  final matches = RegExp(r'\[SPARK\]\s*(.+)').allMatches(text);
+/// Returns a list of [DreamTask]s, capped at [maxDreamBranches].
+/// Unknown types default to [DreamTaskType.explore].
+List<DreamTask> parseTasks(String text) {
+  final matches = RegExp(r'\[TASK:(\w+)\]\s*(.+)').allMatches(text);
   return matches
-      .map((m) => m.group(1)!.trim())
+      .map((m) => DreamTask(
+            DreamTaskType.fromString(m.group(1)!),
+            m.group(2)!.trim(),
+          ))
       .take(maxDreamBranches)
       .toList();
 }

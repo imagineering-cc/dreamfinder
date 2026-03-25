@@ -322,6 +322,16 @@ Future<void> main() async {
     sendMessage: sendToRoom,
     backfill: embeddingBackfill,
     consolidator: memoryConsolidator,
+    triggerDream: ({
+      required String groupId,
+      required String triggeredByUuid,
+      required String date,
+    }) =>
+        dreamCycle.trigger(
+      groupId: groupId,
+      triggeredByUuid: triggeredByUuid,
+      date: date,
+    ),
     composeViaAgent: (groupId, taskDescription) async {
       final input = AgentInput(
         text: taskDescription,

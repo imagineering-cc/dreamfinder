@@ -221,12 +221,12 @@ class DreamCycle {
           name: 'DreamCycle',
         );
 
-        // Parse sparks from Deep Sleep output.
-        final sparks = parseSparks(deepResult.text);
+        // Parse tasks from Deep Sleep output.
+        final tasks = parseTasks(deepResult.text);
 
-        if (sparks.isEmpty) {
+        if (tasks.isEmpty) {
           developer.log(
-            'No sparks found — skipping branching',
+            'No tasks found — skipping branching',
             name: 'DreamCycle',
           );
           dreamReport = deepSummary;
@@ -234,19 +234,19 @@ class DreamCycle {
           // ── Dream Branching (parallel N3 threads) ─────────────────────
 
           developer.log(
-            'Branching into ${sparks.length} dream threads',
+            'Branching into ${tasks.length} dream threads',
             name: 'DreamCycle',
           );
-          branchCount = sparks.length;
+          branchCount = tasks.length;
 
           final branchFutures = <Future<AgentResult>>[];
-          for (var i = 0; i < sparks.length; i++) {
+          for (var i = 0; i < tasks.length; i++) {
             branchFutures.add(_runBranch(
               context: context,
               groupId: groupId,
-              spark: sparks[i],
+              task: tasks[i],
               branchNumber: i + 1,
-              totalBranches: sparks.length,
+              totalBranches: tasks.length,
               deepSummary: deepSummary,
             ));
           }
@@ -262,7 +262,7 @@ class DreamCycle {
           }
 
           developer.log(
-            '${sparks.length} branches completed',
+            '${tasks.length} branches completed',
             name: 'DreamCycle',
           );
 
@@ -319,10 +319,10 @@ class DreamCycle {
           text: 'You just woke up from your dream cycle ($stats). '
               'Here is your dream report:\n\n$dreamReport\n\n'
               'Compose a brief, in-character "waking up" message for the '
-              'group. Keep it to 2-4 sentences. Mention any interesting '
-              'sparks or insights. Weave the dream stats naturally into '
-              'the message — like stretching awake and recounting how '
-              'deep you slept.',
+              'group. Keep it to 2-4 sentences. Mention what you got done '
+              'overnight and anything that needs human attention. Weave '
+              'the dream stats naturally into the message — like '
+              'stretching awake and recounting your productive night.',
           chatId: groupId,
           senderId: 'system',
           isAdmin: true,
@@ -402,18 +402,18 @@ class DreamCycle {
     );
   }
 
-  /// Runs a single dream branch exploring one spark.
+  /// Runs a single dream branch executing one task.
   Future<AgentResult> _runBranch({
     required DreamContext context,
     required String groupId,
-    required String spark,
+    required DreamTask task,
     required int branchNumber,
     required int totalBranches,
     required String deepSummary,
   }) {
     final prompt = buildDreamBranchPrompt(
       context: context,
-      spark: spark,
+      task: task,
       branchNumber: branchNumber,
       totalBranches: totalBranches,
       deepSummary: deepSummary,
@@ -428,8 +428,7 @@ class DreamCycle {
     ));
 
     final input = AgentInput(
-      text: 'You are dreaming about this spark: $spark\n\n'
-          'Explore it fully. Follow where it leads.',
+      text: 'Execute this task: [${task.type.value}] ${task.description}',
       chatId: chatId,
       senderId: 'system',
       isAdmin: true,
@@ -482,11 +481,11 @@ class DreamCycle {
 
   String _phaseInstruction(SleepCycle cycle) => switch (cycle) {
         SleepCycle.light =>
-          'Review the chat history. Identify and file decisions, '
-              'action items, and interesting themes.',
+          'Triage the workspace. Scan Kan for overdue and stale cards, '
+              'check tomorrow\'s calendar, review chat for untracked items.',
         SleepCycle.deep =>
-          'Go deeper. Search existing Outline docs and Kan cards for '
-              'connections. Surface sparks for branching.',
+          'Analyze the triage findings. Dig deeper, find blocked work, '
+              'cross-reference Outline with Kan. Output concrete tasks.',
       };
 
   static String _formatDreamStats({

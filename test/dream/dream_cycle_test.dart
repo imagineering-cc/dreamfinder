@@ -63,18 +63,18 @@ void main() {
           callCount++;
 
           final text = switch (callCount) {
-            // Phase 1: Light
+            // Phase 1: Light (triage)
             1 => 'Filed 2 cards and 1 doc. [DEPTH: continue]',
-            // Phase 2: Deep — outputs 2 sparks
+            // Phase 2: Deep (analysis) — outputs 2 tasks
             2 =>
-              'Found connections.\n'
-                  '[SPARK] Auth refactor shares session logic with onboarding\n'
-                  '[SPARK] Calendar events overlap with standup timing\n'
+              'Found work to do.\n'
+                  '[TASK:review] Auth refactor shares session logic with onboarding\n'
+                  '[TASK:triage] Calendar events overlap with standup timing\n'
                   '[DEPTH: continue]',
             // Branch 1 (parallel)
-            3 => 'Explored auth × onboarding: created Outline doc.',
+            3 => 'Reviewed auth × onboarding: created Outline doc.',
             // Branch 2 (parallel)
-            4 => 'Explored calendar × standup: updated 2 Kan cards.',
+            4 => 'Triaged calendar × standup: updated 2 Kan cards.',
             // REM convergence
             5 => 'Dream report: found meta-pattern between auth and calendar.',
             // Waking message
@@ -185,13 +185,13 @@ void main() {
           final text = switch (callCount) {
             1 => 'Filed items. [DEPTH: continue]',
             2 =>
-              'Sparks:\n'
-                  '[SPARK] Spark 1\n'
-                  '[SPARK] Spark 2\n'
-                  '[SPARK] Spark 3\n'
-                  '[SPARK] Spark 4\n'
-                  '[SPARK] Spark 5\n' // This 5th should be dropped.
-                  '[SPARK] Spark 6\n', // This too.
+              'Tasks:\n'
+                  '[TASK:triage] Task 1\n'
+                  '[TASK:nudge] Task 2\n'
+                  '[TASK:draft] Task 3\n'
+                  '[TASK:review] Task 4\n'
+                  '[TASK:prep] Task 5\n' // This 5th should be dropped.
+                  '[TASK:explore] Task 6\n', // This too.
             _ => 'Done.',
           };
           return AgentResponse(
@@ -232,7 +232,7 @@ void main() {
           final text = switch (callCount) {
             1 => 'Filed. [DEPTH: continue]',
             2 =>
-              '[SPARK] A\n[SPARK] B\n[SPARK] C\n[DEPTH: continue]',
+              '[TASK:triage] A\n[TASK:nudge] B\n[TASK:draft] C\n[DEPTH: continue]',
             _ => 'Done.',
           };
           return AgentResponse(
@@ -272,7 +272,7 @@ void main() {
           final text = switch (callCount) {
             1 => 'Filed. [DEPTH: continue]',
             2 =>
-              'Deep findings.\n[SPARK] Auth insight\n[DEPTH: continue]',
+              'Deep findings.\n[TASK:review] Auth insight\n[DEPTH: continue]',
             _ => 'Done.',
           };
           return AgentResponse(
@@ -309,7 +309,7 @@ void main() {
           capturedSystemPrompts.add(s);
           final text = switch (callCount) {
             1 => 'Filed. [DEPTH: continue]',
-            2 => '[SPARK] A\n[SPARK] B\n[DEPTH: continue]',
+            2 => '[TASK:triage] A\n[TASK:nudge] B\n[DEPTH: continue]',
             3 => 'Branch A explored auth.',
             4 => 'Branch B explored calendar.',
             _ => 'Done.',
@@ -347,7 +347,7 @@ void main() {
           callCount++;
           final text = switch (callCount) {
             1 => 'Filed. [DEPTH: continue]',
-            2 => '[SPARK] A\n[DEPTH: continue]',
+            2 => '[TASK:triage] A\n[DEPTH: continue]',
             3 => 'Branch done.',
             4 => 'REM done.',
             _ => 'Morning!',

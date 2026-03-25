@@ -8,11 +8,18 @@ library;
 
 import 'dart:convert';
 
+import 'package:timezone/data/latest.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
+
 import '../agent/tool_registry.dart';
 import '../db/queries.dart';
 
 /// Registers standup tools with the [ToolRegistry].
+///
+/// Initializes timezone data once at registration time so that
+/// [_todayInGroupTimezone] doesn't need to call it on every invocation.
 void registerStandupTools(ToolRegistry registry, Queries queries) {
+  tzdata.initializeTimeZones();
   registry.registerCustomTool(_configureStandupTool(queries));
   registry.registerCustomTool(_getStandupConfigTool(queries));
   registry.registerCustomTool(_submitStandupResponseTool(queries));
@@ -49,9 +56,7 @@ CustomToolDef _configureStandupTool(Queries queries) {
         'timezone': <String, dynamic>{
           'type': 'string',
           'description':
-              'IANA timezone for scheduling (default: Australia/Sydney). '
-              'Note: stored but not yet applied — prompts currently use '
-              'server-local time.',
+              'IANA timezone for scheduling (default: Australia/Sydney).',
         },
         'skip_weekends': <String, dynamic>{
           'type': 'boolean',
@@ -166,7 +171,7 @@ CustomToolDef _submitStandupResponseTool(Queries queries) {
     },
     handler: (args) async {
       final groupId = args['group_id'] as String;
-      final today = DateTime.now().toIso8601String().substring(0, 10);
+      final today = _todayInGroupTimezone(queries, groupId);
 
       // Ensure a session exists for today.
       var session = queries.getActiveStandupSession(groupId, today);
@@ -248,4 +253,22 @@ CustomToolDef _getStandupSummaryTool(Queries queries) {
       });
     },
   );
+}
+
+/// Returns today's date string (YYYY-MM-DD) in the group's configured
+/// timezone, falling back to server-local time if no config exists.
+String _todayInGroupTimezone(Queries queries, String groupId) {
+  final config = queries.getStandupConfig(groupId);
+  if (config == null) {
+    return DateTime.now().toIso8601String().substring(0, 10);
+  }
+
+  try {
+    final location = tz.getLocation(config.timezone);
+    final local = tz.TZDateTime.now(location);
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}';
+  } on Exception {
+    return DateTime.now().toIso8601String().substring(0, 10);
+  }
 }
