@@ -89,7 +89,130 @@ void main() {
       expect(names, contains('star_repo'));
       expect(names, contains('draft_contribution'));
       expect(names, contains('list_contribution_drafts'));
+      expect(names, contains('search_github_repos'));
       expect(names, contains('submit_contribution'));
+    });
+  });
+
+  group('search_github_repos', () {
+    test('returns matching repos from GitHub search', () async {
+      final ghResponse = jsonEncode({
+        'total_count': 2,
+        'items': [
+          {
+            'full_name': 'dart-lang/sdk',
+            'description': 'The Dart SDK',
+            'stargazers_count': 10000,
+            'language': 'Dart',
+            'updated_at': '2026-03-25T00:00:00Z',
+            'topics': ['dart', 'sdk'],
+            'open_issues_count': 500,
+            'license': {'spdx_id': 'BSD-3-Clause'},
+          },
+          {
+            'full_name': 'dart-lang/linter',
+            'description': 'Linter for Dart',
+            'stargazers_count': 800,
+            'language': 'Dart',
+            'updated_at': '2026-03-20T00:00:00Z',
+            'topics': ['dart', 'linter'],
+            'open_issues_count': 50,
+          },
+        ],
+      });
+
+      registerRadarTools(
+        registry,
+        queries: queries,
+        token: 'test-token',
+        httpClient: mockClient(ghResponse),
+      );
+
+      final result = await callJson('search_github_repos', {
+        'query': 'dart error handling',
+      });
+
+      expect(result['total_count'], 2);
+      final results = result['results'] as List;
+      expect(results, hasLength(2));
+      expect((results.first as Map)['repo'], 'dart-lang/sdk');
+      expect((results.first as Map)['stars'], 10000);
+    });
+
+    test('passes language filter to search query', () async {
+      http.BaseRequest? capturedRequest;
+      registerRadarTools(
+        registry,
+        queries: queries,
+        token: 'test-token',
+        httpClient: mockClient(
+          jsonEncode({'total_count': 0, 'items': <dynamic>[]}),
+          onRequest: (req) => capturedRequest = req,
+        ),
+      );
+
+      await callJson('search_github_repos', {
+        'query': 'state management',
+        'language': 'Dart',
+      });
+
+      expect(
+        Uri.decodeComponent(capturedRequest!.url.toString()),
+        contains('language:Dart'),
+      );
+    });
+
+    test('returns empty results message when no repos found', () async {
+      registerRadarTools(
+        registry,
+        queries: queries,
+        token: 'test-token',
+        httpClient: mockClient(
+          jsonEncode({'total_count': 0, 'items': <dynamic>[]}),
+        ),
+      );
+
+      final result = await callJson('search_github_repos', {
+        'query': 'zzz-nonexistent-concept-zzz',
+      });
+
+      expect(result['results'], isEmpty);
+      expect(result['message'], contains('No repositories found'));
+    });
+
+    test('returns error on API failure', () async {
+      registerRadarTools(
+        registry,
+        queries: queries,
+        token: 'test-token',
+        httpClient: mockClient('Error', statusCode: 403),
+      );
+
+      final result = await callJson('search_github_repos', {
+        'query': 'dart sdk',
+      });
+
+      expect(result['error'], isNotNull);
+    });
+
+    test('respects limit parameter', () async {
+      http.BaseRequest? capturedRequest;
+      registerRadarTools(
+        registry,
+        queries: queries,
+        token: 'test-token',
+        httpClient: mockClient(
+          jsonEncode({'total_count': 0, 'items': <dynamic>[]}),
+          onRequest: (req) => capturedRequest = req,
+        ),
+      );
+
+      await callJson('search_github_repos', {
+        'query': 'flutter',
+        'limit': 3,
+      });
+
+      expect(capturedRequest!.url.toString(), contains('per_page=3'));
     });
   });
 
