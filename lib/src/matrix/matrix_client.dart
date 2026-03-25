@@ -84,8 +84,8 @@ class MatrixClient {
 
     final uri = Uri.parse('$homeserver/_matrix/client/v3/sync')
         .replace(queryParameters: queryParams);
-    // Client-side timeout = server long-poll timeout + 30s buffer.
-    final clientTimeout = Duration(milliseconds: timeout + 30000);
+    // Client-side timeout = server long-poll timeout + 15s buffer.
+    final clientTimeout = Duration(milliseconds: timeout + 15000);
     final response = await _getUri(uri, timeout: clientTimeout);
     final json = jsonDecode(response.body) as Map<String, dynamic>;
 
@@ -282,7 +282,7 @@ class MatrixClient {
   // ---------------------------------------------------------------------------
 
   /// Default client-side timeout for Matrix API calls.
-  static const _defaultTimeout = Duration(seconds: 30);
+  static const _defaultTimeout = Duration(seconds: 10);
 
   Map<String, String> get _headers => {
         'Authorization': 'Bearer $accessToken',

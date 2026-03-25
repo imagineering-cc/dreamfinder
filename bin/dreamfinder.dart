@@ -632,7 +632,7 @@ Future<void> main() async {
                 input,
                 systemPrompt: systemPromptText,
               )
-              .timeout(const Duration(minutes: 5));
+              .timeout(const Duration(minutes: 3));
           health.recordClaudeSuccess();
 
           if (response.isNotEmpty) {

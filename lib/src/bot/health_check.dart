@@ -42,7 +42,7 @@ class HealthCheck {
   int _errorCount = 0;
 
   /// How long before in-flight message processing is considered stuck.
-  static const _stuckProcessingThreshold = Duration(minutes: 5);
+  static const _stuckProcessingThreshold = Duration(minutes: 3);
 
   /// Starts the health check HTTP server.
   ///
