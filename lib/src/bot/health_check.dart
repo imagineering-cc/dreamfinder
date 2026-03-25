@@ -42,7 +42,8 @@ class HealthCheck {
   int _errorCount = 0;
 
   /// How long before in-flight message processing is considered stuck.
-  static const _stuckProcessingThreshold = Duration(minutes: 3);
+  /// Fires before the agent timeout (3m) to give early warning.
+  static const _stuckProcessingThreshold = Duration(minutes: 2);
 
   /// Starts the health check HTTP server.
   ///
