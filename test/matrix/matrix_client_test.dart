@@ -225,6 +225,33 @@ void main() {
       expect(html, contains('<code>code</code>'));
     });
 
+    test('createDm sends POST with is_direct and invite', () async {
+      http.Request? capturedRequest;
+
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'createRoom': (req) {
+            capturedRequest = req;
+            return _jsonResponse({'room_id': '!dm:test'});
+          },
+        }),
+      );
+
+      final roomId = await client.createDm('@user:test');
+
+      expect(roomId, '!dm:test');
+      expect(capturedRequest, isNotNull);
+      expect(capturedRequest!.method, 'POST');
+
+      final body =
+          jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
+      expect(body['is_direct'], isTrue);
+      expect(body['invite'], contains('@user:test'));
+      expect(body['preset'], 'trusted_private_chat');
+    });
+
     test('joinRoom sends POST to join endpoint', () async {
       http.Request? capturedRequest;
 
