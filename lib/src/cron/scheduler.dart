@@ -350,16 +350,23 @@ class Scheduler {
     final nudgeKey = 'nudge::$groupId::$date';
     if (queries.getMetadata(nudgeKey) != null) return;
 
+    // Look up the workspace name for a better prompt.
+    final workspace = queries.getWorkspaceLink(groupId);
+    final workspaceContext = workspace != null
+        ? ' The linked workspace is "${workspace.workspaceName}".'
+        : '';
+
     try {
       final nudge = await compose(
         groupId,
         'Check Kan for overdue cards (past their due date) and stale cards '
-            '(no activity in 7+ days) in this workspace. If you find any '
-            'that need attention, compose a brief, friendly nudge message '
-            'for the team — mention specific cards by name, note how '
-            'overdue they are, and ask if there are blockers. If nothing '
-            'needs attention, return an empty response. '
-            'Be helpful, not nagging.',
+            '(no activity in 7+ days).$workspaceContext '
+            'Use get_chat_config to find the workspace if needed, then '
+            'search Kan for cards that need attention. If you find any, '
+            'compose a brief, friendly nudge message for the team — mention '
+            'specific cards by name, note how overdue they are, and ask if '
+            'there are blockers. If nothing needs attention, return an empty '
+            'response. Be helpful, not nagging.',
       );
       if (nudge.isNotEmpty) {
         await sendMessage(groupId, nudge);

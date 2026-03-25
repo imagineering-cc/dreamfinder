@@ -185,5 +185,44 @@ void main() {
       expect(prompt, contains('draft_contribution'));
       expect(prompt, contains('human-in-the-loop'));
     });
+
+    test('identifies as chat bot, not Signal bot', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, contains('chat bot'));
+      expect(prompt, isNot(contains('Signal bot')));
+    });
+
+    test('recommends Markdown formatting', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, contains('Markdown'));
+      expect(prompt, isNot(contains('Signal has limited')));
+    });
+
+    test('mentions standup and nudge capabilities', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, contains('nudge'));
+      expect(prompt, contains('configure_standup'));
+    });
   });
 }
