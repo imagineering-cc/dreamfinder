@@ -564,58 +564,12 @@ Future<void> main() async {
             });
             await matrixClient.sendMessage(
               roomId: event.roomId,
-              message: "I'll DM you to walk through setup! ✨",
+              message: "Send me a DM to get started! I'll walk you through "
+                  'setting everything up. ✨',
             );
-
-            // Create a DM room and send the first kickstart message.
-            try {
-              final dmRoomId = await matrixClient.createDm(event.sender);
-              log.info('Kickstart DM room created', extra: {
-                'room': dmRoomId,
-                'sender': event.sender,
-              });
-
-              // Run the agent loop in the DM context so the first message
-              // is in-character and lands in conversation history.
-              final dmInput = AgentInput(
-                text: 'The user just triggered kickstart from the group. '
-                    'Start the first step — greet them warmly and begin '
-                    'workspace setup.',
-                chatId: dmRoomId,
-                senderId: 'system',
-                senderName: 'system',
-                isAdmin: true,
-                isSystemInitiated: true,
-              );
-              final dmPrompt = _buildFullSystemPrompt(
-                input: dmInput,
-                env: env,
-                queries: queries,
-                memories: <MemorySearchResult>[],
-                events: <CalendarEvent>[],
-                kickstartState: kickstartState,
-                chatId: dmRoomId,
-                senderId: event.sender,
-                isGroup: false,
-              );
-              final dmResponse = await agentLoop.processMessage(
-                dmInput,
-                systemPrompt: dmPrompt,
-              );
-              if (dmResponse.isNotEmpty) {
-                await matrixClient.sendMessage(
-                  roomId: dmRoomId,
-                  message: dmResponse,
-                );
-              }
-            } on Exception catch (e) {
-              log.error('Failed to initiate kickstart DM: $e');
-              await matrixClient.sendMessage(
-                roomId: event.roomId,
-                message: "Hmm, I couldn't start a DM. "
-                    'Try messaging me directly to continue setup!',
-              );
-            }
+            // The user DMs Dreamfinder on their platform (Signal, Telegram,
+            // Discord, etc.). The bridge relays it to Matrix as a DM, and
+            // the kickstart state (keyed by sender) picks up the flow.
             continue;
           }
 
