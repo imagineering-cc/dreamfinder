@@ -2,6 +2,8 @@
 ///
 /// Currently handles:
 /// - **Standup prompts**: Sends a prompt message at the configured hour.
+/// - **Standup summaries**: Composes and sends a summary at the configured
+///   summary hour, including all responses collected during the day.
 /// - **Data cleanup**: Removes old reminders and calendar reminder records.
 ///
 /// The scheduler checks all standup configs every minute and fires actions
@@ -32,12 +34,22 @@ typedef ComposeViaAgentFn = Future<String> Function(
   String taskDescription,
 );
 
+/// Callback to trigger a dream cycle for a group.
+///
+/// Returns `true` if the dream was successfully triggered.
+typedef TriggerDreamFn = bool Function({
+  required String groupId,
+  required String triggeredByUuid,
+  required String date,
+});
+
 /// Periodic scheduler for standup prompts and data cleanup.
 class Scheduler {
   Scheduler({
     required this.queries,
     required this.sendMessage,
     this.composeViaAgent,
+    this.triggerDream,
     this.backfill,
     this.consolidator,
   });
@@ -49,6 +61,10 @@ class Scheduler {
   /// are composed by Claude in-character. Falls back to hardcoded text on
   /// exception or when null.
   final ComposeViaAgentFn? composeViaAgent;
+
+  /// Optional dream trigger callback. When provided, triggers a dream cycle
+  /// for each workspace-linked group during the nightly cleanup window.
+  final TriggerDreamFn? triggerDream;
 
   /// Optional embedding backfill. When provided, retries null-embedding
   /// records before consolidation in the daily cleanup window.
@@ -112,6 +128,19 @@ class Scheduler {
           await _sendStandupPrompt(config, today);
         }
       }
+
+      // Check if it's summary hour — send a summary of today's responses.
+      if (localNow.hour == config.summaryHour) {
+        final session =
+            queries.getActiveStandupSession(config.groupId, today);
+        if (session != null &&
+            session.status == StandupSessionStatus.active) {
+          final responses = queries.getStandupResponses(session.id);
+          if (responses.isNotEmpty) {
+            await _sendStandupSummary(config, session, responses);
+          }
+        }
+      }
     }
 
     // Run data cleanup once per day after 3 AM. Uses a date guard instead
@@ -123,6 +152,7 @@ class Scheduler {
       await backfill?.backfill();
       await consolidator?.consolidate();
       await _sendRepoRadarDigest();
+      _triggerNightlyDreams(todayStr);
     }
   }
 
@@ -176,6 +206,82 @@ class Scheduler {
     );
   }
 
+  /// Builds a hardcoded standup summary from the collected responses.
+  static String _buildHardcodedSummary(List<StandupResponse> responses) {
+    final buffer = StringBuffer("Today's standup summary:\n");
+    for (final r in responses) {
+      final name = r.displayName ?? r.userId;
+      buffer.writeln('\n**$name**');
+      if (r.yesterday != null) buffer.writeln('- Yesterday: ${r.yesterday}');
+      if (r.today != null) buffer.writeln('- Today: ${r.today}');
+      if (r.blockers != null) buffer.writeln('- Blockers: ${r.blockers}');
+    }
+    return buffer.toString().trimRight();
+  }
+
+  /// Sends the standup summary and marks the session as summarized.
+  ///
+  /// Tries to compose via the agent loop so the summary is in-character.
+  /// Falls back to [_buildHardcodedSummary] if the agent is unavailable.
+  Future<void> _sendStandupSummary(
+    StandupConfigRecord config,
+    StandupSession session,
+    List<StandupResponse> responses,
+  ) async {
+    String message;
+
+    final compose = composeViaAgent;
+    if (compose != null) {
+      try {
+        // Build a task description that includes the raw response data
+        // so the agent can compose a natural summary.
+        final responseLines = StringBuffer();
+        for (final r in responses) {
+          final name = r.displayName ?? r.userId;
+          responseLines.writeln('$name:');
+          if (r.yesterday != null) {
+            responseLines.writeln('  Yesterday: ${r.yesterday}');
+          }
+          if (r.today != null) {
+            responseLines.writeln('  Today: ${r.today}');
+          }
+          if (r.blockers != null) {
+            responseLines.writeln('  Blockers: ${r.blockers}');
+          }
+        }
+
+        final composed = await compose(
+          config.groupId,
+          'Compose a standup summary for the team. '
+              '${responses.length} people responded today. '
+              'Here are their updates:\n\n$responseLines\n'
+              'Summarize the updates, highlight any blockers, and note '
+              'common themes. Keep it concise and useful.',
+        );
+        message = composed.isNotEmpty
+            ? composed
+            : _buildHardcodedSummary(responses);
+      } on Exception catch (e) {
+        developer.log(
+          'Agent composition failed for standup summary in '
+              '${config.groupId}: $e',
+          name: 'Scheduler',
+          level: 900,
+        );
+        message = _buildHardcodedSummary(responses);
+      }
+    } else {
+      message = _buildHardcodedSummary(responses);
+    }
+
+    await sendMessage(config.groupId, message);
+
+    queries.updateStandupSession(
+      session.id,
+      status: StandupSessionStatus.summarized,
+    );
+  }
+
   /// Sends a Repo Radar digest to each chat that has tracked repos.
   ///
   /// The digest is composed via the agent loop so it's in-character and
@@ -214,6 +320,32 @@ class Scheduler {
       } on Exception catch (e) {
         developer.log(
           'Repo Radar digest failed for $chatId: $e',
+          name: 'Scheduler',
+          level: 900,
+        );
+      }
+    }
+  }
+
+  /// Triggers a dream cycle for each workspace-linked group.
+  void _triggerNightlyDreams(String date) {
+    final trigger = triggerDream;
+    if (trigger == null) return;
+
+    final links = queries.getAllWorkspaceLinks();
+    // Deduplicate by group ID — a group may link to multiple workspaces.
+    final groupIds = <String>{for (final link in links) link.groupId};
+
+    for (final groupId in groupIds) {
+      try {
+        trigger(
+          groupId: groupId,
+          triggeredByUuid: 'scheduler',
+          date: date,
+        );
+      } on Exception catch (e) {
+        developer.log(
+          'Dream trigger failed for $groupId: $e',
           name: 'Scheduler',
           level: 900,
         );

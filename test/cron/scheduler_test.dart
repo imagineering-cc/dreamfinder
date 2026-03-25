@@ -1,6 +1,7 @@
 import 'package:dreamfinder/src/cron/scheduler.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/queries.dart';
+import 'package:dreamfinder/src/db/schema.dart';
 import 'package:dreamfinder/src/memory/embedding_backfill.dart';
 import 'package:dreamfinder/src/memory/memory_consolidator.dart';
 import 'package:test/test.dart';
@@ -394,6 +395,220 @@ void main() {
     });
   });
 
+  group('Scheduler standup summary', () {
+    test('sends summary at configured summary_hour via agent', () async {
+      queries.upsertStandupConfig(
+        groupId: 'group-1',
+        promptHour: 9,
+        summaryHour: 17,
+      );
+
+      // Simulate a morning: prompt sent, session created, responses recorded.
+      await Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+      ).tick(DateTime(2026, 3, 2, 9, 0));
+
+      final session =
+          queries.getActiveStandupSession('group-1', '2026-03-02');
+      queries.upsertStandupResponse(
+        sessionId: session!.id,
+        userId: 'user-1',
+        displayName: 'Alice',
+        yesterday: 'Fixed bug #42',
+        today: 'Working on feature X',
+        blockers: null,
+      );
+
+      final composedTasks = <MapEntry<String, String>>[];
+      final sentMessages = <MapEntry<String, String>>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        composeViaAgent: (groupId, taskDescription) async {
+          composedTasks.add(MapEntry(groupId, taskDescription));
+          return 'Here is the standup summary!';
+        },
+      );
+
+      // 5 PM — summary hour.
+      await scheduler.tick(DateTime(2026, 3, 2, 17, 0));
+
+      expect(composedTasks, hasLength(1));
+      expect(composedTasks.first.key, 'group-1');
+      expect(composedTasks.first.value, contains('summary'));
+      expect(sentMessages, hasLength(1));
+      expect(sentMessages.first.value, 'Here is the standup summary!');
+
+      // Session should be marked as summarized.
+      final updated =
+          queries.getActiveStandupSession('group-1', '2026-03-02');
+      expect(updated!.status, StandupSessionStatus.summarized);
+    });
+
+    test('does not send summary if session already summarized', () async {
+      queries.upsertStandupConfig(
+        groupId: 'group-1',
+        promptHour: 9,
+        summaryHour: 17,
+      );
+
+      // Create session and mark it as already summarized.
+      queries.createStandupSession(groupId: 'group-1', date: '2026-03-02');
+      final session =
+          queries.getActiveStandupSession('group-1', '2026-03-02');
+      queries.updateStandupSession(
+        session!.id,
+        status: StandupSessionStatus.summarized,
+      );
+
+      var composeCalled = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          composeCalled = true;
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 17, 0));
+      expect(composeCalled, isFalse);
+    });
+
+    test('does not send summary if no session exists today', () async {
+      queries.upsertStandupConfig(
+        groupId: 'group-1',
+        promptHour: 9,
+        summaryHour: 17,
+      );
+
+      var composeCalled = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          composeCalled = true;
+          return '';
+        },
+      );
+
+      // 5 PM but no prompt was sent this morning — no session to summarize.
+      await scheduler.tick(DateTime(2026, 3, 2, 17, 0));
+      expect(composeCalled, isFalse);
+    });
+
+    test('does not send summary if no responses recorded', () async {
+      queries.upsertStandupConfig(
+        groupId: 'group-1',
+        promptHour: 9,
+        summaryHour: 17,
+      );
+
+      // Session exists (prompt was sent) but nobody responded.
+      queries.createStandupSession(groupId: 'group-1', date: '2026-03-02');
+
+      var composeCalled = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          composeCalled = true;
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 17, 0));
+      expect(composeCalled, isFalse);
+    });
+
+    test('falls back gracefully when composeViaAgent is null', () async {
+      queries.upsertStandupConfig(
+        groupId: 'group-1',
+        promptHour: 9,
+        summaryHour: 17,
+      );
+
+      queries.createStandupSession(groupId: 'group-1', date: '2026-03-02');
+      final session =
+          queries.getActiveStandupSession('group-1', '2026-03-02');
+      queries.upsertStandupResponse(
+        sessionId: session!.id,
+        userId: 'user-1',
+        displayName: 'Alice',
+        yesterday: 'Did stuff',
+        today: 'More stuff',
+      );
+
+      final sentMessages = <String>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(message);
+        },
+        // No composeViaAgent.
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 17, 0));
+
+      // Should send a hardcoded summary with the response data.
+      expect(sentMessages, hasLength(1));
+      expect(sentMessages.first, contains('Alice'));
+      expect(sentMessages.first, contains('Did stuff'));
+
+      // Session should still be marked summarized.
+      final updated =
+          queries.getActiveStandupSession('group-1', '2026-03-02');
+      expect(updated!.status, StandupSessionStatus.summarized);
+    });
+
+    test('includes response data in agent task description', () async {
+      queries.upsertStandupConfig(
+        groupId: 'group-1',
+        promptHour: 9,
+        summaryHour: 17,
+      );
+
+      queries.createStandupSession(groupId: 'group-1', date: '2026-03-02');
+      final session =
+          queries.getActiveStandupSession('group-1', '2026-03-02');
+      queries.upsertStandupResponse(
+        sessionId: session!.id,
+        userId: 'user-1',
+        displayName: 'Alice',
+        yesterday: 'Fixed bug #42',
+        today: 'Feature X',
+        blockers: 'Waiting on API access',
+      );
+      queries.upsertStandupResponse(
+        sessionId: session.id,
+        userId: 'user-2',
+        displayName: 'Bob',
+        yesterday: 'Code review',
+        today: 'Deploy v2',
+      );
+
+      String? taskDesc;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          taskDesc = taskDescription;
+          return 'Summary!';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 17, 0));
+
+      expect(taskDesc, contains('Alice'));
+      expect(taskDesc, contains('Bob'));
+      expect(taskDesc, contains('Fixed bug #42'));
+      expect(taskDesc, contains('Waiting on API access'));
+    });
+  });
+
   group('Scheduler Repo Radar digest', () {
     test('sends digest via agent for tracked repos during cleanup', () async {
       queries.upsertTrackedRepo(
@@ -498,6 +713,137 @@ void main() {
 
       // Only cleanup runs, no digest message sent.
       expect(sentMessages, isEmpty);
+    });
+  });
+
+  group('Scheduler nightly dream trigger', () {
+    test('triggers dream for each workspace-linked group during cleanup',
+        () async {
+      // Create workspace links for two groups.
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Imagineering',
+        createdByUuid: 'user-1',
+      );
+      queries.createWorkspaceLink(
+        groupId: 'room-2',
+        workspacePublicId: 'ws-2',
+        workspaceName: 'Ops',
+        createdByUuid: 'user-1',
+      );
+
+      final triggeredGroups = <String>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        triggerDream: ({
+          required String groupId,
+          required String triggeredByUuid,
+          required String date,
+        }) {
+          triggeredGroups.add(groupId);
+          return true;
+        },
+      );
+
+      // Tick at 3:15 AM — cleanup window.
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      expect(triggeredGroups, containsAll(['room-1', 'room-2']));
+    });
+
+    test('passes scheduler as triggeredByUuid', () async {
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Test',
+        createdByUuid: 'user-1',
+      );
+
+      String? capturedTriggeredBy;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        triggerDream: ({
+          required String groupId,
+          required String triggeredByUuid,
+          required String date,
+        }) {
+          capturedTriggeredBy = triggeredByUuid;
+          return true;
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      expect(capturedTriggeredBy, equals('scheduler'));
+    });
+
+    test('does not trigger dream before 3 AM', () async {
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Test',
+        createdByUuid: 'user-1',
+      );
+
+      var triggered = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        triggerDream: ({
+          required String groupId,
+          required String triggeredByUuid,
+          required String date,
+        }) {
+          triggered = true;
+          return true;
+        },
+      );
+
+      // 2:59 AM — too early.
+      await scheduler.tick(DateTime(2026, 3, 2, 2, 59));
+
+      expect(triggered, isFalse);
+    });
+
+    test('does not error when triggerDream is null', () async {
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Test',
+        createdByUuid: 'user-1',
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        // No triggerDream provided.
+      );
+
+      // Should not throw.
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+    });
+
+    test('does not trigger when no workspace links exist', () async {
+      var triggered = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        triggerDream: ({
+          required String groupId,
+          required String triggeredByUuid,
+          required String date,
+        }) {
+          triggered = true;
+          return true;
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      expect(triggered, isFalse);
     });
   });
 }
