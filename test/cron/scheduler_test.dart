@@ -716,6 +716,120 @@ void main() {
     });
   });
 
+  group('Scheduler proactive nudges', () {
+    test('sends nudge for each workspace-linked group during cleanup',
+        () async {
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Imagineering',
+        createdByUuid: 'user-1',
+      );
+
+      final composedTasks = <MapEntry<String, String>>[];
+      final sentMessages = <MapEntry<String, String>>[];
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        composeViaAgent: (groupId, taskDescription) async {
+          composedTasks.add(MapEntry(groupId, taskDescription));
+          if (taskDescription.contains('overdue')) {
+            return 'Hey team! A couple of cards need attention...';
+          }
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      // Should compose a nudge for room-1.
+      expect(
+        composedTasks.where((e) => e.value.contains('overdue')),
+        hasLength(1),
+      );
+      expect(
+        sentMessages.where(
+            (e) => e.key == 'room-1' && e.value.contains('attention')),
+        hasLength(1),
+      );
+    });
+
+    test('does not send nudge when composeViaAgent is null', () async {
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Test',
+        createdByUuid: 'user-1',
+      );
+
+      final sentMessages = <String>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(message);
+        },
+        // No composeViaAgent.
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      // No messages sent at all.
+      expect(sentMessages, isEmpty);
+    });
+
+    test('skips nudge when agent returns empty', () async {
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Test',
+        createdByUuid: 'user-1',
+      );
+
+      final sentMessages = <MapEntry<String, String>>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        composeViaAgent: (groupId, taskDescription) async {
+          // Agent determines nothing needs nudging.
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+
+      // No messages sent (empty responses skipped).
+      expect(sentMessages, isEmpty);
+    });
+
+    test('handles agent exception gracefully during nudge', () async {
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Test',
+        createdByUuid: 'user-1',
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          if (taskDescription.contains('overdue')) {
+            throw Exception('Kan MCP unreachable');
+          }
+          return '';
+        },
+      );
+
+      // Should not throw — exception caught internally.
+      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+    });
+  });
+
   group('Scheduler nightly dream trigger', () {
     test('triggers dream for each workspace-linked group during cleanup',
         () async {

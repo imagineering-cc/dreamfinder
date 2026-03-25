@@ -152,6 +152,7 @@ class Scheduler {
       await backfill?.backfill();
       await consolidator?.consolidate();
       await _sendRepoRadarDigest();
+      await _sendProactiveNudges();
       _triggerNightlyDreams(todayStr);
     }
   }
@@ -320,6 +321,43 @@ class Scheduler {
       } on Exception catch (e) {
         developer.log(
           'Repo Radar digest failed for $chatId: $e',
+          name: 'Scheduler',
+          level: 900,
+        );
+      }
+    }
+  }
+
+  /// Sends proactive nudges about overdue and stale Kan cards.
+  ///
+  /// For each workspace-linked group, asks the agent to search Kan for
+  /// cards that need attention and compose an in-character nudge message.
+  /// The agent has full MCP tool access and can query Kan directly.
+  Future<void> _sendProactiveNudges() async {
+    final compose = composeViaAgent;
+    if (compose == null) return;
+
+    final links = queries.getAllWorkspaceLinks();
+    final groupIds = <String>{for (final link in links) link.groupId};
+
+    for (final groupId in groupIds) {
+      try {
+        final nudge = await compose(
+          groupId,
+          'Check Kan for overdue cards (past their due date) and stale cards '
+              '(no activity in 7+ days) in this workspace. If you find any '
+              'that need attention, compose a brief, friendly nudge message '
+              'for the team — mention specific cards by name, note how '
+              'overdue they are, and ask if there are blockers. If nothing '
+              'needs attention, return an empty response. '
+              'Be helpful, not nagging.',
+        );
+        if (nudge.isNotEmpty) {
+          await sendMessage(groupId, nudge);
+        }
+      } on Exception catch (e) {
+        developer.log(
+          'Proactive nudge failed for $groupId: $e',
           name: 'Scheduler',
           level: 900,
         );
