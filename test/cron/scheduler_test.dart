@@ -717,13 +717,11 @@ void main() {
   });
 
   group('Scheduler proactive nudges', () {
-    test('sends nudge for each workspace-linked group during cleanup',
-        () async {
-      queries.createWorkspaceLink(
+    test('sends nudge at configured nudgeHour', () async {
+      queries.upsertStandupConfig(
         groupId: 'room-1',
-        workspacePublicId: 'ws-1',
-        workspaceName: 'Imagineering',
-        createdByUuid: 'user-1',
+        promptHour: 9,
+        nudgeHour: 14,
       );
 
       final composedTasks = <MapEntry<String, String>>[];
@@ -743,9 +741,9 @@ void main() {
         },
       );
 
-      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+      // 2 PM — nudge hour.
+      await scheduler.tick(DateTime(2026, 3, 2, 14, 0));
 
-      // Should compose a nudge for room-1.
       expect(
         composedTasks.where((e) => e.value.contains('overdue')),
         hasLength(1),
@@ -757,12 +755,61 @@ void main() {
       );
     });
 
-    test('does not send nudge when composeViaAgent is null', () async {
-      queries.createWorkspaceLink(
+    test('does not nudge when nudgeHour is not set', () async {
+      queries.upsertStandupConfig(
         groupId: 'room-1',
-        workspacePublicId: 'ws-1',
-        workspaceName: 'Test',
-        createdByUuid: 'user-1',
+        promptHour: 9,
+        // No nudgeHour.
+      );
+
+      var nudgeCalled = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          if (taskDescription.contains('overdue')) nudgeCalled = true;
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 14, 0));
+      expect(nudgeCalled, isFalse);
+    });
+
+    test('deduplicates — only nudges once per day', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        nudgeHour: 14,
+      );
+
+      var nudgeCount = 0;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeViaAgent: (groupId, taskDescription) async {
+          if (taskDescription.contains('overdue')) {
+            nudgeCount++;
+            return 'Cards need attention!';
+          }
+          return '';
+        },
+      );
+
+      // First tick at 2 PM — nudge fires.
+      await scheduler.tick(DateTime(2026, 3, 2, 14, 0));
+      expect(nudgeCount, equals(1));
+
+      // Second tick same hour — should NOT re-nudge (dedup via bot_metadata).
+      await scheduler.tick(DateTime(2026, 3, 2, 14, 30));
+      expect(nudgeCount, equals(1));
+    });
+
+    test('skips nudge when agent returns empty', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        nudgeHour: 14,
       );
 
       final sentMessages = <String>[];
@@ -771,47 +818,20 @@ void main() {
         sendMessage: (groupId, message) async {
           sentMessages.add(message);
         },
-        // No composeViaAgent.
-      );
-
-      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
-
-      // No messages sent at all.
-      expect(sentMessages, isEmpty);
-    });
-
-    test('skips nudge when agent returns empty', () async {
-      queries.createWorkspaceLink(
-        groupId: 'room-1',
-        workspacePublicId: 'ws-1',
-        workspaceName: 'Test',
-        createdByUuid: 'user-1',
-      );
-
-      final sentMessages = <MapEntry<String, String>>[];
-      final scheduler = Scheduler(
-        queries: queries,
-        sendMessage: (groupId, message) async {
-          sentMessages.add(MapEntry(groupId, message));
-        },
         composeViaAgent: (groupId, taskDescription) async {
-          // Agent determines nothing needs nudging.
           return '';
         },
       );
 
-      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
-
-      // No messages sent (empty responses skipped).
+      await scheduler.tick(DateTime(2026, 3, 2, 14, 0));
       expect(sentMessages, isEmpty);
     });
 
     test('handles agent exception gracefully during nudge', () async {
-      queries.createWorkspaceLink(
+      queries.upsertStandupConfig(
         groupId: 'room-1',
-        workspacePublicId: 'ws-1',
-        workspaceName: 'Test',
-        createdByUuid: 'user-1',
+        promptHour: 9,
+        nudgeHour: 14,
       );
 
       final scheduler = Scheduler(
@@ -825,8 +845,8 @@ void main() {
         },
       );
 
-      // Should not throw — exception caught internally.
-      await scheduler.tick(DateTime(2026, 3, 2, 3, 15));
+      // Should not throw.
+      await scheduler.tick(DateTime(2026, 3, 2, 14, 0));
     });
   });
 

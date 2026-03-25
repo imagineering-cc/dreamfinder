@@ -141,6 +141,12 @@ class Scheduler {
           }
         }
       }
+
+      // Check if it's nudge hour — send proactive task nudges.
+      final nudgeHour = config.nudgeHour;
+      if (nudgeHour != null && localNow.hour == nudgeHour) {
+        await _sendProactiveNudge(config.groupId, today);
+      }
     }
 
     // Run data cleanup once per day after 3 AM. Uses a date guard instead
@@ -152,7 +158,6 @@ class Scheduler {
       await backfill?.backfill();
       await consolidator?.consolidate();
       await _sendRepoRadarDigest();
-      await _sendProactiveNudges();
       _triggerNightlyDreams(todayStr);
     }
   }
@@ -328,40 +333,41 @@ class Scheduler {
     }
   }
 
-  /// Sends proactive nudges about overdue and stale Kan cards.
+  /// Sends a proactive nudge about overdue and stale Kan cards for one group.
   ///
-  /// For each workspace-linked group, asks the agent to search Kan for
-  /// cards that need attention and compose an in-character nudge message.
-  /// The agent has full MCP tool access and can query Kan directly.
-  Future<void> _sendProactiveNudges() async {
+  /// Asks the agent to search Kan for cards that need attention and compose
+  /// an in-character nudge message. Uses `bot_metadata` for daily dedup.
+  Future<void> _sendProactiveNudge(String groupId, String date) async {
     final compose = composeViaAgent;
     if (compose == null) return;
 
-    final links = queries.getAllWorkspaceLinks();
-    final groupIds = <String>{for (final link in links) link.groupId};
+    // Daily dedup — only nudge once per group per day.
+    final nudgeKey = 'nudge::$groupId::$date';
+    if (queries.getMetadata(nudgeKey) != null) return;
 
-    for (final groupId in groupIds) {
-      try {
-        final nudge = await compose(
-          groupId,
-          'Check Kan for overdue cards (past their due date) and stale cards '
-              '(no activity in 7+ days) in this workspace. If you find any '
-              'that need attention, compose a brief, friendly nudge message '
-              'for the team — mention specific cards by name, note how '
-              'overdue they are, and ask if there are blockers. If nothing '
-              'needs attention, return an empty response. '
-              'Be helpful, not nagging.',
-        );
-        if (nudge.isNotEmpty) {
-          await sendMessage(groupId, nudge);
-        }
-      } on Exception catch (e) {
-        developer.log(
-          'Proactive nudge failed for $groupId: $e',
-          name: 'Scheduler',
-          level: 900,
-        );
+    try {
+      final nudge = await compose(
+        groupId,
+        'Check Kan for overdue cards (past their due date) and stale cards '
+            '(no activity in 7+ days) in this workspace. If you find any '
+            'that need attention, compose a brief, friendly nudge message '
+            'for the team — mention specific cards by name, note how '
+            'overdue they are, and ask if there are blockers. If nothing '
+            'needs attention, return an empty response. '
+            'Be helpful, not nagging.',
+      );
+      if (nudge.isNotEmpty) {
+        await sendMessage(groupId, nudge);
       }
+      // Mark as nudged regardless of whether we sent — avoids retrying
+      // when there's genuinely nothing to nudge about.
+      queries.setMetadata(nudgeKey, DateTime.now().toUtc().toIso8601String());
+    } on Exception catch (e) {
+      developer.log(
+        'Proactive nudge failed for $groupId: $e',
+        name: 'Scheduler',
+        level: 900,
+      );
     }
   }
 
