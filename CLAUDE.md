@@ -229,11 +229,13 @@ Workspace Setup → Team Roster → Project Seeding → Knowledge Dump → Dream
 State persisted via `bot_metadata` table (no migration needed). System prompt injection
 via `_buildFullSystemPrompt`. Custom tools: `advance_kickstart`, `complete_kickstart`.
 
-### Proactive task nudges
-The scheduler + Kan MCP tools exist but Dreamfinder never proactively reminds about
-overdue or stale cards. Add a scheduled job that queries Kan for overdue tasks and
-sends reminder messages via the agent loop (in-character). The `sent_reminders` table
-already tracks dedup for this — it just needs to be wired up.
+### Proactive task nudges (IMPLEMENTED)
+The scheduler sends proactive nudges about overdue and stale Kan cards at a
+configurable hour (set via `configure_standup` with `nudge_hour`). The agent
+queries Kan for cards needing attention and composes an in-character nudge.
+Daily dedup via `bot_metadata` (key: `nudge::groupId::date`). Timezone-aware
+via the standup config's IANA timezone. Runs through `composeViaAgent` so
+nudges land in conversation history.
 
 ### sqlite-vec migration (deferred)
 Brute-force cosine similarity is <10ms for 10K vectors. Only revisit if the memory
