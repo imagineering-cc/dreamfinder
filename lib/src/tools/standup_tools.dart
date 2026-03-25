@@ -15,7 +15,11 @@ import '../agent/tool_registry.dart';
 import '../db/queries.dart';
 
 /// Registers standup tools with the [ToolRegistry].
+///
+/// Initializes timezone data once at registration time so that
+/// [_todayInGroupTimezone] doesn't need to call it on every invocation.
 void registerStandupTools(ToolRegistry registry, Queries queries) {
+  tzdata.initializeTimeZones();
   registry.registerCustomTool(_configureStandupTool(queries));
   registry.registerCustomTool(_getStandupConfigTool(queries));
   registry.registerCustomTool(_submitStandupResponseTool(queries));
@@ -260,7 +264,6 @@ String _todayInGroupTimezone(Queries queries, String groupId) {
   }
 
   try {
-    tzdata.initializeTimeZones();
     final location = tz.getLocation(config.timezone);
     final local = tz.TZDateTime.now(location);
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
