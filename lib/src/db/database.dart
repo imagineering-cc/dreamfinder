@@ -2,7 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// Current schema version. Bump this and add a migration block in
 /// [_runMigrations] whenever the schema changes.
-const schemaVersion = 6;
+const schemaVersion = 7;
 
 /// SQLite database wrapper for Dreamfinder.
 ///
@@ -91,6 +91,7 @@ class BotDatabase {
     if (fromVersion < 4) _migrateToV4();
     if (fromVersion < 5) _migrateToV5();
     if (fromVersion < 6) _migrateToV6();
+    if (fromVersion < 7) _migrateToV7();
 
     _setVersion(schemaVersion);
   }
@@ -432,5 +433,55 @@ class BotDatabase {
     _db.execute(
       'ALTER TABLE dream_cycles RENAME COLUMN signal_group_id TO group_id',
     );
+  }
+
+  /// Version 7: Repo Radar — tracked repositories and contribution drafts
+  /// for discovering interesting repos from conversation and preparing
+  /// draft PRs/issues for human review.
+  void _migrateToV7() {
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS tracked_repos (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo            TEXT    NOT NULL UNIQUE,
+        reason          TEXT    NOT NULL,
+        source_chat_id  TEXT    NOT NULL,
+        source_message  TEXT,
+        starred         INTEGER NOT NULL DEFAULT 0,
+        metadata        TEXT,
+        tracked_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+        last_crawled_at TEXT
+      )
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_tracked_repos_chat
+      ON tracked_repos(source_chat_id)
+    ''');
+
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS contribution_drafts (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo            TEXT    NOT NULL,
+        type            TEXT    NOT NULL CHECK (type IN ('pr', 'issue')),
+        title           TEXT    NOT NULL,
+        body            TEXT    NOT NULL,
+        target_branch   TEXT,
+        status          TEXT    NOT NULL DEFAULT 'draft'
+                        CHECK (status IN ('draft', 'submitted', 'rejected')),
+        created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+        submitted_at    TEXT,
+        submitted_url   TEXT
+      )
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_contribution_drafts_repo
+      ON contribution_drafts(repo)
+    ''');
+
+    _db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_contribution_drafts_status
+      ON contribution_drafts(status)
+    ''');
   }
 }

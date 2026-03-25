@@ -4,6 +4,19 @@ import '../db/schema.dart';
 import '../memory/memory_record.dart';
 import 'agent_loop.dart';
 
+/// A tracked repo summary for injection into the system prompt.
+class TrackedRepoSummary {
+  const TrackedRepoSummary({
+    required this.repo,
+    required this.reason,
+    required this.starred,
+  });
+
+  final String repo;
+  final String reason;
+  final bool starred;
+}
+
 /// A calendar event to inject into the system prompt for awareness.
 class CalendarEvent {
   const CalendarEvent({
@@ -49,6 +62,7 @@ String buildSystemPrompt(
   List<MemorySearchResult> memories = const [],
   List<CalendarEvent> events = const [],
   String? eventTimeZone,
+  List<TrackedRepoSummary> trackedRepos = const [],
 }) {
   final name = identity?.name ?? botName;
   final pronouns = identity?.pronouns ?? 'they/them';
@@ -96,6 +110,7 @@ You have tools for:
 - **Knowledge base (Outline)**: search/read/create/update wiki documents, manage collections
 - **Calendar & contacts (Radicale)**: manage events, todos, contacts, calendars, address books
 - **Memory (save_memory, search_memory)**: save information to long-term memory when asked to "remember this", or actively search past conversations and saved knowledge when passive recall doesn't surface what you need. Visibility: same_chat (default), cross_chat (all chats), or private (1:1 only)
+- **Repo Radar (track_repo, list_tracked_repos, crawl_repo, star_repo, draft_contribution, list_contribution_drafts, submit_contribution)**: discover and track interesting GitHub repositories from conversation. When you notice a repo being discussed that could be useful to the team, proactively call track_repo. You can star repos (no notification to maintainer), crawl metadata, and draft PRs or issues — but submit_contribution requires admin approval (human-in-the-loop)
 
 ## Guidelines
 
@@ -163,6 +178,19 @@ You have tools for:
       final locationStr =
           loc != null && loc.isNotEmpty ? ' — $loc' : '';
       parts.add('- [$dateStr $timeStr] ${event.summary}$locationStr\n');
+    }
+  }
+
+  if (trackedRepos.isNotEmpty) {
+    parts.add('\n## Repo Radar\n');
+    parts.add(
+      'You are currently tracking these repositories. When they come up in '
+      'conversation, you can reference what you know. Use crawl_repo to '
+      'refresh metadata if someone asks about a tracked repo.\n',
+    );
+    for (final repo in trackedRepos) {
+      final star = repo.starred ? ' ★' : '';
+      parts.add('- **${repo.repo}**$star: ${repo.reason}\n');
     }
   }
 

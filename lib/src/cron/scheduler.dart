@@ -122,6 +122,7 @@ class Scheduler {
       cleanOldData();
       await backfill?.backfill();
       await consolidator?.consolidate();
+      await _sendRepoRadarDigest();
     }
   }
 
@@ -173,6 +174,51 @@ class Scheduler {
       groupId: config.groupId,
       date: date,
     );
+  }
+
+  /// Sends a Repo Radar digest to each chat that has tracked repos.
+  ///
+  /// The digest is composed via the agent loop so it's in-character and
+  /// lands in conversation history. Dreamfinder will use `crawl_repo` to
+  /// refresh metadata and `list_tracked_repos` to review what's being watched.
+  Future<void> _sendRepoRadarDigest() async {
+    final repos = queries.getAllTrackedRepos();
+    if (repos.isEmpty) return;
+
+    // Group repos by source chat.
+    final reposByChat = <String, List<String>>{};
+    for (final repo in repos) {
+      reposByChat.putIfAbsent(repo.sourceChatId, () => []).add(repo.repo);
+    }
+
+    final compose = composeViaAgent;
+    if (compose == null) return; // Can't compose without agent.
+
+    for (final entry in reposByChat.entries) {
+      final chatId = entry.key;
+      final repoNames = entry.value;
+
+      try {
+        final digest = await compose(
+          chatId,
+          'You have ${repoNames.length} repos on the Repo Radar: '
+              '${repoNames.join(", ")}. '
+              'Use crawl_repo on each to refresh their metadata, then share '
+              'a brief digest of anything interesting — new releases, '
+              'rising stars, notable issues. Keep it concise and useful. '
+              'If nothing notable has changed, say so briefly and move on.',
+        );
+        if (digest.isNotEmpty) {
+          await sendMessage(chatId, digest);
+        }
+      } on Exception catch (e) {
+        developer.log(
+          'Repo Radar digest failed for $chatId: $e',
+          name: 'Scheduler',
+          level: 900,
+        );
+      }
+    }
   }
 
   /// Removes old reminders and calendar reminders from the database.
