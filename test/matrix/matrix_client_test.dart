@@ -427,5 +427,45 @@ void main() {
       );
       expect(event.hasTextMessage, isFalse);
     });
+
+    test('isMemberJoin is true for join membership events', () {
+      final event = MatrixEvent(
+        eventId: '\$1',
+        roomId: '!r:t',
+        sender: '@newuser:t',
+        type: 'm.room.member',
+        originServerTs: 0,
+        content: const {
+          'membership': 'join',
+          'displayname': 'New User',
+        },
+      );
+      expect(event.isMemberJoin, isTrue);
+      expect(event.memberDisplayName, 'New User');
+    });
+
+    test('isMemberJoin is false for leave events', () {
+      final event = MatrixEvent(
+        eventId: '\$1',
+        roomId: '!r:t',
+        sender: '@leaving:t',
+        type: 'm.room.member',
+        originServerTs: 0,
+        content: const {'membership': 'leave'},
+      );
+      expect(event.isMemberJoin, isFalse);
+    });
+
+    test('isMemberJoin is false for text messages', () {
+      final event = MatrixEvent(
+        eventId: '\$1',
+        roomId: '!r:t',
+        sender: '@u:t',
+        type: 'm.room.message',
+        originServerTs: 0,
+        content: const {'msgtype': 'm.text', 'body': 'hello'},
+      );
+      expect(event.isMemberJoin, isFalse);
+    });
   });
 }

@@ -64,6 +64,14 @@ class MatrixEvent {
   /// Whether this event is a text message with a non-empty body.
   bool get hasTextMessage =>
       type == 'm.room.message' && msgType == 'm.text' && body != null;
+
+  /// Whether this event is a member joining a room.
+  bool get isMemberJoin =>
+      type == 'm.room.member' &&
+      (content['membership'] as String?) == 'join';
+
+  /// Display name from a membership event (e.g., the joining user's name).
+  String? get memberDisplayName => content['displayname'] as String?;
 }
 
 /// Parsed response from the Matrix `/sync` endpoint.
