@@ -2,11 +2,15 @@
 ///
 /// - `save_memory`: Explicitly save information to long-term memory.
 /// - `search_memory`: Actively search past conversations and saved knowledge.
+/// - `deep_search`: Parallel multi-source search across memory, Outline, and
+///   Kan — the agentic RAG tool for cross-cutting questions.
 library;
 
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import '../agent/tool_registry.dart';
+import '../mcp/mcp_manager.dart';
 import '../memory/embedding_pipeline.dart';
 import '../memory/memory_record.dart';
 import '../memory/memory_retriever.dart';
@@ -16,13 +20,20 @@ import '../memory/memory_retriever.dart';
 /// When [pipeline] is `null` (no `VOYAGE_API_KEY`), the save tool is still
 /// registered but returns an error when invoked — this lets the agent explain
 /// the limitation to the user. Same pattern for [retriever] and search.
+///
+/// When [mcpManager] is provided, `deep_search` can fan out to Outline and Kan
+/// MCP servers in parallel alongside local memory retrieval.
 void registerMemoryTools(
   ToolRegistry registry,
   EmbeddingPipeline? pipeline,
-  MemoryRetriever? retriever,
-) {
+  MemoryRetriever? retriever, [
+  McpManager? mcpManager,
+]) {
   registry.registerCustomTool(_saveMemoryTool(registry, pipeline));
   registry.registerCustomTool(_searchMemoryTool(registry, retriever));
+  registry.registerCustomTool(
+    _deepSearchTool(registry, retriever, mcpManager),
+  );
 }
 
 CustomToolDef _saveMemoryTool(
@@ -160,4 +171,223 @@ CustomToolDef _searchMemoryTool(
       });
     },
   );
+}
+
+/// The set of knowledge sources `deep_search` can fan out to.
+const _allSources = ['memory', 'outline', 'kan'];
+
+/// Default results per source for deep_search.
+const _deepSearchDefaultLimit = 3;
+
+/// Maximum results per source for deep_search.
+const _deepSearchMaxLimit = 5;
+
+CustomToolDef _deepSearchTool(
+  ToolRegistry registry,
+  MemoryRetriever? retriever,
+  McpManager? mcpManager,
+) {
+  return CustomToolDef(
+    name: 'deep_search',
+    description: 'Search across all knowledge sources in parallel — long-term '
+        'memory, Outline wiki, and Kan task board. Use this for cross-cutting '
+        'questions that span multiple domains, or when you are unsure where '
+        'the answer lives. Returns unified results with source attribution.',
+    inputSchema: const <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'query': <String, dynamic>{
+          'type': 'string',
+          'description': 'What you are looking for across all sources.',
+        },
+        'sources': <String, dynamic>{
+          'type': 'array',
+          'items': <String, dynamic>{
+            'type': 'string',
+            'enum': ['memory', 'outline', 'kan'],
+          },
+          'description': 'Which sources to search. Defaults to all available. '
+              'Use a subset when you know where the answer lives.',
+        },
+        'limit': <String, dynamic>{
+          'type': 'integer',
+          'description':
+              'Maximum results per source (1–5, default 3).',
+        },
+      },
+      'required': <String>['query'],
+    },
+    handler: (args) async {
+      final query = (args['query'] as String).trim();
+      if (query.isEmpty) {
+        return jsonEncode(<String, dynamic>{
+          'error': 'Query is empty — nothing to search for.',
+        });
+      }
+
+      final limit = (args['limit'] as int? ?? _deepSearchDefaultLimit)
+          .clamp(1, _deepSearchMaxLimit);
+
+      // Determine which sources the caller wants.
+      final requestedSources = args['sources'] != null
+          ? (args['sources'] as List<dynamic>).cast<String>()
+          : List<String>.from(_allSources);
+
+      // Detect which MCP tools are actually available.
+      final mcpToolNames = mcpManager
+              ?.getAllTools()
+              .map((t) => t.name)
+              .toSet() ??
+          <String>{};
+
+      final hasMemory = retriever != null;
+      final hasOutline = mcpToolNames.contains('outline_search');
+      final hasKan = mcpToolNames.contains('kan_search');
+
+      final availability = <String, bool>{
+        'memory': hasMemory,
+        'outline': hasOutline,
+        'kan': hasKan,
+      };
+
+      final sourcesSearched = <String>[];
+      final sourcesUnavailable = <String>[];
+      final sourcesFailed = <String>[];
+      final allResults = <Map<String, dynamic>>[];
+
+      final ctx = registry.context;
+      final chatId = ctx?.chatId ?? 'unknown';
+
+      // Build futures for each requested+available source.
+      final futures = <Future<void>>[];
+
+      for (final source in requestedSources) {
+        if (availability[source] != true) {
+          sourcesUnavailable.add(source);
+          continue;
+        }
+
+        futures.add(_searchSource(
+          source: source,
+          query: query,
+          limit: limit,
+          chatId: chatId,
+          retriever: retriever,
+          mcpManager: mcpManager,
+        ).then((results) {
+          sourcesSearched.add(source);
+          allResults.addAll(results);
+        }).catchError((Object e) {
+          sourcesFailed.add(source);
+          developer.log(
+            'deep_search: $source failed: $e',
+            name: 'MemoryTools',
+            level: 900,
+          );
+        }));
+      }
+
+      await Future.wait(futures);
+
+      return jsonEncode(<String, dynamic>{
+        'sources_searched': sourcesSearched,
+        'sources_unavailable': sourcesUnavailable,
+        'sources_failed': sourcesFailed,
+        'total_count': allResults.length,
+        'results': allResults,
+      });
+    },
+  );
+}
+
+/// Searches a single source and returns normalized results.
+Future<List<Map<String, dynamic>>> _searchSource({
+  required String source,
+  required String query,
+  required int limit,
+  required String chatId,
+  MemoryRetriever? retriever,
+  McpManager? mcpManager,
+}) async {
+  switch (source) {
+    case 'memory':
+      return _searchMemory(retriever!, query, chatId, limit);
+    case 'outline':
+      return _searchOutline(mcpManager!, query, limit);
+    case 'kan':
+      return _searchKan(mcpManager!, query, limit);
+    default:
+      return [];
+  }
+}
+
+/// Searches local memory embeddings and normalizes results.
+Future<List<Map<String, dynamic>>> _searchMemory(
+  MemoryRetriever retriever,
+  String query,
+  String chatId,
+  int limit,
+) async {
+  final results = await retriever.retrieve(query, chatId, topK: limit);
+  return [
+    for (final r in results)
+      <String, dynamic>{
+        'source': 'memory',
+        'text': r.record.sourceText,
+        'date': r.record.createdAt.split('T').first,
+        'score': double.parse(r.score.toStringAsFixed(3)),
+      },
+  ];
+}
+
+/// Searches Outline wiki via MCP and normalizes results.
+Future<List<Map<String, dynamic>>> _searchOutline(
+  McpManager mcpManager,
+  String query,
+  int limit,
+) async {
+  final raw = await mcpManager.callTool('outline_search', <String, dynamic>{
+    'query': query,
+    'limit': limit,
+  });
+  final parsed = jsonDecode(raw) as Map<String, dynamic>;
+  final data = parsed['data'] as List<dynamic>? ?? [];
+
+  return [
+    for (final item in data)
+      if (item is Map<String, dynamic>)
+        <String, dynamic>{
+          'source': 'outline',
+          'title': (item['document'] as Map<String, dynamic>?)?['title'] ?? '',
+          'text': (item['document'] as Map<String, dynamic>?)?['text'] ?? '',
+          'document_id':
+              (item['document'] as Map<String, dynamic>?)?['id'] ?? '',
+        },
+  ];
+}
+
+/// Searches Kan task board via MCP and normalizes results.
+Future<List<Map<String, dynamic>>> _searchKan(
+  McpManager mcpManager,
+  String query,
+  int limit,
+) async {
+  final raw = await mcpManager.callTool('kan_search', <String, dynamic>{
+    'query': query,
+    'limit': limit,
+  });
+  final parsed = jsonDecode(raw) as Map<String, dynamic>;
+  final data = parsed['data'] as List<dynamic>? ?? [];
+
+  return [
+    for (final item in data)
+      if (item is Map<String, dynamic>)
+        <String, dynamic>{
+          'source': 'kan',
+          'title': item['title'] ?? '',
+          'text': item['description'] ?? '',
+          'card_id': item['id'] ?? '',
+          'list': (item['list'] as Map<String, dynamic>?)?['name'] ?? '',
+        },
+  ];
 }

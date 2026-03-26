@@ -213,7 +213,12 @@ Future<void> main() async {
     log.info('RAG memory system disabled (no VOYAGE_API_KEY)');
   }
 
-  registerMemoryTools(toolRegistry, embeddingPipeline, memoryRetriever);
+  registerMemoryTools(
+    toolRegistry,
+    embeddingPipeline,
+    memoryRetriever,
+    mcpManager,
+  );
 
   // Set up Anthropic client — OAuth (Claude Max) or API key.
   OAuthTokenManager? oauthManager;
