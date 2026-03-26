@@ -36,12 +36,16 @@ import 'package:dreamfinder/src/memory/memory_consolidator.dart';
 import 'package:dreamfinder/src/memory/memory_record.dart';
 import 'package:dreamfinder/src/memory/memory_retriever.dart';
 import 'package:dreamfinder/src/memory/summarization_client.dart';
+import 'package:dreamfinder/src/session/session.dart';
+import 'package:dreamfinder/src/session/session_prompt.dart';
+import 'package:dreamfinder/src/session/session_state.dart';
 import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
 import 'package:dreamfinder/src/tools/chat_config_tools.dart';
 import 'package:dreamfinder/src/tools/github_tools.dart';
 import 'package:dreamfinder/src/tools/kickstart_tools.dart';
 import 'package:dreamfinder/src/tools/memory_tools.dart';
 import 'package:dreamfinder/src/tools/radar_tools.dart';
+import 'package:dreamfinder/src/tools/session_tools.dart';
 import 'package:dreamfinder/src/tools/standup_tools.dart';
 
 /// Maximum backoff for sync retry (30 seconds).
@@ -166,6 +170,13 @@ Future<void> main() async {
   registerKickstartTools(
     toolRegistry,
     kickstartState,
+    sendGroupMessage: (roomId, message) =>
+        matrixClient.sendMessage(roomId: roomId, message: message),
+  );
+  final sessionState = SessionState(queries: queries);
+  registerSessionTools(
+    toolRegistry,
+    sessionState,
     sendGroupMessage: (roomId, message) =>
         matrixClient.sendMessage(roomId: roomId, message: message),
   );
@@ -617,7 +628,24 @@ Future<void> main() async {
             continue;
           }
 
-          // Build system prompt — append kickstart section if active.
+          // Detect session triggers — group-only, no DM redirect.
+          if (isGroup &&
+              isSessionMessage(text) &&
+              !sessionState.isSessionActive(event.roomId)) {
+            sessionState.startSession(
+              event.roomId,
+              initiatorId: event.sender,
+            );
+            log.info('Session started', extra: {
+              'room': event.roomId,
+              'sender': event.sender,
+            });
+            // Don't `continue` — let the agent loop handle the first
+            // response (pitch phase facilitation) with the session
+            // prompt injected below.
+          }
+
+          // Build system prompt — append kickstart/session sections.
           final systemPromptText = _buildFullSystemPrompt(
             input: input,
             env: env,
@@ -625,6 +653,7 @@ Future<void> main() async {
             memories: memories,
             events: events,
             kickstartState: kickstartState,
+            sessionState: sessionState,
             chatId: event.roomId,
             senderId: event.sender,
             isGroup: isGroup,
@@ -830,8 +859,8 @@ Future<AgentResponse> _callClaude(
   );
 }
 
-/// Builds the full system prompt, appending the kickstart section if a
-/// kickstart is active for this chat (group) or sender (DM).
+/// Builds the full system prompt, appending the kickstart and/or session
+/// section if either is active for this chat (group) or sender (DM).
 String _buildFullSystemPrompt({
   required AgentInput input,
   required Env env,
@@ -839,6 +868,7 @@ String _buildFullSystemPrompt({
   required List<MemorySearchResult> memories,
   required List<CalendarEvent> events,
   required KickstartState kickstartState,
+  required SessionState sessionState,
   required String chatId,
   required String senderId,
   required bool isGroup,
@@ -877,6 +907,14 @@ String _buildFullSystemPrompt({
 
   if (kickstartStep != null && kickstartGroupId != null) {
     prompt += buildKickstartPromptSection(kickstartStep, kickstartGroupId);
+  }
+
+  // Session prompt injection — group-only (no DM sessions).
+  if (isGroup) {
+    final sessionPhase = sessionState.getActiveSession(chatId);
+    if (sessionPhase != null) {
+      prompt += buildSessionPromptSection(sessionPhase, chatId);
+    }
   }
 
   return prompt;
