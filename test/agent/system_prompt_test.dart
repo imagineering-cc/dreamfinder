@@ -102,7 +102,9 @@ void main() {
         isAdmin: false,
       );
       final prompt = buildSystemPrompt(input);
-      expect(prompt, isNot(contains('Relevant Memories')));
+      // The capabilities mention "Relevant Memories" in guidance text, but the
+      // actual injected section header should not appear without memories.
+      expect(prompt, isNot(contains('## Relevant Memories')));
     });
 
     test('mentions save_memory in capabilities', () {
@@ -114,7 +116,7 @@ void main() {
       );
       final prompt = buildSystemPrompt(input);
       expect(prompt, contains('save_memory'));
-      expect(prompt, contains('long-term memory'));
+      expect(prompt, contains('remember this'));
     });
 
     test('defaults isSystemInitiated to false', () {
@@ -223,6 +225,33 @@ void main() {
 
       expect(prompt, contains('nudge'));
       expect(prompt, contains('configure_standup'));
+    });
+
+    test('mentions deep_search in capabilities', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, contains('deep_search'));
+      expect(prompt, contains('search_memory'));
+    });
+
+    test('includes Retrieval Reasoning section', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, contains('## Retrieval Reasoning'));
+      expect(prompt, contains('passive recall'));
+      expect(prompt, contains('Evaluate'));
     });
   });
 }
