@@ -250,6 +250,9 @@ CustomToolDef _deepSearchTool(
         'kan': hasKan,
       };
 
+      // These lists are mutated inside Future.wait() callbacks below.
+      // Safe without synchronization because Dart is single-threaded within
+      // an isolate — futures interleave but never run concurrently.
       final sourcesSearched = <String>[];
       final sourcesUnavailable = <String>[];
       final sourcesFailed = <String>[];
@@ -301,6 +304,11 @@ CustomToolDef _deepSearchTool(
 }
 
 /// Searches a single source and returns normalized results.
+///
+/// The `!` operators on [retriever] and [mcpManager] are safe because the
+/// caller in `_deepSearchTool` only invokes this for sources that passed the
+/// availability check (retriever != null for memory, mcpManager has the
+/// required tool for outline/kan).
 Future<List<Map<String, dynamic>>> _searchSource({
   required String source,
   required String query,
@@ -351,7 +359,16 @@ Future<List<Map<String, dynamic>>> _searchOutline(
     'limit': limit,
   });
   final parsed = jsonDecode(raw) as Map<String, dynamic>;
-  final data = parsed['data'] as List<dynamic>? ?? [];
+  final data = parsed['data'] as List<dynamic>?;
+  if (data == null) {
+    developer.log(
+      'Outline search returned unexpected format (no "data" key): '
+      '${raw.substring(0, raw.length.clamp(0, 200))}',
+      name: 'MemoryTools',
+      level: 900,
+    );
+    return [];
+  }
 
   return [
     for (final item in data)
@@ -377,7 +394,16 @@ Future<List<Map<String, dynamic>>> _searchKan(
     'limit': limit,
   });
   final parsed = jsonDecode(raw) as Map<String, dynamic>;
-  final data = parsed['data'] as List<dynamic>? ?? [];
+  final data = parsed['data'] as List<dynamic>?;
+  if (data == null) {
+    developer.log(
+      'Kan search returned unexpected format (no "data" key): '
+      '${raw.substring(0, raw.length.clamp(0, 200))}',
+      name: 'MemoryTools',
+      level: 900,
+    );
+    return [];
+  }
 
   return [
     for (final item in data)
