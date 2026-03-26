@@ -227,6 +227,19 @@ void main() {
       expect(prompt, contains('configure_standup'));
     });
 
+    test('mentions session facilitation capabilities', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, contains('start_session'));
+      expect(prompt, contains('facilitat'));
+    });
+
     test('mentions deep_search in capabilities', () {
       const input = AgentInput(
         text: 'Hello',
