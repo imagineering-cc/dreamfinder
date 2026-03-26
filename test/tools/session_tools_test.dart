@@ -39,7 +39,7 @@ void main() {
     String toolName,
     Map<String, dynamic> args,
   ) async {
-    registry.setContext(ToolContext(
+    registry.setContext(const ToolContext(
       senderId: 'user-1',
       isAdmin: false,
       chatId: groupId,
