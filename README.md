@@ -2,60 +2,76 @@
 
 > _"One little spark of inspiration is at the heart of all creation."_
 
-An AI-powered project management bot for Signal, built for the Imagineering organization. Named after the Dreamfinder from EPCOT's Journey Into Imagination — the imaginative mentor who dreamed Figment into existence — **Dreamfinder** turns sparks of ideas into organized tasks, docs, and team coordination.
+An AI-powered project management bot for the Imagineering organization, built on
+Matrix. Named after the Dreamfinder from EPCOT's Journey Into Imagination — the
+imaginative mentor who dreamed Figment into existence — **Dreamfinder** turns sparks
+of ideas into organized tasks, docs, and team coordination.
 
-The bot processes every message through a Claude LLM agent loop with access to ~75 tools across task management (Kan.bn), knowledge base (Outline), calendar (Radicale), web automation (Playwright), and custom bot tools. No slash commands — just natural language.
+Every message flows through a Claude LLM agent loop with access to ~75 tools across
+task management (Kan.bn), knowledge base (Outline), calendar (Radicale), web
+automation (Playwright), and custom bot tools. No slash commands — just natural
+language.
 
-> **Status**: End-to-end bot is deployed and running. 519+ tests, 14 domain tables, schema v5. Features: Signal client, agent loop, DB-backed conversation history, tool registry, MCP manager (~75 tools), system prompt with context injection, RAG long-term memory (Voyage AI embeddings), standup orchestration, deploy announcements, OAuth auth (Claude Max), calendar event awareness, autonomous dream cycle with parallel branching, and kickstart guided onboarding (in progress). Adapted from xdeca-pm-bot, a production Telegram bot with the same architecture.
+> **Status**: Deployed and running. 710+ tests, 16 domain tables, schema v7.
+> Migrating from Signal to Matrix — a
+> [matrix chat superbridge](https://github.com/imagineering-cc/matrix-chat-superbridge)
+> relays between Matrix and Signal/Discord/Telegram/WhatsApp using puppet accounts,
+> so Dreamfinder only connects to Matrix.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Signal Messenger                             │
-│                  (Users / Group Conversations)                      │
-└──────────────────────────┬──────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Chat Platforms                                │
+│       Signal  ·  Discord  ·  Telegram  ·  WhatsApp  ·  Matrix       │
+└──────────┬───────────┬────────────┬────────────┬─────────┬───────────┘
+           │           │            │            │         │
+           ▼           ▼            ▼            ▼         │
+┌──────────────────────────────────────────────────────┐  │
+│              Matrix Chat Superbridge                  │  │
+│         (puppet accounts per platform)                │  │
+└──────────────────────────┬───────────────────────────┘  │
+                           │                              │
+                           ▼                              │
+┌──────────────────────────────────────────────────────────┤
+│                     Matrix Homeserver                     │
+│                  (matrix.imagineering.cc)                 │
+└──────────────────────────┬───────────────────────────────┘
                            │
                            ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Signal Bridge                                   │
-│                  signal-cli-rest-api                                 │
-│                (Dockerized REST API)                                 │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Dreamfinder                                    │
-│                                                                     │
-│  ┌──────────────┐    ┌──────────────┐    ┌───────────────────────┐  │
-│  │   Message     │    │  Agent Loop  │    │    Cron Scheduler     │  │
-│  │   Handler     │───▶│  (Claude     │    │  - Overdue tasks      │  │
-│  │  - Rate limit │    │   Sonnet)    │    │  - Stale tasks        │  │
-│  │  - History    │    │              │    │  - Standup prompts    │  │
-│  │  - Context    │    │  ┌────────┐  │    │  - Unassigned tasks   │  │
-│  └──────────────┘    │  │ Tools  │  │    └───────────┬───────────┘  │
-│                       │  └───┬────┘  │                │              │
-│                       └──────┼───────┘                │              │
-│                              │                        │              │
-│  ┌───────────────────────────┼────────────────────────┼───────────┐  │
-│  │                     Tool Layer                                 │  │
-│  │                                                                │  │
-│  │  ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌────────────────────┐ │  │
-│  │  │  Kan.bn  │ │ Outline │ │ Radicale │ │    Playwright      │ │  │
-│  │  │  (Tasks) │ │ (Wiki)  │ │ (Cal)    │ │    (Browser)       │ │  │
-│  │  └──────────┘ └─────────┘ └──────────┘ └────────────────────┘ │  │
-│  │                                                                │  │
-│  │  ┌────────────────────────────────────────────────────────────┐│  │
-│  │  │ Custom Tools: chat config, user mapping, sprint info,     ││  │
-│  │  │ standups, bot identity, deploy info, server ops           ││  │
-│  │  └────────────────────────────────────────────────────────────┘│  │
-│  └────────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  SQLite (sqlite3 package)                                       │  │
-│  │  Conversations, config, user mappings, standups, bot state    │  │
-│  └────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Dreamfinder                                   │
+│                                                                      │
+│  ┌──────────────┐    ┌──────────────┐    ┌────────────────────────┐  │
+│  │   Message     │    │  Agent Loop  │    │    Cron Scheduler      │  │
+│  │   Handler     │───▶│  (Claude     │    │  - Task nudges         │  │
+│  │  - Rate limit │    │   Sonnet)    │    │  - Standup prompts     │  │
+│  │  - History    │    │              │    │  - Repo radar digest   │  │
+│  │  - Context    │    │  ┌────────┐  │    └────────────┬───────────┘  │
+│  └──────────────┘    │  │ Tools  │  │                 │              │
+│                       │  └───┬────┘  │                 │              │
+│                       └──────┼───────┘                 │              │
+│                              │                         │              │
+│  ┌───────────────────────────┼─────────────────────────┼──────────┐  │
+│  │                     Tool Layer                                  │  │
+│  │                                                                 │  │
+│  │  ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐   │  │
+│  │  │  Kan.bn  │ │ Outline │ │ Radicale │ │    Playwright     │   │  │
+│  │  │  (Tasks) │ │ (Wiki)  │ │ (Cal)    │ │    (Browser)      │   │  │
+│  │  └──────────┘ └─────────┘ └──────────┘ └───────────────────┘   │  │
+│  │                                                                 │  │
+│  │  ┌───────────────────────────────────────────────────────────┐  │  │
+│  │  │ Custom Tools: chat config, user mapping, standups,       │  │  │
+│  │  │ bot identity, memory (RAG), repo radar, session, GitHub  │  │  │
+│  │  └───────────────────────────────────────────────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  SQLite (sqlite3 package) — 16 domain tables, schema v7        │  │
+│  │  Conversations, config, user mappings, standups, dreams,       │  │
+│  │  radar repos, bot state, RAG memory                            │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Features
@@ -85,13 +101,17 @@ The bot processes every message through a Claude LLM agent loop with access to ~
 - Async daily standups — bot prompts team members and collects responses
 - Standup summaries posted to group
 - Timezone-aware prompt scheduling (per-group IANA timezone config)
-- User identity mapping (Signal UUID to Kan.bn user)
+- Proactive task nudges — overdue and stale Kan cards flagged daily at configurable hour
+- User identity mapping (platform user ID to Kan.bn user)
+- Auto-onboard — welcomes new members joining rooms and invites them to DM for setup
 
 ### Bot Intelligence
 
 - Full natural language understanding — no slash commands needed
 - Conversation history with 20-message window and 30-minute TTL
-- RAG long-term memory — Voyage AI embeddings, cosine similarity retrieval, context injection
+- RAG long-term memory — Voyage AI embeddings, cosine similarity retrieval, context
+  injection
+- Agentic RAG — `deep_search` fans out across memory, Outline, and Kan in parallel
 - Rate limiting in group chats to avoid noise
 - Configurable per-chat settings (enabled tools, response style)
 - Bot personality/identity customization
@@ -113,21 +133,45 @@ Light (N1→N2) → Deep (N2→N3) → Branch per spark (parallel) → REM (conv
 - Adaptive depth — quiet days skip deeper phases
 - Token usage tracked across all phases and branches
 
-### Kickstart Guided Onboarding (In Progress)
+### Session Facilitation
 
-5-step guided setup triggered by natural language ("kickstart", "get started", etc.):
+Dreamfinder facilitates co-working sessions with an 8-phase state machine:
+
+```
+Pitch → Build 1 → Chat 1 → Build 2 → Chat 2 → Build 3 → Chat 3 → Demo
+```
+
+- Detected via natural language ("let's do a session", etc.)
+- 4 custom tools for session management
+- State machine with prompt injection per phase
+- Encourages focused build sprints with check-in conversations
+
+### Kickstart Guided Onboarding
+
+6-step guided setup triggered by natural language ("kickstart", "get started", etc.):
 
 1. **Workspace Setup** — Link Kan workspace and default board
-2. **Team Roster** — Map Signal users to Kan members
+2. **Team Roster** — Map chat users to Kan members
 3. **Project Seeding** — Create cards and docs for active projects
 4. **Knowledge Dump** — Capture decisions, conventions, context
 5. **Dream Primer** — Summarize setup and introduce the dream cycle
+6. **First Nudge** — Demonstrate proactive task awareness
 
-### Reminders (Cron-based)
+Users DM Dreamfinder to onboard — the bridge can't initiate DMs to native platforms.
 
-- Standup prompts at configured times (timezone-aware)
-- Overdue task alerts (planned)
-- Stale task nudges (planned)
+### Repo Radar
+
+Track and discover GitHub repositories relevant to the org:
+
+- Star, search, and crawl repos
+- Draft contribution ideas
+- Daily digest via scheduler
+- Context injected into system prompt
+
+### MCP Configuration
+
+MCP servers are loaded from `mcp-config.json` — add a new MCP server to the config,
+restart, and the tools are available. No code changes needed.
 
 ## Tech Stack
 
@@ -135,10 +179,10 @@ Light (N1→N2) → Deep (N2→N3) → Branch per spark (parallel) → REM (conv
 | --------------- | -------------------------------------- |
 | Language        | Dart 3.6+                              |
 | Runtime         | Dart VM                                |
-| Messaging       | Signal (via signal-cli-rest-api)       |
+| Messaging       | Matrix (via Client-Server API)         |
 | LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart) |
 | MCP             | dart_mcp ^0.4.1                        |
-| Database        | SQLite (via sqlite3 package)            |
+| Database        | SQLite (via sqlite3 package)           |
 | Task Management | Kan.bn (MCP)                           |
 | Knowledge Base  | Outline (MCP)                          |
 | Calendar        | Radicale (MCP)                         |
@@ -151,9 +195,9 @@ Light (N1→N2) → Deep (N2→N3) → Branch per spark (parallel) → REM (conv
 ### Prerequisites
 
 - Dart SDK 3.6+
-- Docker and Docker Compose (for Signal bridge and deployment)
-- A dedicated phone number for the bot's Signal account
-- Anthropic API key
+- Docker and Docker Compose (for deployment)
+- Anthropic API key (or Claude Max OAuth via `CLAUDE_REFRESH_TOKEN`)
+- A Matrix homeserver with an account for the bot
 - Running instances of Kan.bn, Outline, and Radicale
 
 ### Installation
@@ -187,11 +231,18 @@ dart run bin/dreamfinder.dart
 All environment variables are documented in `.env.example`:
 
 ```bash
-# Required
+# Required — LLM
 ANTHROPIC_API_KEY=            # Claude API key
-SIGNAL_PHONE_NUMBER=          # Bot's registered Signal phone number
-SIGNAL_API_URL=               # signal-cli-rest-api base URL
+CLAUDE_REFRESH_TOKEN=         # OAuth refresh token (alternative to API key)
 
+# Required — Matrix
+MATRIX_HOMESERVER=            # Matrix homeserver URL (e.g., https://matrix.imagineering.cc)
+MATRIX_ACCESS_TOKEN=          # Matrix bot access token (or use username+password)
+MATRIX_USERNAME=              # Matrix login username (alternative to access token)
+MATRIX_PASSWORD=              # Matrix login password (alternative to access token)
+MATRIX_IGNORE_ROOMS=          # Comma-separated room IDs to ignore (optional)
+
+# Required — MCP tools
 KAN_BASE_URL=                 # Kan.bn instance URL
 KAN_API_KEY=                  # Kan.bn API key
 OUTLINE_BASE_URL=             # Outline instance URL
@@ -202,56 +253,50 @@ RADICALE_BASE_URL=            # Radicale CalDAV/CardDAV server URL
 RADICALE_USERNAME=            # Radicale auth username
 RADICALE_PASSWORD=            # Radicale auth password
 
-# Bot Config (all optional, have defaults)
+# Optional
+VOYAGE_API_KEY=               # Voyage AI key for RAG memory embeddings
+CALENDAR_URL=                 # CalDAV calendar URL for event awareness
+EVENT_TIMEZONE=               # IANA timezone for event display (e.g., Australia/Melbourne)
 BOT_NAME=                     # Display name (default: "Dreamfinder")
 DATABASE_PATH=                # SQLite path (default: ./data/bot.db)
 LOG_LEVEL=                    # Logging level (default: info)
 ```
 
-## Signal Bot Setup
+## Matrix Integration
 
-Signal does not have an official bot API. Dreamfinder uses
-[signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) — the most
-mature community solution. It wraps signal-cli in a Docker container exposing REST
-endpoints that `SignalClient` (in Dart) consumes via HTTP polling.
+Dreamfinder connects directly to a Matrix homeserver using the
+[Client-Server API](https://spec.matrix.org/latest/client-server-api/) via the `http`
+package — the same lightweight approach used for the original Signal client. No
+Matrix SDK dependency.
 
-```yaml
-# docker-compose.yml (simplified)
-services:
-  signal-api:
-    image: bbernhard/signal-cli-rest-api:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./signal-cli-config:/home/.local/share/signal-cli
-    environment:
-      - MODE=normal
+A separate [matrix chat superbridge](https://github.com/imagineering-cc/matrix-chat-superbridge)
+handles relay between Matrix and other platforms (Signal, Discord, Telegram, WhatsApp)
+using puppet accounts. Dreamfinder only sees Matrix rooms and events.
 
-  bot:
-    build: .
-    depends_on:
-      - signal-api
-    environment:
-      - SIGNAL_API_URL=http://signal-api:8080
+```
+Signal user ──puppet──┐
+Discord user ─puppet──┤── Matrix Room ──── Dreamfinder
+Telegram user ─puppet─┤
+WhatsApp user ─puppet─┘
 ```
 
-**Pros**: Battle-tested, large community, well-documented REST API, runs as a separate
-concern.
+### Matrix Client Capabilities
 
-**Cons**: Extra container to manage, polling-based message receipt (or webhook setup),
-indirect communication.
+- **Auth**: Access token or username/password login
+- **Sync**: Long-polling `/sync` with persisted sync token
+- **Send**: Messages, typing indicators
+- **Rooms**: Auto-join on invite, room member queries, DM detection via member count
+- **Mentions**: Matrix pills + name regex
 
 ## MCP Integration
 
 MCP (Model Context Protocol) servers run as child processes managed by `McpManager`.
 The `dart_mcp` package provides the Dart client for MCP protocol communication via
-STDIO transport.
+STDIO transport. Server configuration is loaded from `mcp-config.json`.
 
-The MCP server packages (Kan, Outline, Radicale) are shared with
-[Gremlin](https://github.com/10xdeca/gremlin) (xdeca's Telegram bot) via a
-[git submodule](https://github.com/nickmeinhold/mcp-servers) at `mcp-servers/`. Updates
-to the shared repo benefit both bots — run `git submodule update --remote` to pull
-the latest.
+The MCP server packages (Kan, Outline, Radicale) live in a
+[git submodule](https://github.com/nickmeinhold/mcp-servers) at `mcp-servers/`.
+Run `git submodule update --remote` to pull the latest.
 
 ### Available Tool Sets (~75 tools total)
 
@@ -261,18 +306,21 @@ the latest.
 | Outline    | ~15   | Search docs, create document, list collections       |
 | Radicale   | ~15   | List events, create todo, manage contacts            |
 | Playwright | ~20   | Navigate, screenshot, fill form, click element       |
-| Custom     | ~10   | Chat config, user mapping, sprint info, standups     |
+| Custom     | ~10   | Chat config, user mapping, standups, memory, radar   |
 
 ### Custom Tools
 
 In addition to MCP server tools, the bot defines its own tools in `lib/src/tools/`:
 
 - **chat_config** — Workspace linking, default board/list config per group
-- **user_mapping** — Map Signal UUIDs to Kan.bn users and display names
+- **user_mapping** — Map platform user IDs to Kan.bn users and display names
 - **bot_identity** — Get/set bot name, pronouns, and communication tone
 - **memory** — Save, search, and manage long-term RAG memories
 - **standup** — Collect and summarize daily standup responses
 - **kickstart** — Advance and complete guided onboarding steps
+- **radar** — Track, search, star repos; crawl for contribution ideas
+- **session** — Facilitate co-working sessions with phase management
+- **github** — GitHub integration tools
 
 ## Development
 
@@ -281,19 +329,23 @@ In addition to MCP server tools, the bot defines its own tools in `lib/src/tools
 ```
 lib/
   src/
-    signal/         # Signal client, message models
+    matrix/         # Matrix client, models, auth
+    signal/         # Signal client, message models (legacy, being replaced)
     agent/          # Agent loop, system prompt, tool registry, conversation history
     mcp/            # MCP subprocess manager
     memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
-    tools/          # Custom tool definitions (identity, chat config, standup, kickstart)
-    db/             # SQLite database, schema, queries (11 mixins), message repository
+    tools/          # Custom tool definitions (8 modules)
+    db/             # SQLite database, schema, queries (12 mixins), message repository
     dream/          # Dream cycle orchestrator, sleep stage prompts
+    session/        # Session facilitation state machine, prompts
     kickstart/      # Guided onboarding detection, state, prompts
-    cron/           # Scheduled jobs (standup orchestration)
+    cron/           # Scheduled jobs (standup, nudges, radar digest)
     bot/            # Message handler, rate limiting, health check, deploy announcer
+    logging/        # Structured logging
+    meetup/         # Meetup event integration
 bin/                # Entry point (dreamfinder.dart)
-test/               # Tests mirroring lib/src/ structure
+test/               # Tests mirroring lib/src/ structure (54 test files)
 data/               # SQLite database (gitignored)
 docker/             # Dockerfiles and compose configs
 ```
@@ -301,12 +353,12 @@ docker/             # Dockerfiles and compose configs
 ### Commands
 
 ```bash
-dart pub get                    # Install dependencies
+dart pub get                       # Install dependencies
 dart run bin/dreamfinder.dart      # Run the bot
-dart test                       # Run tests
-dart analyze                    # Static analysis
-dart format .                   # Format code
-dart compile exe bin/dreamfinder.dart # Compile for production
+dart test                          # Run tests
+dart analyze                       # Static analysis
+dart format .                      # Format code
+dart compile exe bin/dreamfinder.dart  # Compile for production
 ```
 
 ### Testing
@@ -328,7 +380,7 @@ We use `mocktail` for mocking.
 ### Docker
 
 ```bash
-# Build and start all services
+# Build and start
 docker compose up -d
 
 # View logs
@@ -338,48 +390,8 @@ docker compose logs -f bot
 docker compose restart bot
 ```
 
-The Docker Compose setup includes:
-
-- **bot** — The Dart application
-- **signal-api** — signal-cli-rest-api container
-
-### GCP
-
-Deployment target is Google Cloud Platform. Specific infrastructure (Cloud Run, GCE,
-GKE) is TBD based on Signal bridge requirements. The signal-cli-rest-api container
-needs persistent storage for Signal account state, which influences the deployment
-model.
-
-## Relationship to xdeca-pm-bot
-
-This project is a direct adaptation of **xdeca-pm-bot** (private repo), a production
-Telegram bot serving the xDeca organization. The core architecture is identical:
-
-| Aspect             | xdeca-pm-bot           | Dreamfinder                  |
-| ------------------ | ---------------------- | ---------------------------- |
-| Language           | TypeScript             | Dart                         |
-| Messaging          | Telegram (grammY)      | Signal (signal-cli-rest-api) |
-| Organization       | xDeca                  | Imagineering                 |
-| LLM                | Claude Sonnet 4.6      | Claude Sonnet 4.6            |
-| MCP Tools          | Kan, Outline, Radicale | Kan, Outline, Radicale       |
-| Database           | SQLite + Drizzle       | SQLite (sqlite3 package)     |
-| Agent Architecture | Same                   | Same                         |
-| Deployment         | Docker on GCP          | Docker on GCP                |
-
-### Key Differences from Telegram
-
-Signal presents unique challenges compared to Telegram's mature Bot API:
-
-- **No official bot API** — Relies on unofficial signal-cli tooling
-- **Phone number required** — No bot tokens; needs a real phone number
-- **No inline keyboards** — Cannot send interactive button menus
-- **No message editing** — Cannot update previously sent messages
-- **Stricter rate limiting** — Signal is more conservative about message frequency
-- **Disappearing messages** — Must handle ephemeral message settings gracefully
-- **UUID-based identity** — Users identified by UUID, not numeric ID
-
-These constraints shape the UX: responses must be complete (no editing), interactions
-are purely text-based (no buttons), and the bot must be mindful of message frequency.
+Deployed on GCP Compute Engine. The bot container connects to the Matrix homeserver
+over HTTPS — no sidecar containers needed for messaging.
 
 ## License
 
