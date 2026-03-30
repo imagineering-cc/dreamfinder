@@ -60,6 +60,10 @@ class HealthCheck {
   List<MemoryRecord> Function(String chatId, {int limit})?
       getRecentMemories;
 
+  /// Shared API key for authenticating memory API requests.
+  /// If null, memory API endpoints return 403.
+  String? apiKey;
+
   /// How long before in-flight message processing is considered stuck.
   /// Fires before the agent timeout (3m) to give early warning.
   static const _stuckProcessingThreshold = Duration(minutes: 2);
@@ -109,16 +113,40 @@ class HealthCheck {
       case '/health':
         _handleHealth(request);
       case '/api/memory/recent':
+        if (!_checkApiKey(request)) return;
         _handleMemoryRecent(request);
       case '/api/memory/search':
+        if (!_checkApiKey(request)) return;
         unawaited(_handleMemorySearch(request));
       case '/api/memory/save':
+        if (!_checkApiKey(request)) return;
         unawaited(_handleMemorySave(request));
       default:
         request.response
           ..statusCode = HttpStatus.notFound
           ..close();
     }
+  }
+
+  /// Validates the API key from the Authorization header.
+  /// Returns true if authorized, false if rejected (response already sent).
+  bool _checkApiKey(HttpRequest request) {
+    if (apiKey == null) {
+      _jsonResponse(request, HttpStatus.forbidden, {
+        'error': 'API key not configured',
+      });
+      return false;
+    }
+
+    final auth = request.headers.value('authorization');
+    if (auth != 'Bearer $apiKey') {
+      _jsonResponse(request, HttpStatus.unauthorized, {
+        'error': 'Invalid or missing API key',
+      });
+      return false;
+    }
+
+    return true;
   }
 
   void _handleHealth(HttpRequest request) {

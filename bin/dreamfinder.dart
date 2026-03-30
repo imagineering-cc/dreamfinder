@@ -228,6 +228,7 @@ Future<void> main() async {
     // Expose memory system via HTTP for the embodied avatar frontend.
     health.memoryRetriever = memoryRetriever;
     health.embeddingPipeline = embeddingPipeline;
+    health.apiKey = env.apiKey;
     log.info('RAG memory system enabled (Voyage AI)');
   } else {
     log.info('RAG memory system disabled (no VOYAGE_API_KEY)');

@@ -24,6 +24,7 @@ class Env {
     this.databasePath = './data/bot.db',
     this.logLevel = 'info',
     this.healthPort = 8081,
+    this.apiKey,
     this.deployAnnounceGroupId,
     this.voyageApiKey,
     this.githubToken,
@@ -76,6 +77,7 @@ class Env {
       databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
       healthPort: int.tryParse(dotEnv['HEALTH_PORT'] ?? '') ?? 8081,
+      apiKey: dotEnv['API_KEY'],
       deployAnnounceGroupId: dotEnv['DEPLOY_ANNOUNCE_GROUP_ID'],
       voyageApiKey: dotEnv['VOYAGE_API_KEY'],
       githubToken: dotEnv['GITHUB_TOKEN'],
@@ -105,6 +107,7 @@ class Env {
     String databasePath = './data/bot.db',
     String logLevel = 'info',
     int healthPort = 8081,
+    String? apiKey,
     String? deployAnnounceGroupId,
     String? voyageApiKey,
     String? githubToken,
@@ -132,6 +135,7 @@ class Env {
         databasePath: databasePath,
         logLevel: logLevel,
         healthPort: healthPort,
+        apiKey: apiKey,
         deployAnnounceGroupId: deployAnnounceGroupId,
         voyageApiKey: voyageApiKey,
         githubToken: githubToken,
@@ -191,6 +195,10 @@ class Env {
 
   /// Port for the health check HTTP endpoint (from `HEALTH_PORT` env var).
   final int healthPort;
+
+  /// Shared API key for authenticating requests to the memory API endpoints.
+  /// If null, memory API endpoints are disabled (health check still works).
+  final String? apiKey;
 
   /// Group/room ID to send deploy announcements to.
   /// If null, deploy announcements are disabled.
