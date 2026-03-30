@@ -161,6 +161,12 @@ Future<void> main() async {
 
   final queries = Queries(database);
 
+  // Expose recent memories via HTTP for the embodied avatar frontend.
+  // This uses a simple recency query — no Voyage AI call needed.
+  health.getRecentMemories =
+      (String chatId, {int limit = 5}) =>
+          queries.getRecentVisibleMemories(chatId, limit: limit);
+
   final toolRegistry = ToolRegistry();
   toolRegistry.setMcpManager(mcpManager);
   registerBotIdentityTools(toolRegistry, queries);
@@ -219,6 +225,9 @@ Future<void> main() async {
       queries: queries,
       client: voyageClient,
     );
+    // Expose memory system via HTTP for the embodied avatar frontend.
+    health.memoryRetriever = memoryRetriever;
+    health.embeddingPipeline = embeddingPipeline;
     log.info('RAG memory system enabled (Voyage AI)');
   } else {
     log.info('RAG memory system disabled (no VOYAGE_API_KEY)');
