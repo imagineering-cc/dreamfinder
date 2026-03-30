@@ -115,6 +115,28 @@ mixin MemoryQueries {
     return [for (final row in rows) _memoryFromRow(row)];
   }
 
+  /// Returns the most recent visible memories, regardless of embedding status.
+  ///
+  /// Unlike [getVisibleMemories], this does not require an embedding vector —
+  /// it returns memories by recency alone. Designed for session context
+  /// injection where semantic similarity is unnecessary.
+  List<MemoryRecord> getRecentVisibleMemories(
+    String queryChatId, {
+    int limit = 5,
+  }) {
+    final rows = db.handle.select(
+      '''SELECT * FROM memory_embeddings
+         WHERE (
+           visibility = 'cross_chat'
+           OR chat_id = ?
+         )
+         ORDER BY created_at DESC
+         LIMIT ?''',
+      [queryChatId, limit],
+    );
+    return [for (final row in rows) _memoryFromRow(row)];
+  }
+
   /// Returns memory records that have no embedding vector yet.
   ///
   /// These are records where the Voyage API call failed during initial
