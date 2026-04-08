@@ -29,6 +29,9 @@ class Env {
     this.voyageApiKey,
     this.githubToken,
     this.githubRepo,
+    this.liveKitUrl,
+    this.liveKitApiKey,
+    this.liveKitApiSecret,
   });
 
   factory Env.load() {
@@ -82,6 +85,9 @@ class Env {
       voyageApiKey: dotEnv['VOYAGE_API_KEY'],
       githubToken: dotEnv['GITHUB_TOKEN'],
       githubRepo: dotEnv['GITHUB_REPO'],
+      liveKitUrl: dotEnv['LIVEKIT_URL'],
+      liveKitApiKey: dotEnv['LIVEKIT_API_KEY'],
+      liveKitApiSecret: dotEnv['LIVEKIT_API_SECRET'],
     );
   }
 
@@ -112,6 +118,9 @@ class Env {
     String? voyageApiKey,
     String? githubToken,
     String? githubRepo,
+    String? liveKitUrl,
+    String? liveKitApiKey,
+    String? liveKitApiSecret,
   }) =>
       Env._(
         anthropicApiKey: anthropicApiKey,
@@ -140,6 +149,9 @@ class Env {
         voyageApiKey: voyageApiKey,
         githubToken: githubToken,
         githubRepo: githubRepo,
+        liveKitUrl: liveKitUrl,
+        liveKitApiKey: liveKitApiKey,
+        liveKitApiSecret: liveKitApiSecret,
       );
 
   /// Anthropic API key. Null when using OAuth auth.
@@ -216,6 +228,15 @@ class Env {
   /// Defaults to `imagineering-cc/dreamfinder` if not set.
   final String? githubRepo;
 
+  /// LiveKit server URL for the game bridge (e.g., `wss://lk.example.com`).
+  final String? liveKitUrl;
+
+  /// LiveKit API key for server-side data channel access.
+  final String? liveKitApiKey;
+
+  /// LiveKit API secret for HS256 JWT signing.
+  final String? liveKitApiSecret;
+
   /// Returns `true` if [userId] is in the configured admin list.
   bool isAdmin(String? userId) =>
       userId != null && adminIds.contains(userId);
@@ -226,6 +247,8 @@ class Env {
       radicalePassword != null && radicalePassword!.isNotEmpty;
   bool get voyageEnabled => voyageApiKey != null && voyageApiKey!.isNotEmpty;
   bool get githubEnabled => githubToken != null && githubToken!.isNotEmpty;
+  bool get liveKitEnabled =>
+      liveKitUrl != null && liveKitApiKey != null && liveKitApiSecret != null;
 
   /// Parses a comma-separated string into a trimmed list.
   static List<String> _parseList(String? value) {

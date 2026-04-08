@@ -64,6 +64,10 @@ class HealthCheck {
   /// If null, memory API endpoints return 403.
   String? apiKey;
 
+  /// Callback for handling game events from the AITW bridge.
+  /// Set after the game event router is constructed.
+  Future<void> Function(HttpRequest)? onGameEvent;
+
   /// How long before in-flight message processing is considered stuck.
   /// Fires before the agent timeout (3m) to give early warning.
   static const _stuckProcessingThreshold = Duration(minutes: 2);
@@ -109,18 +113,41 @@ class HealthCheck {
   }
 
   void _handleRequest(HttpRequest request) {
+    // Handle CORS preflight for all /api/ paths.
+    if (request.method == 'OPTIONS' &&
+        request.uri.path.startsWith('/api/')) {
+      _setCorsHeaders(request);
+      request.response
+        ..statusCode = HttpStatus.noContent
+        ..close();
+      return;
+    }
+
     switch (request.uri.path) {
       case '/health':
         _handleHealth(request);
       case '/api/memory/recent':
+        _setCorsHeaders(request);
         if (!_checkApiKey(request)) return;
         _handleMemoryRecent(request);
       case '/api/memory/search':
+        _setCorsHeaders(request);
         if (!_checkApiKey(request)) return;
         unawaited(_handleMemorySearch(request));
       case '/api/memory/save':
+        _setCorsHeaders(request);
         if (!_checkApiKey(request)) return;
         unawaited(_handleMemorySave(request));
+      case '/api/game/event':
+        _setCorsHeaders(request);
+        if (!_checkApiKey(request)) return;
+        if (onGameEvent != null) {
+          unawaited(onGameEvent!(request));
+        } else {
+          _jsonResponse(request, HttpStatus.serviceUnavailable, {
+            'error': 'Game event handler not configured',
+          });
+        }
       default:
         request.response
           ..statusCode = HttpStatus.notFound
@@ -147,6 +174,18 @@ class HealthCheck {
     }
 
     return true;
+  }
+
+  /// Sets CORS headers on API responses.
+  ///
+  /// Required because the game client runs on Firebase Hosting (different
+  /// origin than the VPS). Uses `*` for now — tighten to the Firebase
+  /// domain in production if Caddy isn't handling CORS.
+  void _setCorsHeaders(HttpRequest request) {
+    request.response.headers
+      ..set('Access-Control-Allow-Origin', '*')
+      ..set('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+      ..set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   }
 
   void _handleHealth(HttpRequest request) {
