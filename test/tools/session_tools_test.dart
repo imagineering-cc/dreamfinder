@@ -4,6 +4,7 @@ import 'package:dreamfinder/src/agent/tool_registry.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/queries.dart';
 import 'package:dreamfinder/src/session/session_state.dart';
+import 'package:dreamfinder/src/session/session_timer.dart';
 import 'package:dreamfinder/src/tools/session_tools.dart';
 import 'package:test/test.dart';
 
@@ -23,12 +24,18 @@ void main() {
     registry = ToolRegistry();
     sentMessages = [];
 
+    final sessionTimer = SessionTimer(
+      sessionState: state,
+      onPhaseTransition: (_, __) async {},
+    );
+
     registerSessionTools(
       registry,
       state,
       sendGroupMessage: (groupId, message) async {
         sentMessages.add((groupId, message));
       },
+      sessionTimer: sessionTimer,
     );
   });
 

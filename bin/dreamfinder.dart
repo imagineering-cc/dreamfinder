@@ -39,6 +39,9 @@ import 'package:dreamfinder/src/memory/summarization_client.dart';
 import 'package:dreamfinder/src/session/session.dart';
 import 'package:dreamfinder/src/session/session_prompt.dart';
 import 'package:dreamfinder/src/session/session_state.dart';
+import 'package:dreamfinder/src/session/session_timer.dart';
+import 'package:dreamfinder/src/game/game_event_router.dart';
+import 'package:dreamfinder/src/livekit/livekit_server_client.dart';
 import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
 import 'package:dreamfinder/src/tools/chat_config_tools.dart';
 import 'package:dreamfinder/src/tools/github_tools.dart';
@@ -179,12 +182,55 @@ Future<void> main() async {
     sendGroupMessage: (roomId, message) =>
         matrixClient.sendMessage(roomId: roomId, message: message),
   );
+  // LiveKit server client for the AITW game bridge (optional).
+  final liveKitClient = env.liveKitEnabled
+      ? LiveKitServerClient(
+          serverUrl: env.liveKitUrl!,
+          apiKey: env.liveKitApiKey!,
+          apiSecret: env.liveKitApiSecret!,
+        )
+      : null;
+  if (liveKitClient != null) {
+    log.info('LiveKit game bridge enabled');
+  }
+
+  /// Routes a message to the correct transport based on chatId prefix.
+  /// Game rooms use `game:$roomName`, Matrix rooms start with `!`.
+  Future<void> sendToGroup(String groupId, String message) async {
+    if (groupId.startsWith('game:') && liveKitClient != null) {
+      final roomName = groupId.substring(5);
+      await liveKitClient.sendJson(
+        room: roomName,
+        topic: 'chat-response',
+        payload: <String, Object?>{
+          'text': message,
+          'senderName': env.botName,
+          'senderId': 'bot-dreamfinder',
+          'id': 'sys-${DateTime.now().millisecondsSinceEpoch}',
+        },
+      );
+    } else {
+      await matrixClient.sendMessage(roomId: groupId, message: message);
+    }
+  }
+
   final sessionState = SessionState(queries: queries);
+  final sessionTimer = SessionTimer(
+    sessionState: sessionState,
+    onPhaseTransition: (groupId, newPhase) async {
+      final message = _sessionTransitionMessage(newPhase);
+      await sendToGroup(groupId, message);
+      log.info('Session phase transition', extra: {
+        'room': groupId,
+        'phase': newPhase.label,
+      });
+    },
+  );
   registerSessionTools(
     toolRegistry,
     sessionState,
-    sendGroupMessage: (roomId, message) =>
-        matrixClient.sendMessage(roomId: roomId, message: message),
+    sendGroupMessage: sendToGroup,
+    sessionTimer: sessionTimer,
   );
   registerGitHubTools(
     toolRegistry,
@@ -391,6 +437,42 @@ Future<void> main() async {
   scheduler.start();
   log.info('Scheduler started');
 
+  // Wire the AITW game event bridge (if LiveKit is configured).
+  if (liveKitClient != null) {
+    final gameRouter = GameEventRouter(
+      agentLoop: agentLoop,
+      toolRegistry: toolRegistry,
+      liveKitClient: liveKitClient,
+      sessionState: sessionState,
+      sessionTimer: sessionTimer,
+      botName: env.botName,
+      log: BotLogger(
+        name: 'Game',
+        level: LogLevel.fromString(env.logLevel),
+      ),
+      buildSystemPrompt: ({
+        required input,
+        required chatId,
+        required senderId,
+        required isGroup,
+      }) =>
+          _buildFullSystemPrompt(
+        input: input,
+        env: env,
+        queries: queries,
+        memories: const [],
+        events: const [],
+        kickstartState: kickstartState,
+        sessionState: sessionState,
+        chatId: chatId,
+        senderId: senderId,
+        isGroup: isGroup,
+      ),
+    );
+    health.onGameEvent = gameRouter.handleRequest;
+    log.info('Game event bridge ready');
+  }
+
   // Announce deploy if version changed.
   final announceGroupId = env.deployAnnounceGroupId;
   if (announceGroupId != null && appChangelog.trim().isNotEmpty) {
@@ -429,6 +511,8 @@ Future<void> main() async {
   void shutdown() {
     log.info('Shutting down...');
     scheduler.stop();
+    sessionTimer.dispose();
+    liveKitClient?.close();
     health.stop();
     database.close();
     mcpManager.shutdown();
@@ -646,6 +730,8 @@ Future<void> main() async {
               event.roomId,
               initiatorId: event.sender,
             );
+            // Start the phase timer — Dreamfinder now keeps time autonomously.
+            sessionTimer.startTimer(event.roomId, SessionPhase.pitch);
             log.info('Session started', extra: {
               'room': event.roomId,
               'sender': event.sender,
@@ -929,3 +1015,31 @@ String _buildFullSystemPrompt({
 
   return prompt;
 }
+
+/// Returns a short, clear transition message for each phase change.
+///
+/// These are intentionally templated rather than LLM-composed — phase
+/// transitions should be predictable and crisp. The agent's natural
+/// personality comes through in its response to the *next* participant
+/// message, which will have the new phase's prompt injected.
+String _sessionTransitionMessage(SessionPhase newPhase) => switch (newPhase) {
+      SessionPhase.pitch =>
+        // Shouldn't happen (pitch is the first phase), but handle gracefully.
+        '🎤 Session starting! What is everyone working on today?',
+      SessionPhase.build1 =>
+        '⏱️ Great pitches! Build 1 starting now — 25 minutes on the clock. '
+            'Go build something.',
+      SessionPhase.chat1 =>
+        '⏱️ Build 1 complete! Take 5 — how\'s everyone going?',
+      SessionPhase.build2 =>
+        '⏱️ Back to it! Build 2 starting — 25 minutes.',
+      SessionPhase.chat2 =>
+        '⏱️ Build 2 done! Check-in time — what\'s working, what\'s not?',
+      SessionPhase.build3 =>
+        '⏱️ Final build! 25 minutes — polish, test, prep your demo.',
+      SessionPhase.chat3 =>
+        '⏱️ Build 3 complete! Last check-in before demos. '
+            'How did it go? What are you showing?',
+      SessionPhase.demo =>
+        '🎪 Demo time! Who wants to go first?',
+    };
