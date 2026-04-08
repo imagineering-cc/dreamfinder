@@ -148,6 +148,12 @@ LOG_LEVEL=                    # Logging level (default: info)
 - Branch naming: `feat/description`, `fix/description`, `chore/description`.
 - **Always work on a feature branch** — never commit directly to `main`. Create a
   new branch before starting work, even for small changes.
+- **Dreamfinder git identity**: When committing as Dreamfinder (e.g. during a session),
+  use `git config user.name "Dreamfinder"` and
+  `git config user.email "dreamfinder@imagineering.cc"` (repo-level only — don't
+  touch global config). Restore with `git config --unset user.name` and
+  `git config --unset user.email` when done. Use `$DREAMFINDER_GITHUB_TOKEN` env var
+  for authenticated git operations (push, PR creation via `gh`).
 
 ## Signal → Matrix Migration Plan
 
