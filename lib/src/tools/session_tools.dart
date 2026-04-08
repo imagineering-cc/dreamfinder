@@ -10,6 +10,7 @@ import 'dart:convert';
 
 import '../agent/tool_registry.dart';
 import '../session/session_state.dart';
+import '../session/session_timer.dart';
 
 /// Callback type for sending a message to a group.
 typedef SendGroupMessage = Future<void> Function(
@@ -18,19 +19,22 @@ typedef SendGroupMessage = Future<void> Function(
 /// Registers session tools with the [ToolRegistry].
 ///
 /// The [sendGroupMessage] callback is used by `end_session` to post the
-/// session summary back to the group chat.
+/// session summary back to the group chat. The [sessionTimer] drives
+/// automatic phase transitions — tools start/cancel timers as phases change.
 void registerSessionTools(
   ToolRegistry registry,
   SessionState state, {
   required SendGroupMessage sendGroupMessage,
+  required SessionTimer sessionTimer,
 }) {
-  registry.registerCustomTool(_startSessionTool(state));
-  registry.registerCustomTool(_advanceSessionTool(state));
-  registry.registerCustomTool(_endSessionTool(state, sendGroupMessage));
+  registry.registerCustomTool(_startSessionTool(state, sessionTimer));
+  registry.registerCustomTool(_advanceSessionTool(state, sessionTimer));
+  registry.registerCustomTool(_endSessionTool(state, sendGroupMessage,
+      sessionTimer));
   registry.registerCustomTool(_captureInsightTool(state));
 }
 
-CustomToolDef _startSessionTool(SessionState state) {
+CustomToolDef _startSessionTool(SessionState state, SessionTimer timer) {
   return CustomToolDef(
     name: 'start_session',
     description: 'Start a co-working session in this group.',
@@ -73,6 +77,9 @@ CustomToolDef _startSessionTool(SessionState state) {
         state.queries.setMetadata('session-topic::$groupId', topic);
       }
 
+      // Start the phase timer — pitch will auto-advance after 10 minutes.
+      timer.startTimer(groupId, SessionPhase.pitch);
+
       return jsonEncode(<String, dynamic>{
         'success': true,
         'phase': SessionPhase.pitch.number,
@@ -83,7 +90,7 @@ CustomToolDef _startSessionTool(SessionState state) {
   );
 }
 
-CustomToolDef _advanceSessionTool(SessionState state) {
+CustomToolDef _advanceSessionTool(SessionState state, SessionTimer timer) {
   return CustomToolDef(
     name: 'advance_session',
     description: 'Advance the session to the next phase.',
@@ -109,6 +116,11 @@ CustomToolDef _advanceSessionTool(SessionState state) {
         });
       }
 
+      // Cancel the old timer and start one for the new phase.
+      // This handles manual advances (someone says "next") — the auto-timer
+      // is replaced with a fresh one for the new phase.
+      timer.startTimer(groupId, nextPhase);
+
       return jsonEncode(<String, dynamic>{
         'success': true,
         'new_phase': nextPhase.number,
@@ -121,6 +133,7 @@ CustomToolDef _advanceSessionTool(SessionState state) {
 CustomToolDef _endSessionTool(
   SessionState state,
   SendGroupMessage sendGroupMessage,
+  SessionTimer timer,
 ) {
   return CustomToolDef(
     name: 'end_session',
@@ -151,6 +164,7 @@ CustomToolDef _endSessionTool(
       }
 
       state.endSession(groupId);
+      timer.cancelTimer(groupId);
 
       try {
         await sendGroupMessage(groupId, summary);
