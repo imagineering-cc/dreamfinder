@@ -170,6 +170,12 @@ Future<void> main() async {
       (String chatId, {int limit = 5}) =>
           queries.getRecentVisibleMemories(chatId, limit: limit);
 
+  // Expose recent conversation history for the voice brain bridge.
+  // Returns raw message rows; the health check handler groups by chat_id.
+  health.getRecentConversations =
+      ({int limit = 20, String? excludeChatId}) =>
+          _getRecentConversations(database, limit: limit, excludeChatId: excludeChatId);
+
   final toolRegistry = ToolRegistry();
   toolRegistry.setMcpManager(mcpManager);
   registerBotIdentityTools(toolRegistry, queries);
@@ -850,6 +856,49 @@ Future<void> main() async {
     continuation.evictStale();
     // No delay needed — Matrix sync long-polls server-side.
   }
+}
+
+/// Fetches recent messages across all conversations for the voice brain bridge.
+///
+/// Returns raw row maps ordered by created_at DESC, limited to [limit] total
+/// messages. Messages from [excludeChatId] are filtered out if provided.
+/// Only includes text messages (skips tool-use/tool-result JSON blocks).
+List<Map<String, Object?>> _getRecentConversations(
+  BotDatabase database, {
+  int limit = 20,
+  String? excludeChatId,
+}) {
+  final buffer = StringBuffer(
+    'SELECT chat_id, role, content, sender_name, created_at '
+    'FROM messages ',
+  );
+  final params = <Object?>[];
+
+  if (excludeChatId != null) {
+    buffer.write('WHERE chat_id != ? ');
+    params.add(excludeChatId);
+  }
+
+  buffer.write('ORDER BY created_at DESC LIMIT ?');
+  params.add(limit);
+
+  final rows = database.handle.select(buffer.toString(), params);
+
+  // Filter out tool-use/tool-result blocks (JSON content starting with [ or {)
+  // and return in chronological order (reverse the DESC query).
+  return [
+    for (final row in rows.reversed)
+      if (row['content'] is String &&
+          !(row['content'] as String).startsWith('[') &&
+          !(row['content'] as String).startsWith('{'))
+        <String, Object?>{
+          'chat_id': row['chat_id'] as String,
+          'role': row['role'] as String,
+          'content': row['content'] as String,
+          'sender_name': row['sender_name'] as String?,
+          'created_at': row['created_at'] as String,
+        },
+  ];
 }
 
 /// Bridges agent loop abstract types and `anthropic_sdk_dart`.
