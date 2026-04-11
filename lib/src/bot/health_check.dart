@@ -64,6 +64,17 @@ class HealthCheck {
   /// If null, memory API endpoints return 403.
   String? apiKey;
 
+  /// Callback to fetch recent conversation messages across all chats.
+  /// Set after database initialization.
+  ///
+  /// Parameters:
+  /// - [limit]: maximum number of messages to return (across all chats)
+  /// - [excludeChatId]: optional chat ID to exclude (e.g. voice chat)
+  ///
+  /// Returns messages ordered by created_at DESC.
+  List<Map<String, Object?>> Function({int limit, String? excludeChatId})?
+      getRecentConversations;
+
   /// Callback for handling game events from the AITW bridge.
   /// Set after the game event router is constructed.
   Future<void> Function(HttpRequest)? onGameEvent;
@@ -138,6 +149,10 @@ class HealthCheck {
         _setCorsHeaders(request);
         if (!_checkApiKey(request)) return;
         unawaited(_handleMemorySave(request));
+      case '/api/conversations/recent':
+        _setCorsHeaders(request);
+        if (!_checkApiKey(request)) return;
+        _handleConversationsRecent(request);
       case '/api/game/event':
         _setCorsHeaders(request);
         if (!_checkApiKey(request)) return;
@@ -355,6 +370,57 @@ class HealthCheck {
         'error': 'Invalid JSON body',
       });
     }
+  }
+
+  /// GET /api/conversations/recent?limit=20&exclude_chat_id=voice
+  ///
+  /// Returns recent conversation messages grouped by chat_id, so the voice
+  /// avatar can see what was discussed on Matrix. Message content is truncated
+  /// to 500 characters to keep the response size reasonable.
+  void _handleConversationsRecent(HttpRequest request) {
+    if (getRecentConversations == null) {
+      _jsonResponse(request, HttpStatus.serviceUnavailable, {
+        'error': 'Conversation history not available',
+      });
+      return;
+    }
+
+    final limit =
+        int.tryParse(request.uri.queryParameters['limit'] ?? '') ?? 20;
+    final excludeChatId = request.uri.queryParameters['exclude_chat_id'];
+
+    final rows = getRecentConversations!(
+      limit: limit,
+      excludeChatId: excludeChatId,
+    );
+
+    // Group messages by chat_id, preserving per-chat chronological order.
+    final grouped = <String, List<Map<String, Object?>>>{};
+    for (final row in rows) {
+      final chatId = row['chat_id'] as String;
+      grouped.putIfAbsent(chatId, () => []).add(<String, Object?>{
+        'role': row['role'],
+        'sender_name': row['sender_name'],
+        'content': _truncate(row['content'] as String? ?? '', 500),
+        'created_at': row['created_at'],
+      });
+    }
+
+    _jsonResponse(request, HttpStatus.ok, {
+      'conversations': [
+        for (final entry in grouped.entries)
+          <String, Object?>{
+            'chat_id': entry.key,
+            'messages': entry.value,
+          },
+      ],
+    });
+  }
+
+  /// Truncates [text] to [maxLength] characters, appending an ellipsis if cut.
+  static String _truncate(String text, int maxLength) {
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength)}...';
   }
 
   /// Writes a JSON response and closes the request.
