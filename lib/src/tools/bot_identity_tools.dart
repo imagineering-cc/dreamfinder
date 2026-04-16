@@ -12,7 +12,7 @@ import '../db/queries.dart';
 /// Default identity used when no record exists in the database.
 const defaultBotName = 'Dreamfinder';
 const defaultPronouns = 'they/them';
-const defaultTone = 'Playful, imaginative, and helpful';
+const defaultTone = 'Short, blunt, dry. Pub-register wit';
 
 /// Callback invoked after a successful `set_bot_identity` so callers can
 /// refresh caches (e.g., the bot-name mention regex in the main loop).

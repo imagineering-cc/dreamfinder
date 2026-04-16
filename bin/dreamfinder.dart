@@ -549,6 +549,9 @@ Future<void> main() async {
   // Build the ignore set for rooms to skip.
   final ignoreRooms = env.matrixIgnoreRooms.toSet();
 
+  // Rooms where the bot responds to every message (no mention required).
+  final alwaysRespondRooms = env.matrixAlwaysRespondRooms.toSet();
+
   // Retrieve the stored sync token for resumption across restarts.
   var nextBatch = queries.getMetadata('matrix_next_batch');
   if (nextBatch != null) {
@@ -603,9 +606,6 @@ Future<void> main() async {
       for (final event in sync.events) {
         if (event.sender == botUserId) continue; // Ignore own messages.
         if (ignoreRooms.contains(event.roomId)) continue;
-        // Ignore relay bot puppets to prevent cross-room echo loops.
-        if (event.sender.startsWith('@_relay_')) continue;
-
         // Welcome new members joining a group room.
         if (event.isMemberJoin && !matrixClient.isDm(event.roomId)) {
           final displayName =
@@ -635,9 +635,11 @@ Future<void> main() async {
         final isGroup = !isDm;
 
         // In group chats, respond when:
-        // 1. The bot is mentioned (pill or name), OR
-        // 2. The bot was the last speaker (conversation continuation).
+        // 1. The room is in the always-respond list, OR
+        // 2. The bot is mentioned (pill or name), OR
+        // 3. The bot was the last speaker (conversation continuation).
         if (isGroup &&
+            !alwaysRespondRooms.contains(event.roomId) &&
             !continuation.shouldContinue(chatId: event.roomId) &&
             !matrixClient.isMentioned(
               text: text,

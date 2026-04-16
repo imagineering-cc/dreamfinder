@@ -10,6 +10,7 @@ class Env {
     this.matrixUsername,
     this.matrixPassword,
     this.matrixIgnoreRooms = const [],
+    this.matrixAlwaysRespondRooms = const [],
     this.kanBaseUrl,
     this.kanApiKey,
     this.outlineBaseUrl,
@@ -66,6 +67,7 @@ class Env {
       matrixUsername: matrixUsername,
       matrixPassword: matrixPassword,
       matrixIgnoreRooms: _parseList(dotEnv['MATRIX_IGNORE_ROOMS']),
+      matrixAlwaysRespondRooms: _parseList(dotEnv['MATRIX_ALWAYS_RESPOND_ROOMS']),
       kanBaseUrl: dotEnv['KAN_BASE_URL'],
       kanApiKey: dotEnv['KAN_API_KEY'],
       outlineBaseUrl: dotEnv['OUTLINE_BASE_URL'],
@@ -99,6 +101,7 @@ class Env {
     String? matrixUsername,
     String? matrixPassword,
     List<String> matrixIgnoreRooms = const [],
+    List<String> matrixAlwaysRespondRooms = const [],
     String? kanBaseUrl,
     String? kanApiKey,
     String? outlineBaseUrl,
@@ -130,6 +133,7 @@ class Env {
         matrixUsername: matrixUsername,
         matrixPassword: matrixPassword,
         matrixIgnoreRooms: matrixIgnoreRooms,
+        matrixAlwaysRespondRooms: matrixAlwaysRespondRooms,
         kanBaseUrl: kanBaseUrl,
         kanApiKey: kanApiKey,
         outlineBaseUrl: outlineBaseUrl,
@@ -179,6 +183,10 @@ class Env {
 
   /// Room IDs to ignore (from `MATRIX_IGNORE_ROOMS`, comma-separated).
   final List<String> matrixIgnoreRooms;
+
+  /// Room IDs where the bot responds to every message, not just mentions
+  /// (from `MATRIX_ALWAYS_RESPOND_ROOMS`, comma-separated).
+  final List<String> matrixAlwaysRespondRooms;
 
   final String? kanBaseUrl;
   final String? kanApiKey;
