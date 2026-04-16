@@ -35,7 +35,7 @@ void main() {
 
       expect(data['name'], equals('Dreamfinder'));
       expect(data['pronouns'], equals('they/them'));
-      expect(data['tone'], equals('Playful, imaginative, and helpful'));
+      expect(data['tone'], equals('Short, blunt, dry. Pub-register wit'));
       expect(data['chosen_at'], isNull);
     });
 
