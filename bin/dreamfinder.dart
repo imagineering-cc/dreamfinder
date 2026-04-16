@@ -483,6 +483,9 @@ Future<void> main() async {
           senderId: 'system',
           isGroup: true,
         ),
+        // Task radar queries multiple MCP sources (Kan, Outline, Radicale,
+        // memory) — 10 default rounds may be tight for cross-source synthesis.
+        maxToolRounds: 20,
       );
     },
   );
