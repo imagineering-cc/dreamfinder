@@ -443,6 +443,48 @@ Future<void> main() async {
         ),
       );
     },
+    composeWithTools: (groupId, taskDescription) async {
+      final input = AgentInput(
+        text: taskDescription,
+        chatId: groupId,
+        senderId: 'system',
+        isAdmin: true,
+        isProactive: true,
+      );
+
+      // Retrieve memories and events — same as the normal message path.
+      final memories = memoryRetriever != null
+          ? await memoryRetriever
+                .retrieve(taskDescription, groupId)
+                .timeout(
+                  const Duration(seconds: 10),
+                  onTimeout: () => <MemorySearchResult>[],
+                )
+          : <MemorySearchResult>[];
+
+      final events = calendarRetriever != null
+          ? await calendarRetriever.fetchUpcoming().timeout(
+                const Duration(seconds: 10),
+                onTimeout: () => <CalendarEvent>[],
+              )
+          : <CalendarEvent>[];
+
+      return agentLoop.processMessage(
+        input,
+        systemPrompt: _buildFullSystemPrompt(
+          input: input,
+          env: env,
+          queries: queries,
+          memories: memories,
+          events: events,
+          kickstartState: kickstartState,
+          sessionState: sessionState,
+          chatId: groupId,
+          senderId: 'system',
+          isGroup: true,
+        ),
+      );
+    },
   );
   scheduler.start();
   log.info('Scheduler started');

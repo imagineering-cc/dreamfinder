@@ -68,6 +68,13 @@ CustomToolDef _configureStandupTool(Queries queries) {
               'Hour (0-23) to send proactive nudges about overdue Kan '
                   'cards. Set to null to disable nudges.',
         },
+        'radar_hour': <String, dynamic>{
+          'type': 'integer',
+          'description':
+              'Hour (0-23) to run the task radar — a proactive scan across '
+                  'Kan, Outline, calendar, memory, and standups to suggest '
+                  'tasks the team should consider. Set to null to disable.',
+        },
       },
       'required': <String>['group_id'],
     },
@@ -83,6 +90,7 @@ CustomToolDef _configureStandupTool(Queries queries) {
         timezone: args['timezone'] as String?,
         skipWeekends: args['skip_weekends'] as bool?,
         nudgeHour: args['nudge_hour'] as int?,
+        radarHour: args['radar_hour'] as int?,
       );
 
       final config = queries.getStandupConfig(groupId);
@@ -94,6 +102,7 @@ CustomToolDef _configureStandupTool(Queries queries) {
         'timezone': config.timezone,
         'skip_weekends': config.skipWeekends,
         'nudge_hour': config.nudgeHour,
+        'radar_hour': config.radarHour,
       });
     },
   );
@@ -131,6 +140,7 @@ CustomToolDef _getStandupConfigTool(Queries queries) {
         'skip_weekends': config.skipWeekends,
         'skip_break_days': config.skipBreakDays,
         'nudge_hour': config.nudgeHour,
+        'radar_hour': config.radarHour,
       });
     },
   );

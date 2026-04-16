@@ -116,6 +116,7 @@ class AgentInput {
     this.replyToText,
     this.replyToName,
     this.isSystemInitiated = false,
+    this.isProactive = false,
   });
 
   final String text;
@@ -138,6 +139,13 @@ class AgentInput {
   /// System-initiated messages bypass tools (empty tool list) for a fast
   /// single-round response, and receive a tailored system prompt section.
   final bool isSystemInitiated;
+
+  /// When true, this is a proactive scan (task radar) from the scheduler.
+  ///
+  /// Unlike [isSystemInitiated], proactive messages retain full tool access
+  /// so the agent can query Kan, Outline, calendar, and memory. Embeddings
+  /// are still skipped (operational, not conversational).
+  final bool isProactive;
 }
 
 /// Signature for the Claude API call, decoupled from the SDK.
@@ -375,7 +383,11 @@ class AgentLoop {
   /// Skips system-initiated messages (standup prompts, deploy announcements)
   /// since they're operational rather than semantic.
   void _queueEmbedding(AgentInput input, String assistantText) {
-    if (_embeddingPipeline == null || input.isSystemInitiated) return;
+    if (_embeddingPipeline == null ||
+        input.isSystemInitiated ||
+        input.isProactive) {
+      return;
+    }
     final visibility = input.isGroup
         ? MemoryVisibility.sameChat
         : input.isAdmin

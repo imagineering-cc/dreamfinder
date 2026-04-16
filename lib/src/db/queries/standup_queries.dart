@@ -37,6 +37,7 @@ mixin StandupQueries {
     bool? skipBreakDays,
     bool? skipWeekends,
     int? nudgeHour,
+    int? radarHour,
   }) {
     final existing = getStandupConfig(groupId);
 
@@ -45,8 +46,8 @@ mixin StandupQueries {
       db.handle.execute(
         'INSERT INTO standup_config '
         '(group_id, enabled, prompt_hour, summary_hour, timezone, '
-        'skip_break_days, skip_weekends, nudge_hour) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        'skip_break_days, skip_weekends, nudge_hour, radar_hour) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           groupId,
           (enabled ?? true) ? 1 : 0,
@@ -56,6 +57,7 @@ mixin StandupQueries {
           (skipBreakDays ?? true) ? 1 : 0,
           (skipWeekends ?? true) ? 1 : 0,
           nudgeHour,
+          radarHour,
         ],
       );
       return;
@@ -92,6 +94,10 @@ mixin StandupQueries {
     if (nudgeHour != null) {
       sets.add('nudge_hour = ?');
       params.add(nudgeHour);
+    }
+    if (radarHour != null) {
+      sets.add('radar_hour = ?');
+      params.add(radarHour);
     }
 
     if (sets.isEmpty) return;
@@ -238,6 +244,7 @@ mixin StandupQueries {
       skipBreakDays: row['skip_break_days']! as int == 1,
       skipWeekends: row['skip_weekends']! as int == 1,
       nudgeHour: row['nudge_hour'] as int?,
+      radarHour: row['radar_hour'] as int?,
     );
   }
 

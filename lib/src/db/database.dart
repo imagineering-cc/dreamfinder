@@ -2,7 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// Current schema version. Bump this and add a migration block in
 /// [_runMigrations] whenever the schema changes.
-const schemaVersion = 7;
+const schemaVersion = 8;
 
 /// SQLite database wrapper for Dreamfinder.
 ///
@@ -92,6 +92,7 @@ class BotDatabase {
     if (fromVersion < 5) _migrateToV5();
     if (fromVersion < 6) _migrateToV6();
     if (fromVersion < 7) _migrateToV7();
+    if (fromVersion < 8) _migrateToV8();
 
     _setVersion(schemaVersion);
   }
@@ -483,5 +484,14 @@ class BotDatabase {
       CREATE INDEX IF NOT EXISTS idx_contribution_drafts_status
       ON contribution_drafts(status)
     ''');
+  }
+
+  /// Version 8: Task Radar — adds `radar_hour` to `standup_config` for
+  /// scheduled proactive scans that synthesize across Kan, Outline, calendar,
+  /// memory, and standups to suggest tasks the team should consider.
+  void _migrateToV8() {
+    _db.execute(
+      'ALTER TABLE standup_config ADD COLUMN radar_hour INTEGER',
+    );
   }
 }

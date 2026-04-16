@@ -850,6 +850,177 @@ void main() {
     });
   });
 
+  group('Scheduler task radar', () {
+    test('sends task radar at configured radarHour', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 11,
+      );
+
+      final composedTasks = <MapEntry<String, String>>[];
+      final sentMessages = <MapEntry<String, String>>[];
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(MapEntry(groupId, message));
+        },
+        composeWithTools: (groupId, taskDescription) async {
+          composedTasks.add(MapEntry(groupId, taskDescription));
+          return 'I noticed a few things the team could pick up...';
+        },
+      );
+
+      // 11 AM — radar hour.
+      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+
+      expect(composedTasks, hasLength(1));
+      expect(composedTasks.first.key, equals('room-1'));
+      expect(composedTasks.first.value, contains('team should work on'));
+      expect(
+        sentMessages.where(
+            (e) => e.key == 'room-1' && e.value.contains('pick up')),
+        hasLength(1),
+      );
+    });
+
+    test('does not scan when radarHour is not set', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        // No radarHour.
+      );
+
+      var radarCalled = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeWithTools: (groupId, taskDescription) async {
+          radarCalled = true;
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      expect(radarCalled, isFalse);
+    });
+
+    test('deduplicates — only scans once per day', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 11,
+      );
+
+      var radarCount = 0;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeWithTools: (groupId, taskDescription) async {
+          radarCount++;
+          return 'Suggestion!';
+        },
+      );
+
+      // First tick at 11 AM — radar fires.
+      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      expect(radarCount, equals(1));
+
+      // Second tick same hour — should NOT re-scan (dedup via bot_metadata).
+      await scheduler.tick(DateTime(2026, 3, 2, 11, 30));
+      expect(radarCount, equals(1));
+    });
+
+    test('skips send when agent returns empty', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 11,
+      );
+
+      final sentMessages = <String>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(message);
+        },
+        composeWithTools: (groupId, taskDescription) async {
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      expect(sentMessages, isEmpty);
+    });
+
+    test('handles agent exception gracefully', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 11,
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeWithTools: (groupId, taskDescription) async {
+          throw Exception('MCP unreachable');
+        },
+      );
+
+      // Should not throw.
+      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+    });
+
+    test('does not scan when composeWithTools is null', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 11,
+      );
+
+      final sentMessages = <String>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {
+          sentMessages.add(message);
+        },
+        // No composeWithTools provided.
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      expect(sentMessages, isEmpty);
+    });
+
+    test('includes workspace name in task description', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 11,
+      );
+      queries.createWorkspaceLink(
+        groupId: 'room-1',
+        workspacePublicId: 'ws-1',
+        workspaceName: 'Imagineering',
+        createdByUuid: 'user-1',
+      );
+
+      String? capturedDescription;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeWithTools: (groupId, taskDescription) async {
+          capturedDescription = taskDescription;
+          return '';
+        },
+      );
+
+      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      expect(capturedDescription, contains('Imagineering'));
+    });
+  });
+
   group('Scheduler nightly dream trigger', () {
     test('triggers dream for each workspace-linked group during cleanup',
         () async {

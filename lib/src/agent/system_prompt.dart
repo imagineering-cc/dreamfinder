@@ -236,7 +236,22 @@ When a question requires knowledge you don't have in context:
     }
   }
 
-  if (input.isSystemInitiated) {
+  if (input.isProactive) {
+    parts.add('''
+
+## Proactive Scan
+
+You are performing a scheduled scan of the workspace to identify tasks the team
+should consider. You have full tool access — query Kan, Outline, Radicale, and
+memory as needed. Your response will be sent to the group as a message.
+
+- Be specific: reference actual cards, people, events, documents by name.
+- Be concise: 1-3 suggestions max, or a brief "nothing stands out" if genuinely quiet.
+- Match tasks to people based on their interests and current workload.
+- Don't manufacture busy-work — only suggest things that genuinely matter.
+- Keep it natural and in-character as $name — this should feel like a teammate
+  sharing what they noticed, not a report.''');
+  } else if (input.isSystemInitiated) {
     parts.add('''
 
 ## System-Initiated Reminder
