@@ -211,6 +211,7 @@ class StandupConfigRecord {
     required this.skipBreakDays,
     required this.skipWeekends,
     this.nudgeHour,
+    this.radarHour,
   });
 
   final int id;
@@ -222,6 +223,11 @@ class StandupConfigRecord {
   final bool skipBreakDays;
   final bool skipWeekends;
   final int? nudgeHour;
+
+  /// Hour (0-23) to run the task radar — a proactive scan across all data
+  /// sources (Kan, Outline, calendar, memory, standups) to suggest tasks
+  /// the team should consider. `null` disables the radar.
+  final int? radarHour;
 }
 
 /// A single standup session for one group on one date.

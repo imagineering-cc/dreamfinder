@@ -34,7 +34,16 @@ typedef SendMessageFn = Future<void> Function(String groupId, String message);
 
 /// Callback that routes a scheduled task through the agent loop so Claude
 /// composes the message in-character and it lands in conversation history.
+///
+/// System-initiated: tools are disabled for fast single-round responses.
 typedef ComposeViaAgentFn = Future<String> Function(
+  String groupId,
+  String taskDescription,
+);
+
+/// Like [ComposeViaAgentFn] but with full tool access and rich context
+/// (memories, events, repos). Used by the task radar for cross-source synthesis.
+typedef ComposeWithToolsFn = Future<String> Function(
   String groupId,
   String taskDescription,
 );
@@ -54,6 +63,7 @@ class Scheduler {
     required this.queries,
     required this.sendMessage,
     this.composeViaAgent,
+    this.composeWithTools,
     this.triggerDream,
     this.backfill,
     this.consolidator,
@@ -66,6 +76,13 @@ class Scheduler {
   /// are composed by Claude in-character. Falls back to hardcoded text on
   /// exception or when null.
   final ComposeViaAgentFn? composeViaAgent;
+
+  /// Optional tool-enabled composition callback for the task radar.
+  ///
+  /// Unlike [composeViaAgent], this routes through the agent loop with full
+  /// tool access and rich context (memories, events, repos) so the agent can
+  /// query Kan, Outline, calendar, and memory to synthesize task suggestions.
+  final ComposeWithToolsFn? composeWithTools;
 
   /// Optional dream trigger callback. When provided, triggers a dream cycle
   /// for each workspace-linked group during the nightly cleanup window.
@@ -151,6 +168,12 @@ class Scheduler {
       final nudgeHour = config.nudgeHour;
       if (nudgeHour != null && localNow.hour == nudgeHour) {
         await _sendProactiveNudge(config.groupId, today);
+      }
+
+      // Check if it's radar hour — run the task radar scan.
+      final radarHour = config.radarHour;
+      if (radarHour != null && localNow.hour == radarHour) {
+        await _sendTaskRadar(config.groupId, today);
       }
     }
 
@@ -377,6 +400,62 @@ class Scheduler {
     } on Exception catch (e) {
       developer.log(
         'Proactive nudge failed for $groupId: $e',
+        name: 'Scheduler',
+        level: 900,
+      );
+    }
+  }
+
+  /// Runs the task radar — a proactive scan across all data sources to
+  /// suggest tasks the team should consider.
+  ///
+  /// Unlike [_sendProactiveNudge] which only checks for overdue cards,
+  /// the task radar has full tool access and synthesizes across Kan, Outline,
+  /// calendar, team profiles, standup patterns, and conversation memory.
+  Future<void> _sendTaskRadar(String groupId, String date) async {
+    final compose = composeWithTools;
+    if (compose == null) return;
+
+    // Daily dedup — only scan once per group per day.
+    final radarKey = 'task_radar::$groupId::$date';
+    if (queries.getMetadata(radarKey) != null) return;
+
+    // Look up the workspace name for context.
+    final workspace = queries.getWorkspaceLink(groupId);
+    final workspaceContext = workspace != null
+        ? ' The linked workspace is "${workspace.workspaceName}".'
+        : '';
+
+    try {
+      final suggestion = await compose(
+        groupId,
+        'You have time to think about what the team should work on. Look '
+            'around — check the board, recent standups, upcoming events, your '
+            'knowledge base, and what you remember from conversations. Connect '
+            'dots across these sources.$workspaceContext\n\n'
+            'Some questions to consider (not a checklist — follow what\'s '
+            'interesting):\n'
+            '- Is anyone working on something that doesn\'t have a card yet?\n'
+            '- Are there upcoming events that need prep work?\n'
+            '- Is there knowledge in Outline that suggests untracked work?\n'
+            '- Are there patterns in recent standups (repeated blockers, '
+            'mentions of things people want to do)?\n'
+            '- Who seems underloaded or has expressed interest in something '
+            'unassigned?\n\n'
+            'If something stands out, suggest 1-3 specific tasks. Name who '
+            'might be a good fit and why. If nothing stands out, say so '
+            'briefly — don\'t manufacture work.\n\n'
+            'Be specific and grounded — reference actual cards, docs, events, '
+            'and people by name.',
+      );
+      if (suggestion.isNotEmpty) {
+        await sendMessage(groupId, suggestion);
+      }
+      // Mark as scanned regardless — avoids retrying when nothing to suggest.
+      queries.setMetadata(radarKey, DateTime.now().toUtc().toIso8601String());
+    } on Exception catch (e) {
+      developer.log(
+        'Task radar failed for $groupId: $e',
         name: 'Scheduler',
         level: 900,
       );

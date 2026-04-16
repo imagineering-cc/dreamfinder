@@ -266,5 +266,51 @@ void main() {
       expect(prompt, contains('passive recall'));
       expect(prompt, contains('Evaluate'));
     });
+
+    test('includes Proactive Scan section when isProactive is true', () {
+      const input = AgentInput(
+        text: 'Scan for tasks',
+        chatId: 'group-1',
+        senderId: 'system',
+        isAdmin: true,
+        isProactive: true,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, contains('## Proactive Scan'));
+      expect(prompt, contains('full tool access'));
+      expect(prompt, contains('reference actual cards'));
+      // Should NOT include the system-initiated reminder (no tools).
+      expect(prompt, isNot(contains('## System-Initiated Reminder')));
+      expect(prompt, isNot(contains('Do not use tools.')));
+    });
+
+    test('isProactive takes precedence over isSystemInitiated', () {
+      const input = AgentInput(
+        text: 'Scan for tasks',
+        chatId: 'group-1',
+        senderId: 'system',
+        isAdmin: true,
+        isProactive: true,
+        isSystemInitiated: true,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      // Proactive wins — should see scan section, not system-initiated.
+      expect(prompt, contains('## Proactive Scan'));
+      expect(prompt, isNot(contains('## System-Initiated Reminder')));
+    });
+
+    test('defaults isProactive to false', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, isNot(contains('## Proactive Scan')));
+    });
   });
 }
