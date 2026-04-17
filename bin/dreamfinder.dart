@@ -405,11 +405,17 @@ Future<void> main() async {
     toolRegistry: toolRegistry,
     sendMessage: sendToRoom,
     botName: env.botName,
-    buildSystemPrompt: (input) => buildSystemPrompt(
-      input,
-      botName: env.botName,
-      identity: queries.getBotIdentity(),
-    ),
+    buildSystemPrompt: (input) {
+      final id = queries.getBotIdentity();
+      return buildSystemPrompt(
+        input,
+        botName: env.botName,
+        identity: id,
+        personalityTraits: id != null
+            ? queries.getPersonalityTraits(id.id)
+            : const [],
+      );
+    },
   );
 
   final scheduler = Scheduler(
@@ -435,12 +441,16 @@ Future<void> main() async {
         isAdmin: true,
         isSystemInitiated: true,
       );
+      final id = queries.getBotIdentity();
       return agentLoop.processMessage(
         input,
         systemPrompt: buildSystemPrompt(
           input,
           botName: env.botName,
-          identity: queries.getBotIdentity(),
+          identity: id,
+          personalityTraits: id != null
+              ? queries.getPersonalityTraits(id.id)
+              : const [],
         ),
       );
     },
@@ -542,12 +552,16 @@ Future<void> main() async {
           isAdmin: true,
           isSystemInitiated: true,
         );
+        final id = queries.getBotIdentity();
         return agentLoop.processMessage(
           input,
           systemPrompt: buildSystemPrompt(
             input,
             botName: env.botName,
-            identity: queries.getBotIdentity(),
+            identity: id,
+            personalityTraits: id != null
+                ? queries.getPersonalityTraits(id.id)
+                : const [],
           ),
         );
       },
