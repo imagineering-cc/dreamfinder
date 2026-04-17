@@ -48,6 +48,9 @@ class HealthCheck {
   DateTime? _lastClaudeSuccess;
   DateTime? _processingStart;
   int _errorCount = 0;
+  int _messagesProcessed = 0;
+  int _messagesDropped = 0;
+  final Map<String, int> _dropReasons = {};
 
   /// Memory retriever — set after initialization when Voyage AI is enabled.
   MemoryRetriever? memoryRetriever;
@@ -121,6 +124,21 @@ class HealthCheck {
   /// Increments the cumulative error counter.
   void recordError() {
     _errorCount++;
+  }
+
+  /// Records a successfully processed message.
+  void recordMessageProcessed() {
+    _messagesProcessed++;
+  }
+
+  /// Records a dropped message with a reason for observability.
+  ///
+  /// Every `continue` in the main sync loop should call this with a
+  /// descriptive reason (e.g., 'own_message', 'ignored_room',
+  /// 'not_mentioned', 'rate_limited', 'no_text', 'member_join').
+  void recordMessageDropped(String reason) {
+    _messagesDropped++;
+    _dropReasons[reason] = (_dropReasons[reason] ?? 0) + 1;
   }
 
   void _handleRequest(HttpRequest request) {
@@ -230,6 +248,9 @@ class HealthCheck {
         'processing_since':
             _processingStart?.toUtc().toIso8601String(),
         'error_count': _errorCount,
+        'messages_processed': _messagesProcessed,
+        'messages_dropped': _messagesDropped,
+        'drop_reasons': _dropReasons,
       }))
       ..close();
   }

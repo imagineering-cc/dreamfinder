@@ -150,6 +150,27 @@ void main() {
       expect(data['traits'], isNull);
     });
 
+    test('warns about unknown trait names but still saves them', () async {
+      final result = await registry.executeTool('set_bot_identity', {
+        'name': 'River',
+        'pronouns': 'they/them',
+        'tone': 'sardonic',
+        'traits': {
+          'humor': 80,
+          'humour': 75, // typo — should trigger warning
+          'chaos': 60,
+        },
+      });
+      final data = jsonDecode(result) as Map<String, dynamic>;
+
+      expect(data['success'], isTrue);
+      expect(data['traits'], isNotNull);
+      // Unknown traits are saved (extensible) but a warning is included.
+      expect(data['trait_warnings'], isNotNull);
+      final warnings = data['trait_warnings'] as List<dynamic>;
+      expect(warnings, contains(contains('humour')));
+    });
+
     test('rejects non-admin callers', () async {
       registry.setContext(const ToolContext(
         senderId: 'non-admin-user',

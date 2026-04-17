@@ -14,6 +14,15 @@ const defaultBotName = 'Dreamfinder';
 const defaultPronouns = 'they/them';
 const defaultTone = 'Short, blunt, dry. Pub-register wit';
 
+/// The five canonical personality trait axes.
+const knownTraitNames = {
+  'directness',
+  'warmth',
+  'humor',
+  'formality',
+  'chaos',
+};
+
 /// Callback invoked after a successful `set_bot_identity` so callers can
 /// refresh caches (e.g., the bot-name mention regex in the main loop).
 void Function()? _onIdentityChanged;
@@ -125,10 +134,20 @@ CustomToolDef _setIdentityTool(Queries queries) {
       );
 
       Map<String, int>? savedTraits;
+      List<String>? traitWarnings;
       if (rawTraits != null && rawTraits.isNotEmpty) {
         final traits = rawTraits.map(
           (k, v) => MapEntry(k, (v as num).toInt()),
         );
+        final unknown = traits.keys
+            .where((k) => !knownTraitNames.contains(k))
+            .toList();
+        if (unknown.isNotEmpty) {
+          traitWarnings = unknown
+              .map((k) => 'Unknown trait "$k" — known traits are: '
+                  '${knownTraitNames.join(', ')}')
+              .toList();
+        }
         final identity = queries.getBotIdentity()!;
         queries.savePersonalityTraits(identity.id, traits);
         savedTraits = traits;
@@ -142,6 +161,7 @@ CustomToolDef _setIdentityTool(Queries queries) {
         'pronouns': pronouns,
         'tone': tone,
         if (savedTraits != null) 'traits': savedTraits,
+        if (traitWarnings != null) 'trait_warnings': traitWarnings,
       });
     },
   );

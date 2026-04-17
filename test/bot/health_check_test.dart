@@ -192,6 +192,31 @@ void main() {
       }
     });
 
+    test('tracks messages processed and dropped', () async {
+      health.recordMessageProcessed();
+      health.recordMessageProcessed();
+      health.recordMessageDropped('own_message');
+      health.recordMessageDropped('not_mentioned');
+      health.recordMessageDropped('not_mentioned');
+
+      final client = HttpClient();
+      try {
+        final request = await client.get('localhost', port, '/health');
+        final response = await request.close();
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+
+        expect(json['messages_processed'], equals(2));
+        expect(json['messages_dropped'], equals(3));
+        final reasons =
+            json['drop_reasons'] as Map<String, dynamic>;
+        expect(reasons['own_message'], equals(1));
+        expect(reasons['not_mentioned'], equals(2));
+      } finally {
+        client.close();
+      }
+    });
+
     test('returns degraded when processing is stuck', () async {
       // Use a health check with a very short stuck threshold for testing.
       await health.stop();
