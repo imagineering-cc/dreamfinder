@@ -2,7 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// Current schema version. Bump this and add a migration block in
 /// [_runMigrations] whenever the schema changes.
-const schemaVersion = 8;
+const schemaVersion = 9;
 
 /// SQLite database wrapper for Dreamfinder.
 ///
@@ -93,6 +93,7 @@ class BotDatabase {
     if (fromVersion < 6) _migrateToV6();
     if (fromVersion < 7) _migrateToV7();
     if (fromVersion < 8) _migrateToV8();
+    if (fromVersion < 9) _migrateToV9();
 
     _setVersion(schemaVersion);
   }
@@ -493,5 +494,20 @@ class BotDatabase {
     _db.execute(
       'ALTER TABLE standup_config ADD COLUMN radar_hour INTEGER',
     );
+  }
+
+  /// Version 9: Personality traits — TARS-style proportional personality
+  /// blending for the naming ceremony. Each trait is a 0–100 value tied
+  /// to a bot_identity record.
+  void _migrateToV9() {
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS personality_traits (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        identity_id INTEGER NOT NULL REFERENCES bot_identity(id),
+        trait_name  TEXT    NOT NULL,
+        trait_value INTEGER NOT NULL CHECK (trait_value BETWEEN 0 AND 100),
+        UNIQUE(identity_id, trait_name)
+      )
+    ''');
   }
 }

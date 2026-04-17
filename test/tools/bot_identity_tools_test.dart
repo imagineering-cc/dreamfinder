@@ -108,6 +108,48 @@ void main() {
       expect(identity.chosenInGroupId, equals('group-123'));
     });
 
+    test('saves personality traits when provided', () async {
+      final result = await registry.executeTool('set_bot_identity', {
+        'name': 'River',
+        'pronouns': 'they/them',
+        'tone': 'sardonic',
+        'traits': {
+          'directness': 85,
+          'warmth': 30,
+          'humor': 80,
+          'formality': 10,
+          'chaos': 60,
+        },
+      });
+      final data = jsonDecode(result) as Map<String, dynamic>;
+
+      expect(data['success'], isTrue);
+      expect(data['traits'], isNotNull);
+
+      final traits = data['traits'] as Map<String, dynamic>;
+      expect(traits['directness'], equals(85));
+      expect(traits['chaos'], equals(60));
+
+      // Verify traits persisted via get.
+      final getResult = await registry.executeTool('get_bot_identity', {});
+      final getData = jsonDecode(getResult) as Map<String, dynamic>;
+      expect(getData['traits'], isNotNull);
+      final getTraits = getData['traits'] as Map<String, dynamic>;
+      expect(getTraits['humor'], equals(80));
+    });
+
+    test('get_bot_identity returns null traits when none set', () async {
+      await registry.executeTool('set_bot_identity', {
+        'name': 'Vale',
+        'pronouns': 'she/her',
+        'tone': 'pragmatic',
+      });
+
+      final result = await registry.executeTool('get_bot_identity', {});
+      final data = jsonDecode(result) as Map<String, dynamic>;
+      expect(data['traits'], isNull);
+    });
+
     test('rejects non-admin callers', () async {
       registry.setContext(const ToolContext(
         senderId: 'non-admin-user',

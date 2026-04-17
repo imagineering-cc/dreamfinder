@@ -1,5 +1,6 @@
 import 'package:dreamfinder/src/agent/agent_loop.dart';
 import 'package:dreamfinder/src/agent/system_prompt.dart';
+import 'package:dreamfinder/src/db/schema.dart';
 import 'package:dreamfinder/src/memory/memory_record.dart';
 import 'package:test/test.dart';
 
@@ -311,6 +312,79 @@ void main() {
       final prompt = buildSystemPrompt(input);
 
       expect(prompt, isNot(contains('## Proactive Scan')));
+    });
+
+    test('includes personality trait proportions in Voice section', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(
+        input,
+        identity: const BotIdentityRecord(
+          id: 1,
+          name: 'River',
+          pronouns: 'they/them',
+          tone: 'sardonic',
+          toneDescription: 'Pub-register wit',
+          chosenAt: '2026-04-16',
+        ),
+        personalityTraits: const [
+          PersonalityTrait(name: 'directness', value: 85),
+          PersonalityTrait(name: 'warmth', value: 30),
+          PersonalityTrait(name: 'humor', value: 80),
+          PersonalityTrait(name: 'formality', value: 10),
+          PersonalityTrait(name: 'chaos', value: 60),
+        ],
+      );
+
+      expect(prompt, contains('Directness: 85/100'));
+      expect(prompt, contains('Warmth: 30/100'));
+      expect(prompt, contains('Humor: 80/100'));
+      expect(prompt, contains('Formality: 10/100'));
+      expect(prompt, contains('Chaos: 60/100'));
+      // Should still include the tone description as anchor text.
+      expect(prompt, contains('Pub-register wit'));
+    });
+
+    test('falls back to static Voice when no traits provided', () {
+      const input = AgentInput(
+        text: 'Hello',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: false,
+      );
+      final prompt = buildSystemPrompt(
+        input,
+        identity: const BotIdentityRecord(
+          id: 1,
+          name: 'River',
+          pronouns: 'they/them',
+          tone: 'sardonic',
+          toneDescription: 'Short, blunt, dry. Pub-register wit',
+          chosenAt: '2026-04-16',
+        ),
+      );
+
+      // V1 static voice — should contain the hardcoded pub-register paragraph.
+      expect(prompt, contains('the guy at the pub three beers in'));
+      // Should NOT contain trait proportions.
+      expect(prompt, isNot(contains('/100')));
+    });
+
+    test('naming ceremony prompt describes dial mode', () {
+      const input = AgentInput(
+        text: 'naming ceremony',
+        chatId: 'group-1',
+        senderId: 'user-1',
+        isAdmin: true,
+      );
+      final prompt = buildSystemPrompt(input);
+
+      expect(prompt, contains('personality trait'));
+      expect(prompt, contains('proportions'));
     });
   });
 }
