@@ -161,6 +161,21 @@ class BotIdentityRecord {
   final String? chosenInGroupId;
 }
 
+/// A single personality trait with a value from 0 to 100.
+///
+/// Used for TARS-style proportional personality blending — e.g.,
+/// `PersonalityTrait(name: 'humor', value: 80)` means 80% humor.
+class PersonalityTrait {
+  const PersonalityTrait({required this.name, required this.value});
+
+  /// Trait axis name (e.g., 'directness', 'warmth', 'humor', 'formality',
+  /// 'chaos').
+  final String name;
+
+  /// Trait intensity from 0 (absent) to 100 (maximum).
+  final int value;
+}
+
 /// Default board and list for card creation in a group.
 class DefaultBoardConfigRecord {
   const DefaultBoardConfigRecord({

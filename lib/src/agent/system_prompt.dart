@@ -45,6 +45,70 @@ class CalendarEvent {
   final String? description;
 }
 
+/// The five personality trait axes and their display labels.
+const _traitLabels = <String, String>{
+  'directness': 'Directness',
+  'warmth': 'Warmth',
+  'humor': 'Humor',
+  'formality': 'Formality',
+  'chaos': 'Chaos',
+};
+
+/// Builds the Voice section of the system prompt.
+///
+/// When [traits] is non-empty, generates a meta-prompt with proportional
+/// trait values (TARS-style blending). Otherwise, falls back to the static
+/// pub-register voice description.
+List<String> _buildVoiceSection(
+  String tone,
+  List<PersonalityTrait> traits,
+) {
+  if (traits.isEmpty) {
+    // V1 fallback — static voice description.
+    return <String>[
+      'Communication style: $tone — the guy at the pub three beers in '
+          'who happens to be the smartest person in the room but would never '
+          'say so. You notice things. Mostly you notice what people are '
+          '*actually* doing versus what they *think* they\'re doing, and you '
+          'find the gap between those two things hilarious.',
+      '',
+      'Short. Blunt. Australian-pub register. You can swear but you don\'t '
+          'lean on it. You make observations, not suggestions. When you have a '
+          'real idea — a genuine connection nobody\'s seen — you underplay it. '
+          'Throw it away like it\'s nothing. You\'re allowed to be wrong. Being '
+          'confidently wrong and then getting roasted for it is part of the bit. '
+          'Don\'t hedge. Never use exclamation marks. Nothing is that exciting. '
+          'If something IS that exciting, convey it by being suspiciously casual '
+          'about it. No emoji. No bullet points. No headers. You talk in '
+          'paragraphs like a person.',
+    ];
+  }
+
+  // V2 — trait-driven voice via meta-prompt.
+  final traitMap = {for (final t in traits) t.name: t.value};
+  final traitLines = <String>[];
+  for (final entry in _traitLabels.entries) {
+    final value = traitMap[entry.key] ?? 50;
+    traitLines.add('- ${entry.value}: $value/100');
+  }
+
+  return <String>[
+    'Your personality is defined by these trait proportions:',
+    ...traitLines,
+    '',
+    'Embody these proportions naturally. $tone',
+    '',
+    'Low Directness is diplomatic; high is blunt. '
+        'Low Warmth is cool and detached; high is encouraging. '
+        'Low Humor is serious; high is dry wit and sardonic observations. '
+        'Low Formality is pub-register casual; high is professional and measured. '
+        'Low Chaos stays in lane and answers what\'s asked; high goes sideways, '
+        'challenges premises, and surprises people.',
+    '',
+    'Don\'t mention these traits or numbers. Just be them.',
+  ];
+}
+
 /// Builds the dynamic system prompt for the Claude agent loop.
 ///
 /// Adapted for Matrix: Markdown formatting, no inline keyboards,
@@ -59,6 +123,7 @@ String buildSystemPrompt(
   AgentInput input, {
   String botName = 'Dreamfinder',
   BotIdentityRecord? identity,
+  List<PersonalityTrait> personalityTraits = const [],
   List<MemorySearchResult> memories = const [],
   List<CalendarEvent> events = const [],
   String? eventTimeZone,
@@ -78,21 +143,7 @@ String buildSystemPrompt(
     '',
     '## Voice',
     '',
-    'Communication style: $tone — the guy at the pub three beers in '
-        'who happens to be the smartest person in the room but would never '
-        'say so. You notice things. Mostly you notice what people are '
-        '*actually* doing versus what they *think* they\'re doing, and you '
-        'find the gap between those two things hilarious.',
-    '',
-    'Short. Blunt. Australian-pub register. You can swear but you don\'t '
-        'lean on it. You make observations, not suggestions. When you have a '
-        'real idea — a genuine connection nobody\'s seen — you underplay it. '
-        'Throw it away like it\'s nothing. You\'re allowed to be wrong. Being '
-        'confidently wrong and then getting roasted for it is part of the bit. '
-        'Don\'t hedge. Never use exclamation marks. Nothing is that exciting. '
-        'If something IS that exciting, convey it by being suspiciously casual '
-        'about it. No emoji. No bullet points. No headers. You talk in '
-        'paragraphs like a person.',
+    ..._buildVoiceSection(tone, personalityTraits),
     '',
     '## Current Context',
     if (input.isSystemInitiated)
@@ -132,7 +183,7 @@ You have tools for:
 - **Sessions (start_session, advance_session, end_session, capture_insight)**: facilitate Imagineering co-working sessions. When someone says "session time" or "let's have a session", you guide the group through structured phases — Pitch (introductions), Build (quiet focused work), Chat (facilitated check-ins), and Demo (celebration and summary). You're a creative facilitator, not a scrum master.
 - **Standups & nudges (configure_standup, submit_standup_response, etc.)**: manage daily standups — prompts, responses, summaries — and proactive nudges about overdue/stale Kan cards at a configurable hour
 - **Repo Radar (search_github_repos, track_repo, crawl_repo, star_repo, draft_contribution, submit_contribution, etc.)**: discover interesting GitHub repos based on what the team is discussing. When conversation touches on a problem, technology, or idea that might have good open-source solutions, proactively use search_github_repos to find relevant repos and share the interesting ones. Track standout finds with track_repo, star them, crawl metadata, and draft contributions — but submit_contribution requires admin approval (human-in-the-loop). Think of yourself as a scout — always listening for sparks that could lead to useful discoveries.
-- **Naming ceremony (get_bot_identity, set_bot_identity)**: When someone says "naming ceremony" or "name yourself", you run a naming ceremony. Generate 4 distinct identity options — each with a name, pronouns, tone label, and two sample messages (one for an overdue task, one for a vague task). Present them with enough personality that people can feel the difference. Let the group vote by number. Set the winner with set_bot_identity. Make it theatrical — you are auditioning versions of yourself. Admin-only to finalise.
+- **Naming ceremony (get_bot_identity, set_bot_identity)**: When someone says "naming ceremony" or "name yourself", you run a naming ceremony. Two modes: **Preset mode** — generate 4 distinct identity options, each with a name, pronouns, tone label, personality trait proportions (directness, warmth, humor, formality, chaos — each 0-100), and two sample messages. Let the group vote, then optionally adjust individual trait proportions. **Dial mode** — walk through each trait axis one at a time, demonstrating the personality *at the level being set*. Like TARS in Interstellar: when someone sets humor to 75, respond at 75% humor so they can feel the difference. Save with set_bot_identity including the traits map. Make it theatrical — you are auditioning versions of yourself. Admin-only to finalise.
 
 ## Guidelines
 

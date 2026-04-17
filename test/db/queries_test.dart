@@ -332,6 +332,109 @@ void main() {
   });
 
   // -----------------------------------------------------------------------
+  // Personality Traits
+  // -----------------------------------------------------------------------
+
+  group('Personality Traits', () {
+    test('getPersonalityTraits returns empty list when none exist', () {
+      expect(q.getPersonalityTraits(999), isEmpty);
+    });
+
+    test('savePersonalityTraits stores and retrieves traits', () {
+      q.saveBotIdentity(
+        name: 'River',
+        pronouns: 'they/them',
+        tone: 'sardonic',
+      );
+      final identity = q.getBotIdentity()!;
+
+      q.savePersonalityTraits(identity.id, {
+        'directness': 85,
+        'warmth': 30,
+        'humor': 80,
+        'formality': 10,
+        'chaos': 60,
+      });
+
+      final traits = q.getPersonalityTraits(identity.id);
+      expect(traits, hasLength(5));
+      expect(
+        traits.firstWhere((t) => t.name == 'directness').value,
+        equals(85),
+      );
+      expect(
+        traits.firstWhere((t) => t.name == 'chaos').value,
+        equals(60),
+      );
+    });
+
+    test('savePersonalityTraits replaces existing traits', () {
+      q.saveBotIdentity(
+        name: 'River',
+        pronouns: 'they/them',
+        tone: 'sardonic',
+      );
+      final identity = q.getBotIdentity()!;
+
+      q.savePersonalityTraits(identity.id, {'humor': 80});
+      q.savePersonalityTraits(identity.id, {'humor': 55, 'warmth': 70});
+
+      final traits = q.getPersonalityTraits(identity.id);
+      expect(traits, hasLength(2));
+      expect(
+        traits.firstWhere((t) => t.name == 'humor').value,
+        equals(55),
+      );
+    });
+
+    test('traits are scoped to identity_id', () {
+      q.saveBotIdentity(
+        name: 'River',
+        pronouns: 'they/them',
+        tone: 'sardonic',
+      );
+      final river = q.getBotIdentity()!;
+      q.savePersonalityTraits(river.id, {'humor': 80});
+
+      q.saveBotIdentity(
+        name: 'Vale',
+        pronouns: 'she/her',
+        tone: 'pragmatic',
+      );
+      final vale = q.getBotIdentity()!;
+      q.savePersonalityTraits(vale.id, {'humor': 20});
+
+      expect(
+        q.getPersonalityTraits(river.id).first.value,
+        equals(80),
+      );
+      expect(
+        q.getPersonalityTraits(vale.id).first.value,
+        equals(20),
+      );
+    });
+
+    test('trait values are clamped between 0 and 100', () {
+      q.saveBotIdentity(
+        name: 'Test',
+        pronouns: 'they/them',
+        tone: 'test',
+      );
+      final identity = q.getBotIdentity()!;
+
+      // The CHECK constraint should reject out-of-range values.
+      expect(
+        () => q.savePersonalityTraits(identity.id, {'humor': 150}),
+        throwsA(anything),
+      );
+      expect(
+        () => q.savePersonalityTraits(identity.id, {'humor': -10}),
+        throwsA(anything),
+      );
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Standup Config
   // -----------------------------------------------------------------------
 

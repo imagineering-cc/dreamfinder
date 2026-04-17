@@ -20,6 +20,7 @@ import 'package:dreamfinder/src/cron/scheduler.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/message_repository.dart';
 import 'package:dreamfinder/src/db/queries.dart';
+import 'package:dreamfinder/src/db/schema.dart';
 import 'package:dreamfinder/src/dream/dream_cycle.dart';
 import 'package:dreamfinder/src/kickstart/kickstart.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_prompt.dart';
@@ -1078,10 +1079,14 @@ String _buildFullSystemPrompt({
     );
   }).toList();
 
+  final identity = queries.getBotIdentity();
+  final personalityTraits =
+      identity != null ? queries.getPersonalityTraits(identity.id) : const <PersonalityTrait>[];
   var prompt = buildSystemPrompt(
     input,
     botName: env.botName,
-    identity: queries.getBotIdentity(),
+    identity: identity,
+    personalityTraits: personalityTraits,
     memories: memories,
     events: events,
     eventTimeZone: env.eventTimeZone,

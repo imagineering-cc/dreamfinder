@@ -41,6 +41,13 @@ CustomToolDef _getIdentityTool(Queries queries) {
     },
     handler: (args) async {
       final identity = queries.getBotIdentity();
+      Map<String, int>? traitsMap;
+      if (identity != null) {
+        final traits = queries.getPersonalityTraits(identity.id);
+        if (traits.isNotEmpty) {
+          traitsMap = {for (final t in traits) t.name: t.value};
+        }
+      }
       return jsonEncode(<String, dynamic>{
         'name': identity?.name ?? defaultBotName,
         'pronouns': identity?.pronouns ?? defaultPronouns,
@@ -48,6 +55,7 @@ CustomToolDef _getIdentityTool(Queries queries) {
         'tone_description': identity?.toneDescription,
         'chosen_at': identity?.chosenAt,
         'chosen_in_group_id': identity?.chosenInGroupId,
+        'traits': traitsMap,
       });
     },
   );
@@ -84,6 +92,19 @@ CustomToolDef _setIdentityTool(Queries queries) {
           'type': 'string',
           'description': 'The group ID where this identity was chosen.',
         },
+        'traits': <String, dynamic>{
+          'type': 'object',
+          'description':
+              'Personality trait proportions (0-100). TARS-style blending. '
+              'Keys: directness, warmth, humor, formality, chaos. '
+              'Example: {"directness": 85, "warmth": 30, "humor": 80, '
+              '"formality": 10, "chaos": 60}',
+          'additionalProperties': <String, dynamic>{
+            'type': 'integer',
+            'minimum': 0,
+            'maximum': 100,
+          },
+        },
       },
       'required': <String>['name', 'pronouns', 'tone'],
     },
@@ -93,6 +114,7 @@ CustomToolDef _setIdentityTool(Queries queries) {
       final tone = args['tone'] as String;
       final toneDescription = args['tone_description'] as String?;
       final chosenInGroupId = args['chosen_in_group_id'] as String?;
+      final rawTraits = args['traits'] as Map<String, dynamic>?;
 
       queries.saveBotIdentity(
         name: name,
@@ -102,6 +124,16 @@ CustomToolDef _setIdentityTool(Queries queries) {
         chosenInGroupId: chosenInGroupId,
       );
 
+      Map<String, int>? savedTraits;
+      if (rawTraits != null && rawTraits.isNotEmpty) {
+        final traits = rawTraits.map(
+          (k, v) => MapEntry(k, (v as num).toInt()),
+        );
+        final identity = queries.getBotIdentity()!;
+        queries.savePersonalityTraits(identity.id, traits);
+        savedTraits = traits;
+      }
+
       _onIdentityChanged?.call();
 
       return jsonEncode(<String, dynamic>{
@@ -109,6 +141,7 @@ CustomToolDef _setIdentityTool(Queries queries) {
         'name': name,
         'pronouns': pronouns,
         'tone': tone,
+        if (savedTraits != null) 'traits': savedTraits,
       });
     },
   );

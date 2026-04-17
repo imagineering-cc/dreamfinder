@@ -520,4 +520,47 @@ void main() {
       expect(sr.first['display_name'], 'Alice');
     });
   });
+
+  group('V9 migration — personality traits', () {
+    test('fresh database creates personality_traits table', () {
+      final tables = db.tableNames();
+      expect(tables, contains('personality_traits'));
+    });
+
+    test('personality_traits table has correct columns and constraints', () {
+      // Insert a bot_identity first (foreign key target).
+      db.handle.execute(
+        "INSERT INTO bot_identity (name, pronouns, tone) "
+        "VALUES ('Test', 'they/them', 'test')",
+      );
+
+      // Insert a valid trait.
+      db.handle.execute(
+        'INSERT INTO personality_traits (identity_id, trait_name, trait_value) '
+        'VALUES (1, \'humor\', 80)',
+      );
+      final rows = db.handle.select('SELECT * FROM personality_traits');
+      expect(rows, hasLength(1));
+      expect(rows.first['trait_name'], equals('humor'));
+      expect(rows.first['trait_value'], equals(80));
+
+      // CHECK constraint should reject values outside 0-100.
+      expect(
+        () => db.handle.execute(
+          'INSERT INTO personality_traits (identity_id, trait_name, trait_value) '
+          'VALUES (1, \'warmth\', 150)',
+        ),
+        throwsA(anything),
+      );
+
+      // UNIQUE constraint on (identity_id, trait_name).
+      expect(
+        () => db.handle.execute(
+          'INSERT INTO personality_traits (identity_id, trait_name, trait_value) '
+          'VALUES (1, \'humor\', 90)',
+        ),
+        throwsA(anything),
+      );
+    });
+  });
 }
