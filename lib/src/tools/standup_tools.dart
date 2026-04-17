@@ -45,8 +45,7 @@ CustomToolDef _configureStandupTool(Queries queries) {
         },
         'prompt_hour': <String, dynamic>{
           'type': 'integer',
-          'description':
-              'Hour (0-23) to send the standup prompt (default: 9).',
+          'description': 'Hour (0-23) to send the standup prompt (default: 9).',
         },
         'summary_hour': <String, dynamic>{
           'type': 'integer',
@@ -68,12 +67,13 @@ CustomToolDef _configureStandupTool(Queries queries) {
               'Hour (0-23) to send proactive nudges about overdue Kan '
                   'cards. Set to null to disable nudges.',
         },
-        'radar_hour': <String, dynamic>{
-          'type': 'integer',
+        'radar_enabled': <String, dynamic>{
+          'type': 'boolean',
           'description':
-              'Hour (0-23) to run the task radar — a proactive scan across '
+              'Enable the task radar — autonomous background scans across '
                   'Kan, Outline, calendar, memory, and standups to suggest '
-                  'tasks the team should consider. Set to null to disable.',
+                  'tasks the team should consider. Scans happen at random '
+                  'intervals (roughly every 3–6 hours) during waking hours.',
         },
       },
       'required': <String>['group_id'],
@@ -90,7 +90,8 @@ CustomToolDef _configureStandupTool(Queries queries) {
         timezone: args['timezone'] as String?,
         skipWeekends: args['skip_weekends'] as bool?,
         nudgeHour: args['nudge_hour'] as int?,
-        radarHour: args['radar_hour'] as int?,
+        radarHour: (args['radar_enabled'] as bool?) == true ? 1 : null,
+        clearRadarHour: (args['radar_enabled'] as bool?) == false,
       );
 
       final config = queries.getStandupConfig(groupId);
@@ -102,7 +103,7 @@ CustomToolDef _configureStandupTool(Queries queries) {
         'timezone': config.timezone,
         'skip_weekends': config.skipWeekends,
         'nudge_hour': config.nudgeHour,
-        'radar_hour': config.radarHour,
+        'radar_enabled': config.radarEnabled,
       });
     },
   );
@@ -123,8 +124,7 @@ CustomToolDef _getStandupConfigTool(Queries queries) {
       'required': <String>['group_id'],
     },
     handler: (args) async {
-      final config =
-          queries.getStandupConfig(args['group_id'] as String);
+      final config = queries.getStandupConfig(args['group_id'] as String);
       if (config == null) {
         return jsonEncode(<String, dynamic>{
           'configured': false,
@@ -140,7 +140,7 @@ CustomToolDef _getStandupConfigTool(Queries queries) {
         'skip_weekends': config.skipWeekends,
         'skip_break_days': config.skipBreakDays,
         'nudge_hour': config.nudgeHour,
-        'radar_hour': config.radarHour,
+        'radar_enabled': config.radarEnabled,
       });
     },
   );
@@ -233,8 +233,7 @@ CustomToolDef _getStandupSummaryTool(Queries queries) {
         },
         'date': <String, dynamic>{
           'type': 'string',
-          'description':
-              'Date in YYYY-MM-DD format (default: today).',
+          'description': 'Date in YYYY-MM-DD format (default: today).',
         },
       },
       'required': <String>['group_id'],

@@ -224,10 +224,13 @@ class StandupConfigRecord {
   final bool skipWeekends;
   final int? nudgeHour;
 
-  /// Hour (0-23) to run the task radar — a proactive scan across all data
-  /// sources (Kan, Outline, calendar, memory, standups) to suggest tasks
-  /// the team should consider. `null` disables the radar.
+  /// Non-null enables the task radar (autonomous background scans at
+  /// jittered intervals). The integer value is a legacy sentinel — any
+  /// non-null value means enabled.
   final int? radarHour;
+
+  /// Whether the task radar is enabled for this group.
+  bool get radarEnabled => radarHour != null;
 }
 
 /// A single standup session for one group on one date.

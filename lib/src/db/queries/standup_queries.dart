@@ -38,6 +38,7 @@ mixin StandupQueries {
     bool? skipWeekends,
     int? nudgeHour,
     int? radarHour,
+    bool clearRadarHour = false,
   }) {
     final existing = getStandupConfig(groupId);
 
@@ -95,7 +96,9 @@ mixin StandupQueries {
       sets.add('nudge_hour = ?');
       params.add(nudgeHour);
     }
-    if (radarHour != null) {
+    if (clearRadarHour) {
+      sets.add('radar_hour = NULL');
+    } else if (radarHour != null) {
       sets.add('radar_hour = ?');
       params.add(radarHour);
     }
