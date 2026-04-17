@@ -650,8 +650,14 @@ Future<void> main() async {
 
       // Process timeline events.
       for (final event in sync.events) {
-        if (event.sender == botUserId) continue; // Ignore own messages.
-        if (ignoreRooms.contains(event.roomId)) continue;
+        if (event.sender == botUserId) {
+          health.recordMessageDropped('own_message');
+          continue;
+        }
+        if (ignoreRooms.contains(event.roomId)) {
+          health.recordMessageDropped('ignored_room');
+          continue;
+        }
         // Welcome new members joining a group room.
         if (event.isMemberJoin && !matrixClient.isDm(event.roomId)) {
           final displayName =
@@ -671,10 +677,14 @@ Future<void> main() async {
           } on Exception catch (e) {
             log.warning('Failed to send welcome message: $e');
           }
+          health.recordMessageDropped('member_join');
           continue;
         }
 
-        if (!event.hasTextMessage) continue;
+        if (!event.hasTextMessage) {
+          health.recordMessageDropped('no_text');
+          continue;
+        }
 
         final text = event.body!;
         final isDm = matrixClient.isDm(event.roomId);
@@ -692,6 +702,7 @@ Future<void> main() async {
               formattedBody: event.formattedBody,
               botDisplayName: cachedBotName,
             )) {
+          health.recordMessageDropped('not_mentioned');
           continue;
         }
 
@@ -705,6 +716,7 @@ Future<void> main() async {
             'sender': event.sender,
             'room': event.roomId,
           });
+          health.recordMessageDropped('rate_limited');
           continue;
         }
 
@@ -777,6 +789,7 @@ Future<void> main() async {
             // The user DMs Dreamfinder on their platform (Signal, Telegram,
             // Discord, etc.). The bridge relays it to Matrix as a DM, and
             // the kickstart state (keyed by sender) picks up the flow.
+            health.recordMessageDropped('kickstart_dm_redirect');
             continue;
           }
 
@@ -854,6 +867,7 @@ Future<void> main() async {
             }
           }
           stopwatch.stop();
+          health.recordMessageProcessed();
           log.info('Message processed', extra: {
             'room': event.roomId,
             'elapsed_ms': stopwatch.elapsedMilliseconds,

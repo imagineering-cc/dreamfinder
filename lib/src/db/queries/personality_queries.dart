@@ -31,16 +31,23 @@ mixin PersonalityQueries {
   /// Each value in [traits] must be between 0 and 100 (enforced by the
   /// CHECK constraint in the schema).
   void savePersonalityTraits(int identityId, Map<String, int> traits) {
-    db.handle.execute(
-      'DELETE FROM personality_traits WHERE identity_id = ?',
-      [identityId],
-    );
-    for (final entry in traits.entries) {
+    db.handle.execute('BEGIN');
+    try {
       db.handle.execute(
-        'INSERT INTO personality_traits (identity_id, trait_name, trait_value) '
-        'VALUES (?, ?, ?)',
-        [identityId, entry.key, entry.value],
+        'DELETE FROM personality_traits WHERE identity_id = ?',
+        [identityId],
       );
+      for (final entry in traits.entries) {
+        db.handle.execute(
+          'INSERT INTO personality_traits (identity_id, trait_name, trait_value) '
+          'VALUES (?, ?, ?)',
+          [identityId, entry.key, entry.value],
+        );
+      }
+      db.handle.execute('COMMIT');
+    } on Object {
+      db.handle.execute('ROLLBACK');
+      rethrow;
     }
   }
 
