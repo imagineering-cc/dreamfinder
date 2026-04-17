@@ -7,6 +7,9 @@
 /// - **Proactive nudges**: At the configured nudge hour, asks the agent to
 ///   check Kan for overdue/stale cards and nudge the team. Daily dedup
 ///   via `bot_metadata`.
+/// - **Task radar**: Autonomous background scans at jittered intervals
+///   (3–6 hours) during waking hours. Synthesizes across all data sources
+///   with full tool access.
 /// - **Nightly dreams**: Triggers the dream cycle for workspace-linked
 ///   groups during the 3 AM cleanup window.
 /// - **Data cleanup**: Removes old reminders and calendar reminder records.
@@ -17,6 +20,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math';
 import 'dart:developer' as developer;
 
 import 'package:timezone/data/latest.dart' as tzdata;
@@ -67,7 +71,8 @@ class Scheduler {
     this.triggerDream,
     this.backfill,
     this.consolidator,
-  });
+    Random? random,
+  }) : _random = random ?? Random();
 
   final Queries queries;
   final SendMessageFn sendMessage;
@@ -100,6 +105,22 @@ class Scheduler {
   /// Tracks the last date (YYYY-MM-DD) that data cleanup ran, to ensure
   /// it fires exactly once per day regardless of timer drift.
   String? _lastCleanupDate;
+
+  /// Random number generator for jittered radar intervals.
+  final Random _random;
+
+  /// Next scheduled radar scan time per group (UTC).
+  ///
+  /// Computed lazily on first tick and after each scan. Jittered between
+  /// [_radarMinIntervalHours] and [_radarMaxIntervalHours] to avoid
+  /// synchronized spikes across groups.
+  final Map<String, DateTime> _nextRadarScan = {};
+
+  /// Minimum hours between radar scans for a single group.
+  static const _radarMinIntervalHours = 3;
+
+  /// Maximum hours between radar scans for a single group.
+  static const _radarMaxIntervalHours = 6;
 
   /// Starts the scheduler, ticking every 60 seconds.
   void start() {
@@ -153,10 +174,8 @@ class Scheduler {
 
       // Check if it's summary hour — send a summary of today's responses.
       if (localNow.hour == config.summaryHour) {
-        final session =
-            queries.getActiveStandupSession(config.groupId, today);
-        if (session != null &&
-            session.status == StandupSessionStatus.active) {
+        final session = queries.getActiveStandupSession(config.groupId, today);
+        if (session != null && session.status == StandupSessionStatus.active) {
           final responses = queries.getStandupResponses(session.id);
           if (responses.isNotEmpty) {
             await _sendStandupSummary(config, session, responses);
@@ -170,10 +189,9 @@ class Scheduler {
         await _sendProactiveNudge(config.groupId, today);
       }
 
-      // Check if it's radar hour — run the task radar scan.
-      final radarHour = config.radarHour;
-      if (radarHour != null && localNow.hour == radarHour) {
-        await _sendTaskRadar(config.groupId, today);
+      // Task radar — autonomous jittered background scans.
+      if (config.radarEnabled) {
+        await _maybeRunRadar(config.groupId, now, localNow);
       }
     }
 
@@ -216,8 +234,8 @@ class Scheduler {
         final composed = await compose(
           config.groupId,
           'Send a standup prompt. Ask the team what they worked on yesterday, '
-              "what they're working on today, and if they have any blockers. "
-              "Tell them to reply naturally and you'll record their update.",
+          "what they're working on today, and if they have any blockers. "
+          "Tell them to reply naturally and you'll record their update.",
         );
         if (composed.isNotEmpty) {
           message = composed;
@@ -225,7 +243,7 @@ class Scheduler {
       } on Exception catch (e) {
         developer.log(
           'Agent composition failed for ${config.groupId}, '
-              'using hardcoded fallback: $e',
+          'using hardcoded fallback: $e',
           name: 'Scheduler',
           level: 900,
         );
@@ -287,18 +305,17 @@ class Scheduler {
         final composed = await compose(
           config.groupId,
           'Compose a standup summary for the team. '
-              '${responses.length} people responded today. '
-              'Here are their updates:\n\n$responseLines\n'
-              'Summarize the updates, highlight any blockers, and note '
-              'common themes. Keep it concise and useful.',
+          '${responses.length} people responded today. '
+          'Here are their updates:\n\n$responseLines\n'
+          'Summarize the updates, highlight any blockers, and note '
+          'common themes. Keep it concise and useful.',
         );
-        message = composed.isNotEmpty
-            ? composed
-            : _buildHardcodedSummary(responses);
+        message =
+            composed.isNotEmpty ? composed : _buildHardcodedSummary(responses);
       } on Exception catch (e) {
         developer.log(
           'Agent composition failed for standup summary in '
-              '${config.groupId}: $e',
+          '${config.groupId}: $e',
           name: 'Scheduler',
           level: 900,
         );
@@ -342,11 +359,11 @@ class Scheduler {
         final digest = await compose(
           chatId,
           'You have ${repoNames.length} repos on the Repo Radar: '
-              '${repoNames.join(", ")}. '
-              'Use crawl_repo on each to refresh their metadata, then share '
-              'a brief digest of anything interesting — new releases, '
-              'rising stars, notable issues. Keep it concise and useful. '
-              'If nothing notable has changed, say so briefly and move on.',
+          '${repoNames.join(", ")}. '
+          'Use crawl_repo on each to refresh their metadata, then share '
+          'a brief digest of anything interesting — new releases, '
+          'rising stars, notable issues. Keep it concise and useful. '
+          'If nothing notable has changed, say so briefly and move on.',
         );
         if (digest.isNotEmpty) {
           await sendMessage(chatId, digest);
@@ -383,13 +400,13 @@ class Scheduler {
       final nudge = await compose(
         groupId,
         'Check Kan for overdue cards (past their due date) and stale cards '
-            '(no activity in 7+ days).$workspaceContext '
-            'Use get_chat_config to find the workspace if needed, then '
-            'search Kan for cards that need attention. If you find any, '
-            'compose a brief, friendly nudge message for the team — mention '
-            'specific cards by name, note how overdue they are, and ask if '
-            'there are blockers. If nothing needs attention, return an empty '
-            'response. Be helpful, not nagging.',
+        '(no activity in 7+ days).$workspaceContext '
+        'Use get_chat_config to find the workspace if needed, then '
+        'search Kan for cards that need attention. If you find any, '
+        'compose a brief, friendly nudge message for the team — mention '
+        'specific cards by name, note how overdue they are, and ask if '
+        'there are blockers. If nothing needs attention, return an empty '
+        'response. Be helpful, not nagging.',
       );
       if (nudge.isNotEmpty) {
         await sendMessage(groupId, nudge);
@@ -406,19 +423,69 @@ class Scheduler {
     }
   }
 
+  /// Returns a jittered duration between [_radarMinIntervalHours] and
+  /// [_radarMaxIntervalHours].
+  Duration _randomRadarInterval() {
+    final hours = _radarMinIntervalHours +
+        _random.nextDouble() *
+            (_radarMaxIntervalHours - _radarMinIntervalHours);
+    return Duration(minutes: (hours * 60).round());
+  }
+
+  /// Checks whether it's time to run the task radar for [groupId].
+  ///
+  /// Uses jittered intervals (3–6 hours) instead of a fixed hour. Respects
+  /// quiet hours (7 AM – 10 PM local) and a minimum-interval frequency cap
+  /// persisted in `bot_metadata` to survive restarts.
+  Future<void> _maybeRunRadar(
+    String groupId,
+    DateTime now,
+    DateTime localNow,
+  ) async {
+    // Only ruminate during waking hours (7 AM – 10 PM local).
+    if (localNow.hour < 7 || localNow.hour >= 22) return;
+
+    // Initialize next-scan time if not set (first tick after startup).
+    // Stagger 30–90 minutes out so groups don't all fire at once.
+    if (!_nextRadarScan.containsKey(groupId)) {
+      _nextRadarScan[groupId] = now.add(
+        Duration(minutes: 30 + _random.nextInt(60)),
+      );
+      return;
+    }
+
+    // Not time yet.
+    if (now.isBefore(_nextRadarScan[groupId]!)) return;
+
+    // Frequency cap: check metadata for last scan timestamp (survives restarts).
+    final lastKey = 'task_radar_last::$groupId';
+    final lastScanStr = queries.getMetadata(lastKey);
+    if (lastScanStr != null) {
+      final lastScan = DateTime.tryParse(lastScanStr);
+      if (lastScan != null &&
+          now.difference(lastScan).inHours < _radarMinIntervalHours) {
+        // Too soon — reschedule and skip.
+        _nextRadarScan[groupId] = now.add(_randomRadarInterval());
+        return;
+      }
+    }
+
+    // Schedule the next scan regardless of outcome.
+    _nextRadarScan[groupId] = now.add(_randomRadarInterval());
+
+    // Run the scan.
+    await _sendTaskRadar(groupId, now);
+  }
+
   /// Runs the task radar — a proactive scan across all data sources to
   /// suggest tasks the team should consider.
   ///
   /// Unlike [_sendProactiveNudge] which only checks for overdue cards,
   /// the task radar has full tool access and synthesizes across Kan, Outline,
   /// calendar, team profiles, standup patterns, and conversation memory.
-  Future<void> _sendTaskRadar(String groupId, String date) async {
+  Future<void> _sendTaskRadar(String groupId, DateTime now) async {
     final compose = composeWithTools;
     if (compose == null) return;
-
-    // Daily dedup — only scan once per group per day.
-    final radarKey = 'task_radar::$groupId::$date';
-    if (queries.getMetadata(radarKey) != null) return;
 
     // Look up the workspace name for context.
     final workspace = queries.getWorkspaceLink(groupId);
@@ -430,29 +497,30 @@ class Scheduler {
       final suggestion = await compose(
         groupId,
         'You have time to think about what the team should work on. Look '
-            'around — check the board, recent standups, upcoming events, your '
-            'knowledge base, and what you remember from conversations. Connect '
-            'dots across these sources.$workspaceContext\n\n'
-            'Some questions to consider (not a checklist — follow what\'s '
-            'interesting):\n'
-            '- Is anyone working on something that doesn\'t have a card yet?\n'
-            '- Are there upcoming events that need prep work?\n'
-            '- Is there knowledge in Outline that suggests untracked work?\n'
-            '- Are there patterns in recent standups (repeated blockers, '
-            'mentions of things people want to do)?\n'
-            '- Who seems underloaded or has expressed interest in something '
-            'unassigned?\n\n'
-            'If something stands out, suggest 1-3 specific tasks. Name who '
-            'might be a good fit and why. If nothing stands out, say so '
-            'briefly — don\'t manufacture work.\n\n'
-            'Be specific and grounded — reference actual cards, docs, events, '
-            'and people by name.',
+        'around — check the board, recent standups, upcoming events, your '
+        'knowledge base, and what you remember from conversations. Connect '
+        'dots across these sources.$workspaceContext\n\n'
+        'Some questions to consider (not a checklist — follow what\'s '
+        'interesting):\n'
+        '- Is anyone working on something that doesn\'t have a card yet?\n'
+        '- Are there upcoming events that need prep work?\n'
+        '- Is there knowledge in Outline that suggests untracked work?\n'
+        '- Are there patterns in recent standups (repeated blockers, '
+        'mentions of things people want to do)?\n'
+        '- Who seems underloaded or has expressed interest in something '
+        'unassigned?\n\n'
+        'If something stands out, suggest 1-3 specific tasks. Name who '
+        'might be a good fit and why. If nothing stands out, say so '
+        'briefly — don\'t manufacture work.\n\n'
+        'Be specific and grounded — reference actual cards, docs, events, '
+        'and people by name.',
       );
       if (suggestion.isNotEmpty) {
         await sendMessage(groupId, suggestion);
       }
-      // Mark as scanned regardless — avoids retrying when nothing to suggest.
-      queries.setMetadata(radarKey, DateTime.now().toUtc().toIso8601String());
+      // Record scan timestamp for frequency cap (survives restarts).
+      final lastKey = 'task_radar_last::$groupId';
+      queries.setMetadata(lastKey, now.toUtc().toIso8601String());
     } on Exception catch (e) {
       developer.log(
         'Task radar failed for $groupId: $e',
@@ -518,4 +586,3 @@ class Scheduler {
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
       '${dt.day.toString().padLeft(2, '0')}';
 }
-

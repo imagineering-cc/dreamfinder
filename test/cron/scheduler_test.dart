@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:dreamfinder/src/cron/scheduler.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/queries.dart';
@@ -146,9 +148,11 @@ void main() {
       await scheduler.tick(DateTime(2026, 3, 2, 9, 0));
 
       expect(sentMessages, hasLength(1));
-      expect(sentMessages.first.value, equals(
-        'Rise and shine, team! What are you working on today?',
-      ));
+      expect(
+          sentMessages.first.value,
+          equals(
+            'Rise and shine, team! What are you working on today?',
+          ));
     });
 
     test('falls back to hardcoded message when composeViaAgent throws',
@@ -172,7 +176,8 @@ void main() {
       await scheduler.tick(DateTime(2026, 3, 2, 9, 0));
 
       expect(sentMessages, hasLength(1));
-      expect(sentMessages.first.value, equals(Scheduler.hardcodedStandupPrompt));
+      expect(
+          sentMessages.first.value, equals(Scheduler.hardcodedStandupPrompt));
 
       // Session should still be created despite the agent failure.
       final session = queries.getActiveStandupSession('group-1', '2026-03-02');
@@ -222,7 +227,8 @@ void main() {
       await scheduler.tick(DateTime(2026, 3, 2, 9, 0));
 
       expect(sentMessages, hasLength(1));
-      expect(sentMessages.first.value, equals(Scheduler.hardcodedStandupPrompt));
+      expect(
+          sentMessages.first.value, equals(Scheduler.hardcodedStandupPrompt));
     });
   });
 
@@ -236,8 +242,8 @@ void main() {
       );
 
       // Insert an old calendar reminder.
-      queries.recordCalendarReminder('event-old', 'group-1',
-          CalendarReminderWindow.twentyFourHours);
+      queries.recordCalendarReminder(
+          'event-old', 'group-1', CalendarReminderWindow.twentyFourHours);
       db.handle.execute(
         "UPDATE calendar_reminders SET sent_at = datetime('now', '-30 days')",
       );
@@ -251,7 +257,7 @@ void main() {
       expect(queries.getLastReminder('card-old', 'group-1'), isNull);
       expect(
         queries.hasCalendarReminderBeenSent(
-          'event-old', 'group-1', CalendarReminderWindow.twentyFourHours),
+            'event-old', 'group-1', CalendarReminderWindow.twentyFourHours),
         isFalse,
       );
     });
@@ -409,8 +415,7 @@ void main() {
         sendMessage: (groupId, message) async {},
       ).tick(DateTime(2026, 3, 2, 9, 0));
 
-      final session =
-          queries.getActiveStandupSession('group-1', '2026-03-02');
+      final session = queries.getActiveStandupSession('group-1', '2026-03-02');
       queries.upsertStandupResponse(
         sessionId: session!.id,
         userId: 'user-1',
@@ -443,8 +448,7 @@ void main() {
       expect(sentMessages.first.value, 'Here is the standup summary!');
 
       // Session should be marked as summarized.
-      final updated =
-          queries.getActiveStandupSession('group-1', '2026-03-02');
+      final updated = queries.getActiveStandupSession('group-1', '2026-03-02');
       expect(updated!.status, StandupSessionStatus.summarized);
     });
 
@@ -457,8 +461,7 @@ void main() {
 
       // Create session and mark it as already summarized.
       queries.createStandupSession(groupId: 'group-1', date: '2026-03-02');
-      final session =
-          queries.getActiveStandupSession('group-1', '2026-03-02');
+      final session = queries.getActiveStandupSession('group-1', '2026-03-02');
       queries.updateStandupSession(
         session!.id,
         status: StandupSessionStatus.summarized,
@@ -532,8 +535,7 @@ void main() {
       );
 
       queries.createStandupSession(groupId: 'group-1', date: '2026-03-02');
-      final session =
-          queries.getActiveStandupSession('group-1', '2026-03-02');
+      final session = queries.getActiveStandupSession('group-1', '2026-03-02');
       queries.upsertStandupResponse(
         sessionId: session!.id,
         userId: 'user-1',
@@ -559,8 +561,7 @@ void main() {
       expect(sentMessages.first, contains('Did stuff'));
 
       // Session should still be marked summarized.
-      final updated =
-          queries.getActiveStandupSession('group-1', '2026-03-02');
+      final updated = queries.getActiveStandupSession('group-1', '2026-03-02');
       expect(updated!.status, StandupSessionStatus.summarized);
     });
 
@@ -572,8 +573,7 @@ void main() {
       );
 
       queries.createStandupSession(groupId: 'group-1', date: '2026-03-02');
-      final session =
-          queries.getActiveStandupSession('group-1', '2026-03-02');
+      final session = queries.getActiveStandupSession('group-1', '2026-03-02');
       queries.upsertStandupResponse(
         sessionId: session!.id,
         userId: 'user-1',
@@ -749,8 +749,8 @@ void main() {
         hasLength(1),
       );
       expect(
-        sentMessages.where(
-            (e) => e.key == 'room-1' && e.value.contains('attention')),
+        sentMessages
+            .where((e) => e.key == 'room-1' && e.value.contains('attention')),
         hasLength(1),
       );
     });
@@ -850,46 +850,45 @@ void main() {
     });
   });
 
-  group('Scheduler task radar', () {
-    test('sends task radar at configured radarHour', () async {
+  group('Scheduler task radar (autonomous)', () {
+    // Use a seeded Random so jitter intervals are deterministic in tests.
+    // Random(42) produces nextDouble() ~ 0.73, nextInt(60) ~ 43.
+    // So first scan: +73 min, interval: 3 + 0.73*3 = 5.19h ~ 311 min.
+
+    test('fires scan after jitter interval elapses', () async {
       queries.upsertStandupConfig(
         groupId: 'room-1',
         promptHour: 9,
-        radarHour: 11,
+        radarHour: 1, // Enabled (sentinel).
       );
 
-      final composedTasks = <MapEntry<String, String>>[];
-      final sentMessages = <MapEntry<String, String>>[];
-
+      var radarCount = 0;
       final scheduler = Scheduler(
         queries: queries,
-        sendMessage: (groupId, message) async {
-          sentMessages.add(MapEntry(groupId, message));
-        },
+        sendMessage: (groupId, message) async {},
         composeWithTools: (groupId, taskDescription) async {
-          composedTasks.add(MapEntry(groupId, taskDescription));
-          return 'I noticed a few things the team could pick up...';
+          radarCount++;
+          return 'Task suggestion!';
         },
+        random: Random(42),
       );
 
-      // 11 AM — radar hour.
-      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      final base = DateTime(2026, 3, 2, 10, 0); // 10 AM — waking hours.
 
-      expect(composedTasks, hasLength(1));
-      expect(composedTasks.first.key, equals('room-1'));
-      expect(composedTasks.first.value, contains('team should work on'));
-      expect(
-        sentMessages.where(
-            (e) => e.key == 'room-1' && e.value.contains('pick up')),
-        hasLength(1),
-      );
+      // First tick initializes next-scan time (30-90 min out). No scan yet.
+      await scheduler.tick(base);
+      expect(radarCount, equals(0));
+
+      // Tick 2 hours later — past the stagger window, should fire.
+      await scheduler.tick(base.add(const Duration(hours: 2)));
+      expect(radarCount, equals(1));
     });
 
-    test('does not scan when radarHour is not set', () async {
+    test('does not scan when radar is disabled (radarHour null)', () async {
       queries.upsertStandupConfig(
         groupId: 'room-1',
         promptHour: 9,
-        // No radarHour.
+        // No radarHour — disabled.
       );
 
       var radarCalled = false;
@@ -902,15 +901,61 @@ void main() {
         },
       );
 
-      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      await scheduler.tick(DateTime(2026, 3, 2, 10, 0));
+      await scheduler.tick(DateTime(2026, 3, 2, 14, 0));
       expect(radarCalled, isFalse);
     });
 
-    test('deduplicates — only scans once per day', () async {
+    test('does not scan during quiet hours (before 7 AM)', () async {
       queries.upsertStandupConfig(
         groupId: 'room-1',
         promptHour: 9,
-        radarHour: 11,
+        radarHour: 1,
+      );
+
+      var radarCalled = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeWithTools: (groupId, taskDescription) async {
+          radarCalled = true;
+          return '';
+        },
+      );
+
+      // 5 AM — quiet hours.
+      await scheduler.tick(DateTime(2026, 3, 2, 5, 0));
+      await scheduler.tick(DateTime(2026, 3, 2, 5, 30));
+      expect(radarCalled, isFalse);
+    });
+
+    test('does not scan during quiet hours (after 10 PM)', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 1,
+      );
+
+      var radarCalled = false;
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeWithTools: (groupId, taskDescription) async {
+          radarCalled = true;
+          return '';
+        },
+      );
+
+      // 11 PM — quiet hours.
+      await scheduler.tick(DateTime(2026, 3, 2, 23, 0));
+      expect(radarCalled, isFalse);
+    });
+
+    test('respects minimum interval between scans', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 1,
       );
 
       var radarCount = 0;
@@ -921,14 +966,18 @@ void main() {
           radarCount++;
           return 'Suggestion!';
         },
+        random: Random(42),
       );
 
-      // First tick at 11 AM — radar fires.
-      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      final base = DateTime(2026, 3, 2, 10, 0);
+
+      // First tick: initializes. Second tick 2h later: fires.
+      await scheduler.tick(base);
+      await scheduler.tick(base.add(const Duration(hours: 2)));
       expect(radarCount, equals(1));
 
-      // Second tick same hour — should NOT re-scan (dedup via bot_metadata).
-      await scheduler.tick(DateTime(2026, 3, 2, 11, 30));
+      // Tick 1 hour later — within minimum interval (3h). Should NOT fire.
+      await scheduler.tick(base.add(const Duration(hours: 3)));
       expect(radarCount, equals(1));
     });
 
@@ -936,7 +985,7 @@ void main() {
       queries.upsertStandupConfig(
         groupId: 'room-1',
         promptHour: 9,
-        radarHour: 11,
+        radarHour: 1,
       );
 
       final sentMessages = <String>[];
@@ -948,9 +997,12 @@ void main() {
         composeWithTools: (groupId, taskDescription) async {
           return '';
         },
+        random: Random(42),
       );
 
-      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      final base = DateTime(2026, 3, 2, 10, 0);
+      await scheduler.tick(base);
+      await scheduler.tick(base.add(const Duration(hours: 2)));
       expect(sentMessages, isEmpty);
     });
 
@@ -958,7 +1010,7 @@ void main() {
       queries.upsertStandupConfig(
         groupId: 'room-1',
         promptHour: 9,
-        radarHour: 11,
+        radarHour: 1,
       );
 
       final scheduler = Scheduler(
@@ -967,17 +1019,20 @@ void main() {
         composeWithTools: (groupId, taskDescription) async {
           throw Exception('MCP unreachable');
         },
+        random: Random(42),
       );
 
+      final base = DateTime(2026, 3, 2, 10, 0);
+      await scheduler.tick(base);
       // Should not throw.
-      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      await scheduler.tick(base.add(const Duration(hours: 2)));
     });
 
     test('does not scan when composeWithTools is null', () async {
       queries.upsertStandupConfig(
         groupId: 'room-1',
         promptHour: 9,
-        radarHour: 11,
+        radarHour: 1,
       );
 
       final sentMessages = <String>[];
@@ -986,10 +1041,12 @@ void main() {
         sendMessage: (groupId, message) async {
           sentMessages.add(message);
         },
-        // No composeWithTools provided.
+        random: Random(42),
       );
 
-      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      final base = DateTime(2026, 3, 2, 10, 0);
+      await scheduler.tick(base);
+      await scheduler.tick(base.add(const Duration(hours: 2)));
       expect(sentMessages, isEmpty);
     });
 
@@ -997,7 +1054,7 @@ void main() {
       queries.upsertStandupConfig(
         groupId: 'room-1',
         promptHour: 9,
-        radarHour: 11,
+        radarHour: 1,
       );
       queries.createWorkspaceLink(
         groupId: 'room-1',
@@ -1014,10 +1071,52 @@ void main() {
           capturedDescription = taskDescription;
           return '';
         },
+        random: Random(42),
       );
 
-      await scheduler.tick(DateTime(2026, 3, 2, 11, 0));
+      final base = DateTime(2026, 3, 2, 10, 0);
+      await scheduler.tick(base);
+      await scheduler.tick(base.add(const Duration(hours: 2)));
       expect(capturedDescription, contains('Imagineering'));
+    });
+
+    test('persists last scan timestamp across scheduler instances', () async {
+      queries.upsertStandupConfig(
+        groupId: 'room-1',
+        promptHour: 9,
+        radarHour: 1,
+      );
+
+      var radarCount = 0;
+      Future<String> compose(String g, String t) async {
+        radarCount++;
+        return 'Suggestion!';
+      }
+
+      // First scheduler instance scans.
+      final s1 = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeWithTools: compose,
+        random: Random(42),
+      );
+      final base = DateTime(2026, 3, 2, 10, 0);
+      await s1.tick(base);
+      await s1.tick(base.add(const Duration(hours: 2)));
+      expect(radarCount, equals(1));
+
+      // Second scheduler instance (simulating restart) — should respect
+      // the persisted last-scan timestamp and not scan again within 3h.
+      final s2 = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+        composeWithTools: compose,
+        random: Random(99),
+      );
+      // Only 1 hour after the first scan — should not fire.
+      await s2.tick(base.add(const Duration(hours: 3)));
+      await s2.tick(base.add(const Duration(hours: 3, minutes: 30)));
+      expect(radarCount, equals(1));
     });
   });
 
