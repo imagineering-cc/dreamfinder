@@ -850,7 +850,15 @@ Future<void> main() async {
               .timeout(const Duration(minutes: 3));
           health.recordClaudeSuccess();
 
-          if (response.isNotEmpty) {
+          // River can reply with [skip] to deliberately stay quiet.
+          final skipped = response.trim() == '[skip]';
+          if (skipped) {
+            log.info('Chose to stay quiet', extra: {
+              'room': event.roomId,
+            });
+            health.recordMessageDropped('bot_skipped');
+          }
+          if (response.isNotEmpty && !skipped) {
             log.info('Responding', extra: {
               'room': event.roomId,
               'length': response.length,
