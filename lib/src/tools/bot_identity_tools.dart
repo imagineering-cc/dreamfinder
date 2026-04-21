@@ -36,6 +36,7 @@ void registerBotIdentityOnChanged(void Function() callback) {
 void registerBotIdentityTools(ToolRegistry registry, Queries queries) {
   registry.registerCustomTool(_getIdentityTool(queries));
   registry.registerCustomTool(_setIdentityTool(queries));
+  registry.registerCustomTool(_adjustTraitTool(queries));
 }
 
 CustomToolDef _getIdentityTool(Queries queries) {
@@ -162,6 +163,66 @@ CustomToolDef _setIdentityTool(Queries queries) {
         'tone': tone,
         if (savedTraits != null) 'traits': savedTraits,
         if (traitWarnings != null) 'trait_warnings': traitWarnings,
+      });
+    },
+  );
+}
+
+CustomToolDef _adjustTraitTool(Queries queries) {
+  return CustomToolDef(
+    name: 'adjust_trait',
+    description: 'Adjust a single personality trait in real time. '
+        'Anyone can use this — no admin required. The change takes '
+        'effect immediately on the next message. '
+        'Known traits: directness, warmth, humor, formality, chaos.',
+    inputSchema: const <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'trait_name': <String, dynamic>{
+          'type': 'string',
+          'description': 'The trait to adjust '
+              '(directness, warmth, humor, formality, chaos).',
+        },
+        'value': <String, dynamic>{
+          'type': 'integer',
+          'description': 'New value from 0 to 100.',
+          'minimum': 0,
+          'maximum': 100,
+        },
+      },
+      'required': <String>['trait_name', 'value'],
+    },
+    handler: (args) async {
+      final traitName = args['trait_name'] as String;
+      final value = (args['value'] as num).toInt();
+
+      final identity = queries.getBotIdentity();
+      if (identity == null) {
+        return jsonEncode(<String, dynamic>{
+          'error': 'No identity set. Run a naming ceremony first.',
+        });
+      }
+
+      // Read current traits, update the one requested.
+      final currentTraits = queries.getPersonalityTraits(identity.id);
+      final traitMap = {for (final t in currentTraits) t.name: t.value};
+      final oldValue = traitMap[traitName];
+      traitMap[traitName] = value;
+
+      queries.savePersonalityTraits(identity.id, traitMap);
+
+      String? warning;
+      if (!knownTraitNames.contains(traitName)) {
+        warning = 'Unknown trait "$traitName" — known traits are: '
+            '${knownTraitNames.join(', ')}';
+      }
+
+      return jsonEncode(<String, dynamic>{
+        'success': true,
+        'trait_name': traitName,
+        'old_value': oldValue,
+        'new_value': value,
+        if (warning != null) 'warning': warning,
       });
     },
   );
