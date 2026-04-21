@@ -190,4 +190,95 @@ void main() {
       expect(queries.getBotIdentity(), isNull);
     });
   });
+
+  group('adjust_trait', () {
+    test('adjusts a single trait on the current identity', () async {
+      // Set up an identity with traits first.
+      await registry.executeTool('set_bot_identity', {
+        'name': 'River',
+        'pronouns': 'they/them',
+        'tone': 'sardonic',
+        'traits': {
+          'directness': 85,
+          'warmth': 30,
+          'humor': 80,
+          'formality': 10,
+          'chaos': 60,
+        },
+      });
+
+      // Adjust one trait.
+      final result = await registry.executeTool('adjust_trait', {
+        'trait_name': 'chaos',
+        'value': 90,
+      });
+      final data = jsonDecode(result) as Map<String, dynamic>;
+
+      expect(data['success'], isTrue);
+      expect(data['trait_name'], equals('chaos'));
+      expect(data['old_value'], equals(60));
+      expect(data['new_value'], equals(90));
+
+      // Verify other traits unchanged.
+      final identity = queries.getBotIdentity()!;
+      final traits = queries.getPersonalityTraits(identity.id);
+      expect(
+        traits.firstWhere((t) => t.name == 'chaos').value,
+        equals(90),
+      );
+      expect(
+        traits.firstWhere((t) => t.name == 'humor').value,
+        equals(80),
+      );
+    });
+
+    test('returns error when no identity exists', () async {
+      final result = await registry.executeTool('adjust_trait', {
+        'trait_name': 'humor',
+        'value': 50,
+      });
+      final data = jsonDecode(result) as Map<String, dynamic>;
+      expect(data['error'], contains('No identity'));
+    });
+
+    test('works for non-admin callers', () async {
+      await registry.executeTool('set_bot_identity', {
+        'name': 'River',
+        'pronouns': 'they/them',
+        'tone': 'sardonic',
+        'traits': {'humor': 80},
+      });
+
+      // Switch to non-admin context.
+      registry.setContext(const ToolContext(
+        senderId: 'regular-user',
+        isAdmin: false,
+        chatId: 'test-chat',
+      ));
+
+      final result = await registry.executeTool('adjust_trait', {
+        'trait_name': 'humor',
+        'value': 60,
+      });
+      final data = jsonDecode(result) as Map<String, dynamic>;
+      expect(data['success'], isTrue);
+    });
+
+    test('warns about unknown trait name', () async {
+      await registry.executeTool('set_bot_identity', {
+        'name': 'River',
+        'pronouns': 'they/them',
+        'tone': 'sardonic',
+        'traits': {'humor': 80},
+      });
+
+      final result = await registry.executeTool('adjust_trait', {
+        'trait_name': 'humour',
+        'value': 60,
+      });
+      final data = jsonDecode(result) as Map<String, dynamic>;
+      expect(data['success'], isTrue);
+      expect(data['warning'], contains('humour'));
+    });
+  });
 }
