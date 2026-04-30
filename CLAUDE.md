@@ -29,7 +29,7 @@ Still respect correctness and type safety, but bias toward shipping.
 | MCP             | dart_mcp ^0.4.1                        |
 | Database        | SQLite (via sqlite3 package)            |
 | MCP Tools       | Kan.bn, Outline, Radicale, Playwright  |
-| Deployment      | Docker on GCP                          |
+| Deployment      | Docker on OCI                          |
 | Package Manager | dart pub                               |
 
 ## Project Structure
