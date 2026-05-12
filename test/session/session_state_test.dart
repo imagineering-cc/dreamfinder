@@ -69,8 +69,7 @@ void main() {
 
     test('returns false if session already active', () {
       state.startSession(groupId, initiatorId: 'user-1');
-      final startedAgain =
-          state.startSession(groupId, initiatorId: 'user-1');
+      final startedAgain = state.startSession(groupId, initiatorId: 'user-1');
       expect(startedAgain, isFalse);
     });
 

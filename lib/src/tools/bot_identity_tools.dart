@@ -106,9 +106,9 @@ CustomToolDef _setIdentityTool(Queries queries) {
           'type': 'object',
           'description':
               'Personality trait proportions (0-100). TARS-style blending. '
-              'Keys: directness, warmth, humor, formality, chaos. '
-              'Example: {"directness": 85, "warmth": 30, "humor": 80, '
-              '"formality": 10, "chaos": 60}',
+                  'Keys: directness, warmth, humor, formality, chaos. '
+                  'Example: {"directness": 85, "warmth": 30, "humor": 80, '
+                  '"formality": 10, "chaos": 60}',
           'additionalProperties': <String, dynamic>{
             'type': 'integer',
             'minimum': 0,
@@ -140,9 +140,8 @@ CustomToolDef _setIdentityTool(Queries queries) {
         final traits = rawTraits.map(
           (k, v) => MapEntry(k, (v as num).toInt()),
         );
-        final unknown = traits.keys
-            .where((k) => !knownTraitNames.contains(k))
-            .toList();
+        final unknown =
+            traits.keys.where((k) => !knownTraitNames.contains(k)).toList();
         if (unknown.isNotEmpty) {
           traitWarnings = unknown
               .map((k) => 'Unknown trait "$k" — known traits are: '

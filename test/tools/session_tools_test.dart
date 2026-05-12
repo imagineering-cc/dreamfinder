@@ -126,8 +126,7 @@ void main() {
       ];
 
       for (final expected in expectedPhases) {
-        final result =
-            await call('advance_session', {'group_id': groupId});
+        final result = await call('advance_session', {'group_id': groupId});
         expect(result['new_phase'], equals(expected.number),
             reason: 'Expected ${expected.label}');
       }

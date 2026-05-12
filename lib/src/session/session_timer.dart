@@ -102,10 +102,12 @@ class SessionTimer {
         SessionPhase.pitch => const Duration(minutes: 10),
         SessionPhase.build1 ||
         SessionPhase.build2 ||
-        SessionPhase.build3 => const Duration(minutes: 25),
+        SessionPhase.build3 =>
+          const Duration(minutes: 25),
         SessionPhase.chat1 ||
         SessionPhase.chat2 ||
-        SessionPhase.chat3 => const Duration(minutes: 5),
+        SessionPhase.chat3 =>
+          const Duration(minutes: 5),
         SessionPhase.demo => null,
       };
 

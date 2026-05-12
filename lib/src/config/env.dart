@@ -81,7 +81,8 @@ class Env {
       matrixUsername: matrixUsername,
       matrixPassword: matrixPassword,
       matrixIgnoreRooms: _parseList(dotEnv['MATRIX_IGNORE_ROOMS']),
-      matrixAlwaysRespondRooms: _parseList(dotEnv['MATRIX_ALWAYS_RESPOND_ROOMS']),
+      matrixAlwaysRespondRooms:
+          _parseList(dotEnv['MATRIX_ALWAYS_RESPOND_ROOMS']),
       kanBaseUrl: dotEnv['KAN_BASE_URL'],
       kanApiKey: dotEnv['KAN_API_KEY'],
       outlineBaseUrl: dotEnv['OUTLINE_BASE_URL'],
@@ -300,8 +301,7 @@ class Env {
   final int rateLimitGroupWindowSeconds;
 
   /// Returns `true` if [userId] is in the configured admin list.
-  bool isAdmin(String? userId) =>
-      userId != null && adminIds.contains(userId);
+  bool isAdmin(String? userId) => userId != null && adminIds.contains(userId);
 
   bool get kanEnabled => kanApiKey != null && kanApiKey!.isNotEmpty;
   bool get outlineEnabled => outlineApiKey != null && outlineApiKey!.isNotEmpty;
@@ -341,6 +341,10 @@ class Env {
   /// Parses a comma-separated string into a trimmed list.
   static List<String> _parseList(String? value) {
     if (value == null || value.isEmpty) return const [];
-    return value.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    return value
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 }

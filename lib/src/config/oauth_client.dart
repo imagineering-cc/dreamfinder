@@ -151,8 +151,7 @@ class OAuthTokenManager {
       final body = response.body.length > 200
           ? '${response.body.substring(0, 200)}...'
           : response.body;
-      final msg =
-          'OAuth token refresh failed (${response.statusCode}): $body';
+      final msg = 'OAuth token refresh failed (${response.statusCode}): $body';
       _log.error(msg);
       _lastError = msg;
       throw StateError(msg);

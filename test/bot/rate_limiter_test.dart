@@ -10,8 +10,8 @@ void main() {
         maxGroupMessages: 3,
       );
 
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isTrue);
     });
 
     test('blocks rapid messages from the same sender', () {
@@ -21,10 +21,10 @@ void main() {
         maxGroupMessages: 10,
       );
 
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isTrue);
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isFalse);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isFalse);
     });
 
     test('allows different senders within cooldown', () {
@@ -34,10 +34,10 @@ void main() {
         maxGroupMessages: 10,
       );
 
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isTrue);
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-2'),
-          isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-2'), isTrue);
     });
 
     test('blocks when group message limit is exceeded', () {
@@ -47,13 +47,13 @@ void main() {
         maxGroupMessages: 2,
       );
 
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isTrue);
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-2'),
-          isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-2'), isTrue);
       // Third message in the window — should be blocked.
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-3'),
-          isFalse);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-3'), isFalse);
     });
 
     test('isolates rate limits between groups', () {
@@ -63,11 +63,11 @@ void main() {
         maxGroupMessages: 1,
       );
 
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isTrue);
       // Different group — independent limit.
-      expect(limiter.shouldAllow(chatId: 'group-2', senderId: 'user-1'),
-          isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-2', senderId: 'user-1'), isTrue);
     });
 
     test('allows DMs without group throttling', () {
@@ -95,15 +95,15 @@ void main() {
         maxGroupMessages: 100,
       );
 
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isTrue);
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isFalse);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isFalse);
 
       // Wait for cooldown to expire.
       await Future<void>.delayed(const Duration(milliseconds: 60));
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isTrue);
     });
 
     test('custom values are respected', () {
@@ -152,10 +152,10 @@ void main() {
 
       // After eviction, the same users/groups should be allowed again
       // (entries were cleaned up, not just expired naturally).
-      expect(limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'),
-          isTrue);
-      expect(limiter.shouldAllow(chatId: 'group-2', senderId: 'user-2'),
-          isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-1', senderId: 'user-1'), isTrue);
+      expect(
+          limiter.shouldAllow(chatId: 'group-2', senderId: 'user-2'), isTrue);
     });
   });
 }

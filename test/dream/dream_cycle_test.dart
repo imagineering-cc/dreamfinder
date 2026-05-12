@@ -66,11 +66,10 @@ void main() {
             // Phase 1: Light (triage)
             1 => 'Filed 2 cards and 1 doc. [DEPTH: continue]',
             // Phase 2: Deep (analysis) — outputs 2 tasks
-            2 =>
-              'Found work to do.\n'
-                  '[TASK:review] Auth refactor shares session logic with onboarding\n'
-                  '[TASK:triage] Calendar events overlap with standup timing\n'
-                  '[DEPTH: continue]',
+            2 => 'Found work to do.\n'
+                '[TASK:review] Auth refactor shares session logic with onboarding\n'
+                '[TASK:triage] Calendar events overlap with standup timing\n'
+                '[DEPTH: continue]',
             // Branch 1 (parallel)
             3 => 'Reviewed auth × onboarding: created Outline doc.',
             // Branch 2 (parallel)
@@ -184,14 +183,13 @@ void main() {
           callCount++;
           final text = switch (callCount) {
             1 => 'Filed items. [DEPTH: continue]',
-            2 =>
-              'Tasks:\n'
-                  '[TASK:triage] Task 1\n'
-                  '[TASK:nudge] Task 2\n'
-                  '[TASK:draft] Task 3\n'
-                  '[TASK:review] Task 4\n'
-                  '[TASK:prep] Task 5\n' // This 5th should be dropped.
-                  '[TASK:explore] Task 6\n', // This too.
+            2 => 'Tasks:\n'
+                '[TASK:triage] Task 1\n'
+                '[TASK:nudge] Task 2\n'
+                '[TASK:draft] Task 3\n'
+                '[TASK:review] Task 4\n'
+                '[TASK:prep] Task 5\n' // This 5th should be dropped.
+                '[TASK:explore] Task 6\n', // This too.
             _ => 'Done.',
           };
           return AgentResponse(
@@ -256,8 +254,7 @@ void main() {
 
       // If branches ran in parallel, their start times should be very close.
       // If sequential, each would be ~50ms apart.
-      final spread =
-          branchStartTimes.last - branchStartTimes.first;
+      final spread = branchStartTimes.last - branchStartTimes.first;
       // Allow 30ms spread for parallel — sequential would be ~100ms+.
       expect(spread, lessThan(30));
     });

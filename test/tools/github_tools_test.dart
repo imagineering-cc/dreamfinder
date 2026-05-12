@@ -162,7 +162,12 @@ void main() {
     test('returns formatted directory listing', () async {
       final responseBody = jsonEncode([
         {'name': 'lib', 'type': 'dir', 'size': 0, 'path': 'lib'},
-        {'name': 'pubspec.yaml', 'type': 'file', 'size': 1024, 'path': 'pubspec.yaml'},
+        {
+          'name': 'pubspec.yaml',
+          'type': 'file',
+          'size': 1024,
+          'path': 'pubspec.yaml'
+        },
         {'name': 'README.md', 'type': 'file', 'size': 512, 'path': 'README.md'},
       ]);
 

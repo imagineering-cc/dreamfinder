@@ -191,8 +191,7 @@ void main() {
       expect(capturedRequest, isNotNull);
       expect(capturedRequest!.method, 'PUT');
 
-      final body =
-          jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
+      final body = jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
       expect(body['msgtype'], 'm.text');
       expect(body['body'], 'Hello\nWorld');
       expect(body['formatted_body'], contains('<br/>'));
@@ -217,8 +216,7 @@ void main() {
         message: '**bold** and *italic* and `code`',
       );
 
-      final body =
-          jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
+      final body = jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
       final html = body['formatted_body'] as String;
       expect(html, contains('<strong>bold</strong>'));
       expect(html, contains('<em>italic</em>'));
@@ -245,8 +243,7 @@ void main() {
       expect(capturedRequest, isNotNull);
       expect(capturedRequest!.method, 'POST');
 
-      final body =
-          jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
+      final body = jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
       expect(body['is_direct'], isTrue);
       expect(body['invite'], contains('@user:test'));
       expect(body['preset'], 'trusted_private_chat');
@@ -290,8 +287,7 @@ void main() {
       expect(capturedRequest, isNotNull);
       expect(capturedRequest!.method, 'PUT');
 
-      final body =
-          jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
+      final body = jsonDecode(capturedRequest!.body) as Map<String, dynamic>;
       expect(body['typing'], isTrue);
     });
 
@@ -379,8 +375,7 @@ void main() {
     // The client therefore drops timeline events from the parsed response when
     // `since` is null, preventing historical member-join events from triggering
     // spurious welcome messages.
-    test(
-        'initial sync suppresses timeline events even if server returns them',
+    test('initial sync suppresses timeline events even if server returns them',
         () async {
       // Simulate a homeserver that ignores the filter and returns a member-join
       // event from history (e.g., a user who joined 2 hours before the bot started).
@@ -425,7 +420,8 @@ void main() {
       expect(
         result.events,
         isEmpty,
-        reason: 'Historical joins from initial sync must not reach the welcome handler',
+        reason:
+            'Historical joins from initial sync must not reach the welcome handler',
       );
 
       // Member counts are still parsed (needed for DM detection).

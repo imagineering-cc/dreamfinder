@@ -80,7 +80,8 @@ void main() {
       loadMemories: (_) => makeRecords(),
     );
 
-    final results = await retriever.retrieve('Tell me about the Dawn Gate', 'group-1');
+    final results =
+        await retriever.retrieve('Tell me about the Dawn Gate', 'group-1');
 
     expect(results, isNotEmpty);
     expect(results.first.record.id, equals(1));
@@ -136,7 +137,8 @@ void main() {
     expect(results, isEmpty);
   });
 
-  test('returns empty list when embedding fails (graceful degradation)', () async {
+  test('returns empty list when embedding fails (graceful degradation)',
+      () async {
     fakeClient.shouldThrow = true;
 
     final retriever = MemoryRetriever(
@@ -182,7 +184,8 @@ void main() {
 
   test('skipRecentMinutes filters out recent memories', () async {
     final now = DateTime.now();
-    final recentTime = now.subtract(const Duration(minutes: 10)).toIso8601String();
+    final recentTime =
+        now.subtract(const Duration(minutes: 10)).toIso8601String();
     final oldTime = now.subtract(const Duration(hours: 2)).toIso8601String();
 
     final records = [
@@ -225,7 +228,8 @@ void main() {
 
   test('skipRecentMinutes defaults to null (no filtering)', () async {
     final now = DateTime.now();
-    final recentTime = now.subtract(const Duration(minutes: 5)).toIso8601String();
+    final recentTime =
+        now.subtract(const Duration(minutes: 5)).toIso8601String();
 
     final records = [
       MemoryRecord(
@@ -267,7 +271,9 @@ void main() {
     expect(defaultResults, hasLength(1));
   });
 
-  test('same-chat memory is retrieved; cross-chat memory from other group is not', () async {
+  test(
+      'same-chat memory is retrieved; cross-chat memory from other group is not',
+      () async {
     final groupARecords = [
       MemoryRecord(
         id: 1,
@@ -302,8 +308,7 @@ void main() {
     List<MemoryRecord> loadVisible(String chatId) {
       return groupARecords
           .where((r) =>
-              r.visibility == MemoryVisibility.crossChat ||
-              r.chatId == chatId)
+              r.visibility == MemoryVisibility.crossChat || r.chatId == chatId)
           .toList();
     }
 

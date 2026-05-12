@@ -320,8 +320,7 @@ class MatrixClient {
     Uri uri, {
     Duration timeout = _defaultTimeout,
   }) async {
-    final response =
-        await _client.get(uri, headers: _headers).timeout(timeout);
+    final response = await _client.get(uri, headers: _headers).timeout(timeout);
     _ensureSuccess(response);
     return response;
   }

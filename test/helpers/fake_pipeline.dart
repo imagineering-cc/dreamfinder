@@ -10,8 +10,7 @@ import 'package:dreamfinder/src/memory/memory_record.dart';
 
 /// Fake [EmbeddingPipeline] that captures [queue] calls for verification.
 class FakePipeline extends EmbeddingPipeline {
-  FakePipeline()
-      : super(client: NullEmbeddingClient(), queries: NullQueries());
+  FakePipeline() : super(client: NullEmbeddingClient(), queries: NullQueries());
 
   /// All calls made to [queue], in order.
   final List<QueueCall> calls = [];

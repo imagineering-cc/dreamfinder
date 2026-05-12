@@ -282,16 +282,16 @@ void main() {
           name: 'outline_search',
           description: 'Search Outline docs',
           handler: (args) async => jsonEncode({
-                'data': [
-                  {
-                    'document': {
-                      'id': 'doc-1',
-                      'title': 'Sprint Retro Notes',
-                      'text': 'We decided to adopt weekly retros.',
-                    },
-                  },
-                ],
-              }),
+            'data': [
+              {
+                'document': {
+                  'id': 'doc-1',
+                  'title': 'Sprint Retro Notes',
+                  'text': 'We decided to adopt weekly retros.',
+                },
+              },
+            ],
+          }),
         ),
       );
       mcpManager.addServerForTesting(
@@ -300,15 +300,15 @@ void main() {
           name: 'kan_search',
           description: 'Search Kan cards',
           handler: (args) async => jsonEncode({
-                'data': [
-                  {
-                    'id': 'card-1',
-                    'title': 'Fix auth middleware',
-                    'description': 'Rewrite for compliance.',
-                    'list': {'name': 'In Progress'},
-                  },
-                ],
-              }),
+            'data': [
+              {
+                'id': 'card-1',
+                'title': 'Fix auth middleware',
+                'description': 'Rewrite for compliance.',
+                'list': {'name': 'In Progress'},
+              },
+            ],
+          }),
         ),
       );
       deepRegistry.setContext(const ToolContext(
@@ -424,16 +424,16 @@ void main() {
           name: 'outline_search',
           description: 'Search Outline',
           handler: (args) async => jsonEncode({
-                'data': [
-                  {
-                    'document': {
-                      'id': 'doc-1',
-                      'title': 'Test',
-                      'text': 'Content',
-                    },
-                  },
-                ],
-              }),
+            'data': [
+              {
+                'document': {
+                  'id': 'doc-1',
+                  'title': 'Test',
+                  'text': 'Content',
+                },
+              },
+            ],
+          }),
         ),
       );
       reg.setContext(const ToolContext(
@@ -486,15 +486,15 @@ void main() {
           name: 'kan_search',
           description: 'Search Kan',
           handler: (args) async => jsonEncode({
-                'data': [
-                  {
-                    'id': 'card-1',
-                    'title': 'A card',
-                    'description': 'Details',
-                    'list': {'name': 'Backlog'},
-                  },
-                ],
-              }),
+            'data': [
+              {
+                'id': 'card-1',
+                'title': 'A card',
+                'description': 'Details',
+                'list': {'name': 'Backlog'},
+              },
+            ],
+          }),
         ),
       );
       reg.setContext(const ToolContext(

@@ -150,7 +150,8 @@ Future<void> main() async {
   }
 
   final serverNames = mcpManager.getServerNames();
-  log.info('MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}');
+  log.info(
+      'MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}');
 
   // Set up calendar event awareness — optional, enabled when CALENDAR_URL is
   // set and Radicale MCP is running.
@@ -167,15 +168,14 @@ Future<void> main() async {
 
   // Expose recent memories via HTTP for the embodied avatar frontend.
   // This uses a simple recency query — no Voyage AI call needed.
-  health.getRecentMemories =
-      (String chatId, {int limit = 5}) =>
-          queries.getRecentVisibleMemories(chatId, limit: limit);
+  health.getRecentMemories = (String chatId, {int limit = 5}) =>
+      queries.getRecentVisibleMemories(chatId, limit: limit);
 
   // Expose recent conversation history for the voice brain bridge.
   // Returns raw message rows; the health check handler groups by chat_id.
-  health.getRecentConversations =
-      ({int limit = 20, String? excludeChatId}) =>
-          _getRecentConversations(database, limit: limit, excludeChatId: excludeChatId);
+  health.getRecentConversations = ({int limit = 20, String? excludeChatId}) =>
+      _getRecentConversations(database,
+          limit: limit, excludeChatId: excludeChatId);
 
   final toolRegistry = ToolRegistry();
   toolRegistry.setMcpManager(mcpManager);
@@ -338,8 +338,7 @@ Future<void> main() async {
     },
     toolRegistry: toolRegistry,
     history: history,
-    onTyping: (chatId) =>
-        matrixClient.sendTypingIndicator(roomId: chatId),
+    onTyping: (chatId) => matrixClient.sendTypingIndicator(roomId: chatId),
     embeddingPipeline: embeddingPipeline,
   );
 
@@ -415,9 +414,8 @@ Future<void> main() async {
         input,
         botName: env.botName,
         identity: id,
-        personalityTraits: id != null
-            ? queries.getPersonalityTraits(id.id)
-            : const [],
+        personalityTraits:
+            id != null ? queries.getPersonalityTraits(id.id) : const [],
       );
     },
   );
@@ -452,9 +450,8 @@ Future<void> main() async {
           input,
           botName: env.botName,
           identity: id,
-          personalityTraits: id != null
-              ? queries.getPersonalityTraits(id.id)
-              : const [],
+          personalityTraits:
+              id != null ? queries.getPersonalityTraits(id.id) : const [],
         ),
       );
     },
@@ -469,12 +466,10 @@ Future<void> main() async {
 
       // Retrieve memories and events — same as the normal message path.
       final memories = memoryRetriever != null
-          ? await memoryRetriever
-                .retrieve(taskDescription, groupId)
-                .timeout(
-                  const Duration(seconds: 10),
-                  onTimeout: () => <MemorySearchResult>[],
-                )
+          ? await memoryRetriever.retrieve(taskDescription, groupId).timeout(
+                const Duration(seconds: 10),
+                onTimeout: () => <MemorySearchResult>[],
+              )
           : <MemorySearchResult>[];
 
       final events = calendarRetriever != null
@@ -563,9 +558,8 @@ Future<void> main() async {
             input,
             botName: env.botName,
             identity: id,
-            personalityTraits: id != null
-                ? queries.getPersonalityTraits(id.id)
-                : const [],
+            personalityTraits:
+                id != null ? queries.getPersonalityTraits(id.id) : const [],
           ),
         );
       },
@@ -678,8 +672,8 @@ Future<void> main() async {
         }
         // Welcome new members joining a group room.
         if (event.isMemberJoin && !matrixClient.isDm(event.roomId)) {
-          final displayName =
-              event.memberDisplayName ?? event.sender.split(':').first.substring(1);
+          final displayName = event.memberDisplayName ??
+              event.sender.split(':').first.substring(1);
           log.info('New member joined', extra: {
             'room': event.roomId,
             'user': event.sender,
@@ -767,15 +761,15 @@ Future<void> main() async {
           // Timeout gracefully — empty results are better than a hung loop.
           final memories = memoryRetriever != null
               ? await memoryRetriever
-                    .retrieve(
-                      text,
-                      event.roomId,
-                      skipRecentMinutes: history.ttl.inMinutes,
-                    )
-                    .timeout(
-                      const Duration(seconds: 10),
-                      onTimeout: () => <MemorySearchResult>[],
-                    )
+                  .retrieve(
+                    text,
+                    event.roomId,
+                    skipRecentMinutes: history.ttl.inMinutes,
+                  )
+                  .timeout(
+                    const Duration(seconds: 10),
+                    onTimeout: () => <MemorySearchResult>[],
+                  )
               : <MemorySearchResult>[];
 
           // Fetch upcoming calendar events for awareness.
@@ -927,7 +921,8 @@ Future<void> main() async {
       // Exponential backoff on sync failure (1s → 2s → 4s → ... → 30s).
       await Future<void>.delayed(backoff);
       backoff = Duration(
-        milliseconds: min(backoff.inMilliseconds * 2, _maxBackoff.inMilliseconds),
+        milliseconds:
+            min(backoff.inMilliseconds * 2, _maxBackoff.inMilliseconds),
       );
       continue;
     }
@@ -1113,8 +1108,9 @@ String _buildFullSystemPrompt({
   }).toList();
 
   final identity = queries.getBotIdentity();
-  final personalityTraits =
-      identity != null ? queries.getPersonalityTraits(identity.id) : const <PersonalityTrait>[];
+  final personalityTraits = identity != null
+      ? queries.getPersonalityTraits(identity.id)
+      : const <PersonalityTrait>[];
   var prompt = buildSystemPrompt(
     input,
     botName: env.botName,
@@ -1160,15 +1156,12 @@ String _sessionTransitionMessage(SessionPhase newPhase) => switch (newPhase) {
             'Go build something.',
       SessionPhase.chat1 =>
         '⏱️ Build 1 complete! Take 5 — how\'s everyone going?',
-      SessionPhase.build2 =>
-        '⏱️ Back to it! Build 2 starting — 25 minutes.',
+      SessionPhase.build2 => '⏱️ Back to it! Build 2 starting — 25 minutes.',
       SessionPhase.chat2 =>
         '⏱️ Build 2 done! Check-in time — what\'s working, what\'s not?',
       SessionPhase.build3 =>
         '⏱️ Final build! 25 minutes — polish, test, prep your demo.',
-      SessionPhase.chat3 =>
-        '⏱️ Build 3 complete! Last check-in before demos. '
-            'How did it go? What are you showing?',
-      SessionPhase.demo =>
-        '🎪 Demo time! Who wants to go first?',
+      SessionPhase.chat3 => '⏱️ Build 3 complete! Last check-in before demos. '
+          'How did it go? What are you showing?',
+      SessionPhase.demo => '🎪 Demo time! Who wants to go first?',
     };

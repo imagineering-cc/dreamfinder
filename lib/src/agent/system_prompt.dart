@@ -275,15 +275,12 @@ When a question requires knowledge you don't have in context:
       } else {
         local = start.toUtc();
       }
-      final dateStr =
-          '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+      final dateStr = '${local.year}-${local.month.toString().padLeft(2, '0')}-'
           '${local.day.toString().padLeft(2, '0')}';
-      final timeStr =
-          '${local.hour.toString().padLeft(2, '0')}:'
+      final timeStr = '${local.hour.toString().padLeft(2, '0')}:'
           '${local.minute.toString().padLeft(2, '0')}';
       final loc = event.location;
-      final locationStr =
-          loc != null && loc.isNotEmpty ? ' — $loc' : '';
+      final locationStr = loc != null && loc.isNotEmpty ? ' — $loc' : '';
       parts.add('- [$dateStr $timeStr] ${event.summary}$locationStr\n');
     }
   }

@@ -241,9 +241,11 @@ void main() {
 
       expect(tasks, hasLength(2));
       expect(tasks[0].type, equals(DreamTaskType.triage));
-      expect(tasks[0].description, equals('Update overdue cards on Sprint board'));
+      expect(
+          tasks[0].description, equals('Update overdue cards on Sprint board'));
       expect(tasks[1].type, equals(DreamTaskType.prep));
-      expect(tasks[1].description, equals('Prepare for tomorrow standup meeting'));
+      expect(
+          tasks[1].description, equals('Prepare for tomorrow standup meeting'));
     });
 
     test('caps at maxDreamBranches', () {

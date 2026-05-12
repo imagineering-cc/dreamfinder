@@ -16,8 +16,7 @@ import 'session_state.dart';
 /// check-ins during chats, and wrapping up during demo.
 String buildSessionPromptSection(SessionPhase phase, String groupId) {
   final total = SessionPhase.values.length;
-  final header =
-      '\n## Imagineering Session — Phase ${phase.number} of $total: '
+  final header = '\n## Imagineering Session — Phase ${phase.number} of $total: '
       '${phase.label}\n\n'
       'You are participating in a live Imagineering co-working session. '
       'The room\'s `group_id` is `$groupId` — use it for all tool calls. '

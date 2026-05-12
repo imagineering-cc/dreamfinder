@@ -29,8 +29,8 @@ void registerSessionTools(
 }) {
   registry.registerCustomTool(_startSessionTool(state, sessionTimer));
   registry.registerCustomTool(_advanceSessionTool(state, sessionTimer));
-  registry.registerCustomTool(_endSessionTool(state, sendGroupMessage,
-      sessionTimer));
+  registry.registerCustomTool(
+      _endSessionTool(state, sendGroupMessage, sessionTimer));
   registry.registerCustomTool(_captureInsightTool(state));
 }
 

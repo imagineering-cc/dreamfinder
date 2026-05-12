@@ -109,8 +109,7 @@ CustomToolDef _readRepoFileTool(
         },
         'ref': <String, dynamic>{
           'type': 'string',
-          'description':
-              'Branch, tag, or commit SHA (default: $defaultBranch)',
+          'description': 'Branch, tag, or commit SHA (default: $defaultBranch)',
         },
       },
       'required': <String>['path'],
@@ -150,7 +149,8 @@ CustomToolDef _readRepoFileTool(
             '(${map['size']} bytes). Try a smaller file.';
       }
 
-      final content = utf8.decode(base64Decode(contentBase64.replaceAll('\n', '')));
+      final content =
+          utf8.decode(base64Decode(contentBase64.replaceAll('\n', '')));
       if (content.length > _maxFileSize) {
         return '${content.substring(0, _maxFileSize)}\n\n'
             '[truncated — file is ${map['size']} bytes, '
@@ -188,13 +188,13 @@ CustomToolDef _listRepoFilesTool(
         },
         'ref': <String, dynamic>{
           'type': 'string',
-          'description':
-              'Branch, tag, or commit SHA (default: $defaultBranch)',
+          'description': 'Branch, tag, or commit SHA (default: $defaultBranch)',
         },
       },
     },
     handler: (args) async {
-      final path = (args['path'] as String? ?? '').replaceFirst(RegExp(r'^/'), '');
+      final path =
+          (args['path'] as String? ?? '').replaceFirst(RegExp(r'^/'), '');
       final repo = args['repo'] as String? ?? defaultRepo;
       final ref = args['ref'] as String? ?? defaultBranch;
 
@@ -222,7 +222,8 @@ CustomToolDef _listRepoFilesTool(
       final lines = items.map((item) {
         final type = item['type'] as String;
         final name = item['name'] as String;
-        final size = type == 'file' ? ' (${_formatSize(item['size'] as int)})' : '';
+        final size =
+            type == 'file' ? ' (${_formatSize(item['size'] as int)})' : '';
         final icon = type == 'dir' ? '📁' : '📄';
         return '$icon $name$size';
       });
@@ -277,7 +278,8 @@ CustomToolDef _searchRepoCodeTool(
 
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final totalCount = data['total_count'] as int? ?? 0;
-      final items = (data['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final items =
+          (data['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
       if (items.isEmpty) {
         return 'No results found for "$query" in $repo';
@@ -427,9 +429,8 @@ CustomToolDef _listGitHubIssuesTool(
           .toList();
 
       if (issues.isEmpty) {
-        final labelNote = args['labels'] != null
-            ? ' with labels: ${args['labels']}'
-            : '';
+        final labelNote =
+            args['labels'] != null ? ' with labels: ${args['labels']}' : '';
         return 'No $state issues found$labelNote in $repo';
       }
 

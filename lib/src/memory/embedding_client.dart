@@ -91,7 +91,10 @@ class VoyageEmbeddingClient implements EmbeddingClient {
 
     return [
       for (final item in sorted)
-        (item['embedding'] as List<dynamic>).cast<num>().map((n) => n.toDouble()).toList(),
+        (item['embedding'] as List<dynamic>)
+            .cast<num>()
+            .map((n) => n.toDouble())
+            .toList(),
     ];
   }
 }

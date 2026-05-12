@@ -22,8 +22,7 @@ void main() {
     test('responds 200 on /health with status fields', () async {
       final client = HttpClient();
       try {
-        final request =
-            await client.get('localhost', port, '/health');
+        final request = await client.get('localhost', port, '/health');
         final response = await request.close();
 
         expect(response.statusCode, HttpStatus.ok);
@@ -49,8 +48,7 @@ void main() {
 
       final client = HttpClient();
       try {
-        final request =
-            await client.get('localhost', port, '/health');
+        final request = await client.get('localhost', port, '/health');
         final response = await request.close();
         final body = await response.transform(utf8.decoder).join();
         final json = jsonDecode(body) as Map<String, dynamic>;
@@ -66,8 +64,7 @@ void main() {
 
       final client = HttpClient();
       try {
-        final request =
-            await client.get('localhost', port, '/health');
+        final request = await client.get('localhost', port, '/health');
         final response = await request.close();
         final body = await response.transform(utf8.decoder).join();
         final json = jsonDecode(body) as Map<String, dynamic>;
@@ -84,8 +81,7 @@ void main() {
 
       final client = HttpClient();
       try {
-        final request =
-            await client.get('localhost', port, '/health');
+        final request = await client.get('localhost', port, '/health');
         final response = await request.close();
         final body = await response.transform(utf8.decoder).join();
         final json = jsonDecode(body) as Map<String, dynamic>;
@@ -147,8 +143,7 @@ void main() {
     test('returns 404 for unknown paths', () async {
       final client = HttpClient();
       try {
-        final request =
-            await client.get('localhost', port, '/unknown');
+        final request = await client.get('localhost', port, '/unknown');
         final response = await request.close();
 
         expect(response.statusCode, HttpStatus.notFound);
@@ -162,8 +157,7 @@ void main() {
 
       final client = HttpClient();
       try {
-        final request =
-            await client.get('localhost', port, '/health');
+        final request = await client.get('localhost', port, '/health');
         final response = await request.close();
         final body = await response.transform(utf8.decoder).join();
         final json = jsonDecode(body) as Map<String, dynamic>;
@@ -180,8 +174,7 @@ void main() {
 
       final client = HttpClient();
       try {
-        final request =
-            await client.get('localhost', port, '/health');
+        final request = await client.get('localhost', port, '/health');
         final response = await request.close();
         final body = await response.transform(utf8.decoder).join();
         final json = jsonDecode(body) as Map<String, dynamic>;
@@ -208,8 +201,7 @@ void main() {
 
         expect(json['messages_processed'], equals(2));
         expect(json['messages_dropped'], equals(3));
-        final reasons =
-            json['drop_reasons'] as Map<String, dynamic>;
+        final reasons = json['drop_reasons'] as Map<String, dynamic>;
         expect(reasons['own_message'], equals(1));
         expect(reasons['not_mentioned'], equals(2));
       } finally {
@@ -231,8 +223,7 @@ void main() {
 
       final client = HttpClient();
       try {
-        final request =
-            await client.get('localhost', stuckPort, '/health');
+        final request = await client.get('localhost', stuckPort, '/health');
         final response = await request.close();
         final body = await response.transform(utf8.decoder).join();
         final json = jsonDecode(body) as Map<String, dynamic>;

@@ -206,7 +206,11 @@ void main() {
         content: <String, dynamic>{
           'textBlocks': <Map<String, String>>[],
           'toolUseBlocks': <Map<String, dynamic>>[
-            {'id': 't1', 'name': 'kan_create_card', 'input': <String, dynamic>{'title': 'Test'}},
+            {
+              'id': 't1',
+              'name': 'kan_create_card',
+              'input': <String, dynamic>{'title': 'Test'}
+            },
           ],
         },
       ),
@@ -260,8 +264,7 @@ void main() {
       // Assistant + tool_use → JSON object.
       final assistantRaw = rows[1]['content'] as String;
       expect(assistantRaw, startsWith('{'));
-      final assistantDecoded =
-          jsonDecode(assistantRaw) as Map<String, dynamic>;
+      final assistantDecoded = jsonDecode(assistantRaw) as Map<String, dynamic>;
       expect(assistantDecoded, contains('toolUseBlocks'));
 
       // Tool result → JSON array.
@@ -290,8 +293,8 @@ void main() {
       // Verify tool_result block contents.
       final toolResult = msgs[2].content as List<dynamic>;
       expect(toolResult.first, isA<Map<String, dynamic>>());
-      expect(
-          (toolResult.first as Map<String, dynamic>)['toolUseId'], equals('t1'));
+      expect((toolResult.first as Map<String, dynamic>)['toolUseId'],
+          equals('t1'));
     });
 
     test('truncates large tool results in DB only', () {
@@ -302,7 +305,11 @@ void main() {
           content: <String, dynamic>{
             'textBlocks': <Map<String, String>>[],
             'toolUseBlocks': <Map<String, dynamic>>[
-              {'id': 't2', 'name': 'kan_list_boards', 'input': <String, dynamic>{}},
+              {
+                'id': 't2',
+                'name': 'kan_list_boards',
+                'input': <String, dynamic>{}
+              },
             ],
           },
         ),
@@ -336,8 +343,7 @@ void main() {
         'ORDER BY id ASC',
       );
       // Second user-role message is the tool_result.
-      final dbToolResult =
-          jsonDecode(rows[1]['content'] as String) as List;
+      final dbToolResult = jsonDecode(rows[1]['content'] as String) as List;
       final dbContent = (dbToolResult.first as Map)['content'] as String;
       expect(dbContent.length, lessThan(3000));
       expect(dbContent, contains('[truncated]'));

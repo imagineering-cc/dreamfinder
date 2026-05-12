@@ -292,8 +292,7 @@ void main() {
 
       await Future<void>.delayed(const Duration(milliseconds: 500));
 
-      final participants =
-          sessionState.getParticipants('game:tech-world');
+      final participants = sessionState.getParticipants('game:tech-world');
       expect(participants, contains('user-2'));
     });
   });

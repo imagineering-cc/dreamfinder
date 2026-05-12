@@ -492,7 +492,8 @@ void main() {
       final records = queries.getUnembeddedRecords();
       expect(records, hasLength(2));
       final types = records.map((r) => r.sourceType).toSet();
-      expect(types, containsAll([MemorySourceType.message, MemorySourceType.summary]));
+      expect(types,
+          containsAll([MemorySourceType.message, MemorySourceType.summary]));
     });
 
     test('returns empty list when all records have embeddings', () {

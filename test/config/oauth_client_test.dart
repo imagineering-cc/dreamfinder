@@ -27,8 +27,8 @@ void main() {
     required int statusCode,
     required Map<String, dynamic> body,
   }) =>
-      http_testing.MockClient((_) async =>
-          http.Response(jsonEncode(body), statusCode));
+      http_testing.MockClient(
+          (_) async => http.Response(jsonEncode(body), statusCode));
 
   /// Creates a mock client that returns a valid token response.
   http.Client _successClient({

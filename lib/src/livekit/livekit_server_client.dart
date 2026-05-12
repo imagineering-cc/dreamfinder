@@ -93,8 +93,7 @@ class LiveKitServerClient {
     DataKind kind = DataKind.reliable,
   }) async {
     final token = _getOrRefreshToken();
-    final uri =
-        Uri.parse('$_serverUrl/twirp/livekit.RoomService/SendData');
+    final uri = Uri.parse('$_serverUrl/twirp/livekit.RoomService/SendData');
 
     final body = <String, Object?>{
       'room': room,

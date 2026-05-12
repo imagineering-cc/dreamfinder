@@ -70,7 +70,8 @@ void main() {
       registerRadarTools(registry, queries: queries, token: null);
       final tools = registry.getAllToolDefinitions();
       final radarTools = tools
-          .where((ToolDefinition t) => t.name.contains('radar') ||
+          .where((ToolDefinition t) =>
+              t.name.contains('radar') ||
               t.name.contains('track') ||
               t.name.contains('contribution') ||
               t.name.contains('crawl') ||
@@ -546,7 +547,8 @@ void main() {
         title: 'Submitted one',
         body: 'Body',
       );
-      queries.markDraftSubmitted(id, 'https://github.com/dart-lang/sdk/issues/1');
+      queries.markDraftSubmitted(
+          id, 'https://github.com/dart-lang/sdk/issues/1');
       queries.createContributionDraft(
         repo: 'dart-lang/sdk',
         type: ContributionType.issue,
@@ -601,9 +603,12 @@ void main() {
         body: 'Body',
       );
 
-      final result = await callRaw('submit_contribution', {
-        'draft_id': id,
-      }, isAdmin: false);
+      final result = await callRaw(
+          'submit_contribution',
+          {
+            'draft_id': id,
+          },
+          isAdmin: false);
 
       expect(result, contains('admin'));
     });
@@ -639,7 +644,8 @@ void main() {
 
       expect(result['success'], isTrue);
       expect(result['url'], contains('issues/42'));
-      expect(capturedRequest!.url.path, contains('/repos/dart-lang/sdk/issues'));
+      expect(
+          capturedRequest!.url.path, contains('/repos/dart-lang/sdk/issues'));
 
       final draft = queries.getContributionDraft(id);
       expect(draft!.status, ContributionDraftStatus.submitted);
@@ -675,7 +681,8 @@ void main() {
         title: 'Test',
         body: 'Body',
       );
-      queries.markDraftSubmitted(id, 'https://github.com/dart-lang/sdk/issues/1');
+      queries.markDraftSubmitted(
+          id, 'https://github.com/dart-lang/sdk/issues/1');
 
       final result = await callJson('submit_contribution', {
         'draft_id': id,

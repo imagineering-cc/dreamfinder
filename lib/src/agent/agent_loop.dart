@@ -73,8 +73,7 @@ class TokenUsage {
   }
 
   @override
-  String toString() =>
-      'TokenUsage(input: $inputTokens, output: $outputTokens, '
+  String toString() => 'TokenUsage(input: $inputTokens, output: $outputTokens, '
       'total: $totalTokens)';
 }
 
@@ -366,7 +365,8 @@ class AgentLoop {
   /// [List] content distinguishes it from plain text user messages.
   ChatMessage _toHistoryMessage(AgentMessage msg) {
     if (msg.role == 'tool_result') {
-      return ChatMessage(role: MessageRole.user, content: msg.content as Object);
+      return ChatMessage(
+          role: MessageRole.user, content: msg.content as Object);
     }
     return ChatMessage(
       role: msg.role == 'user' ? MessageRole.user : MessageRole.assistant,

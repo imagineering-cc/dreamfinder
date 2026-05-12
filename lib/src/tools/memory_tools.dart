@@ -118,9 +118,8 @@ CustomToolDef _searchMemoryTool(
       'properties': <String, dynamic>{
         'query': <String, dynamic>{
           'type': 'string',
-          'description':
-              'The search query — a natural language description of '
-                  'what you are looking for.',
+          'description': 'The search query — a natural language description of '
+              'what you are looking for.',
         },
         'limit': <String, dynamic>{
           'type': 'integer',
@@ -211,8 +210,7 @@ CustomToolDef _deepSearchTool(
         },
         'limit': <String, dynamic>{
           'type': 'integer',
-          'description':
-              'Maximum results per source (1–5, default 3).',
+          'description': 'Maximum results per source (1–5, default 3).',
         },
       },
       'required': <String>['query'],
@@ -234,11 +232,8 @@ CustomToolDef _deepSearchTool(
           : List<String>.from(_allSources);
 
       // Detect which MCP tools are actually available.
-      final mcpToolNames = mcpManager
-              ?.getAllTools()
-              .map((t) => t.name)
-              .toSet() ??
-          <String>{};
+      final mcpToolNames =
+          mcpManager?.getAllTools().map((t) => t.name).toSet() ?? <String>{};
 
       final hasMemory = retriever != null;
       final hasOutline = mcpToolNames.contains('outline_search');

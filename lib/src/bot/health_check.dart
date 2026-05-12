@@ -60,8 +60,7 @@ class HealthCheck {
 
   /// Callback to fetch recent memories by recency (no embedding needed).
   /// Set after database initialization.
-  List<MemoryRecord> Function(String chatId, {int limit})?
-      getRecentMemories;
+  List<MemoryRecord> Function(String chatId, {int limit})? getRecentMemories;
 
   /// Shared API key for authenticating memory API requests.
   /// If null, memory API endpoints return 403.
@@ -143,8 +142,7 @@ class HealthCheck {
 
   void _handleRequest(HttpRequest request) {
     // Handle CORS preflight for all /api/ paths.
-    if (request.method == 'OPTIONS' &&
-        request.uri.path.startsWith('/api/')) {
+    if (request.method == 'OPTIONS' && request.uri.path.startsWith('/api/')) {
       _setCorsHeaders(request);
       request.response
         ..statusCode = HttpStatus.noContent
@@ -224,17 +222,15 @@ class HealthCheck {
   void _handleHealth(HttpRequest request) {
     final now = DateTime.now();
     final uptime = now.difference(_startTime);
-    final pollStale = _lastPoll != null &&
-        now.difference(_lastPoll!) >= _stalePollThreshold;
+    final pollStale =
+        _lastPoll != null && now.difference(_lastPoll!) >= _stalePollThreshold;
     final processingStuck = _processingStart != null &&
         now.difference(_processingStart!) >= _stuckProcessingThreshold;
     final isDegraded = pollStale || processingStuck;
     final status = isDegraded ? 'degraded' : 'ok';
 
     request.response
-      ..statusCode = isDegraded
-          ? HttpStatus.serviceUnavailable
-          : HttpStatus.ok
+      ..statusCode = isDegraded ? HttpStatus.serviceUnavailable : HttpStatus.ok
       ..headers.contentType = ContentType.json
       ..write(jsonEncode(<String, Object?>{
         'status': status,
@@ -243,10 +239,8 @@ class HealthCheck {
         'build_time': buildTime,
         'uptime_seconds': uptime.inSeconds,
         'last_poll': _lastPoll?.toUtc().toIso8601String(),
-        'last_claude_success':
-            _lastClaudeSuccess?.toUtc().toIso8601String(),
-        'processing_since':
-            _processingStart?.toUtc().toIso8601String(),
+        'last_claude_success': _lastClaudeSuccess?.toUtc().toIso8601String(),
+        'processing_since': _processingStart?.toUtc().toIso8601String(),
         'error_count': _errorCount,
         'messages_processed': _messagesProcessed,
         'messages_dropped': _messagesDropped,
@@ -268,8 +262,7 @@ class HealthCheck {
     }
 
     final chatId = request.uri.queryParameters['chat_id'] ?? 'voice';
-    final limit =
-        int.tryParse(request.uri.queryParameters['limit'] ?? '') ?? 5;
+    final limit = int.tryParse(request.uri.queryParameters['limit'] ?? '') ?? 5;
 
     final records = getRecentMemories!(chatId, limit: limit);
 
@@ -362,8 +355,7 @@ class HealthCheck {
       final json = jsonDecode(body) as Map<String, Object?>;
       final content = json['content'] as String?;
       final chatId = json['chat_id'] as String? ?? 'voice';
-      final visibilityStr =
-          json['visibility'] as String? ?? 'cross_chat';
+      final visibilityStr = json['visibility'] as String? ?? 'cross_chat';
 
       if (content == null || content.isEmpty) {
         _jsonResponse(request, HttpStatus.badRequest, {

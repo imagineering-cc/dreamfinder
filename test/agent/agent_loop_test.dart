@@ -71,10 +71,7 @@ void main() {
       );
       final result = await loop.processMessage(
         const AgentInput(
-            text: 'What time?',
-            chatId: 'c1',
-            senderId: 'u1',
-            isAdmin: false),
+            text: 'What time?', chatId: 'c1', senderId: 'u1', isAdmin: false),
         systemPrompt: 'You are Dreamfinder.',
       );
       expect(result, contains('2026-02-28T12:00:00Z'));
@@ -92,7 +89,8 @@ void main() {
       expect(msgs[1].role, equals(MessageRole.assistant));
 
       expect(msgs[2].content, isA<List<Map<String, dynamic>>>());
-      expect(msgs[2].role, equals(MessageRole.user)); // tool_result stored as user
+      expect(
+          msgs[2].role, equals(MessageRole.user)); // tool_result stored as user
 
       expect(msgs[3].content, contains('2026-02-28T12:00:00Z'));
       expect(msgs[3].role, equals(MessageRole.assistant));
@@ -331,9 +329,7 @@ void main() {
           } else if (callCount == 2) {
             // First request — final response.
             return const AgentResponse(
-              textBlocks: [
-                TextContent(text: 'Created card "Test" (card-1).')
-              ],
+              textBlocks: [TextContent(text: 'Created card "Test" (card-1).')],
               toolUseBlocks: [],
               stopReason: StopReason.endTurn,
             );
@@ -391,7 +387,8 @@ void main() {
 
       // First message is the original user text.
       expect(secondCallMessages![0].role, equals('user'));
-      expect(secondCallMessages![0].content, equals('Create a card called Test'));
+      expect(
+          secondCallMessages![0].content, equals('Create a card called Test'));
 
       // Second message is assistant+tool_use.
       expect(secondCallMessages![1].role, equals('assistant'));
@@ -406,8 +403,7 @@ void main() {
 
       // Fifth message is the new user text.
       expect(secondCallMessages![4].role, equals('user'));
-      expect(secondCallMessages![4].content,
-          equals('Now assign it to Paul'));
+      expect(secondCallMessages![4].content, equals('Now assign it to Paul'));
     });
   });
 }

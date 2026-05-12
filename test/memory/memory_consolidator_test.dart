@@ -137,10 +137,8 @@ void main() {
 
     test('groups by visibility, creates separate summaries per level',
         () async {
-      insertOldMemories('group-1', 22,
-          visibility: MemoryVisibility.sameChat);
-      insertOldMemories('group-1', 22,
-          visibility: MemoryVisibility.crossChat);
+      insertOldMemories('group-1', 22, visibility: MemoryVisibility.sameChat);
+      insertOldMemories('group-1', 22, visibility: MemoryVisibility.crossChat);
 
       final consolidator = createConsolidator();
       await consolidator.consolidate();

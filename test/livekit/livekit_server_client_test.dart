@@ -59,8 +59,7 @@ void main() {
       ).captured;
 
       final uri = captured[0] as Uri;
-      expect(uri.toString(),
-          '$serverUrl/twirp/livekit.RoomService/SendData');
+      expect(uri.toString(), '$serverUrl/twirp/livekit.RoomService/SendData');
     });
 
     test('sends correct Content-Type and Authorization headers', () async {
@@ -263,8 +262,7 @@ void main() {
       final body = jsonDecode(captured[0] as String) as Map<String, Object?>;
       // The data field should be base64-encoded JSON.
       final decodedData = utf8.decode(base64Decode(body['data']! as String));
-      final innerJson =
-          jsonDecode(decodedData) as Map<String, Object?>;
+      final innerJson = jsonDecode(decodedData) as Map<String, Object?>;
 
       expect(innerJson['type'], 'chat-response');
       expect(innerJson['text'], 'hello');
@@ -302,9 +300,8 @@ void main() {
       final payloadPart = token.split('.')[1];
       // Pad base64url to base64.
       final padded = base64Url.normalize(payloadPart);
-      final payload =
-          jsonDecode(utf8.decode(base64Url.decode(padded)))
-              as Map<String, Object?>;
+      final payload = jsonDecode(utf8.decode(base64Url.decode(padded)))
+          as Map<String, Object?>;
 
       expect(payload['iss'], apiKey);
       expect(payload['exp'], isA<int>());

@@ -23,8 +23,7 @@ class FakeEmbeddingClient implements EmbeddingClient {
       throw const EmbeddingException('fake error');
     }
     return [
-      for (var i = 0; i < texts.length; i++)
-        List.filled(512, (i + 1) * 0.1),
+      for (var i = 0; i < texts.length; i++) List.filled(512, (i + 1) * 0.1),
     ];
   }
 }

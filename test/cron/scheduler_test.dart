@@ -1288,7 +1288,8 @@ void main() {
       expect(queries.getLastReminder('card-tz', 'group-1'), isNotNull);
     });
 
-    test('fires cleanup when input is a non-UTC local time equivalent to 03:30 UTC',
+    test(
+        'fires cleanup when input is a non-UTC local time equivalent to 03:30 UTC',
         () async {
       queries.upsertReminder('card-tz-offset', 'group-1');
       db.handle.execute(
@@ -1305,7 +1306,8 @@ void main() {
       expect(queries.getLastReminder('card-tz-offset', 'group-1'), isNull);
     });
 
-    test('does not fire cleanup when input is equivalent to 01:00 UTC regardless of raw hour value',
+    test(
+        'does not fire cleanup when input is equivalent to 01:00 UTC regardless of raw hour value',
         () async {
       // This test guards against host-TZ contamination: a machine 4 hours
       // behind UTC sees DateTime.now() report hour=21 for what is 01:00 UTC.

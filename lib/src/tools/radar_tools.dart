@@ -134,8 +134,9 @@ CustomToolDef _searchGitHubReposTool(
         params['order'] = 'desc';
       }
 
-      final queryString =
-          params.entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}').join('&');
+      final queryString = params.entries
+          .map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}')
+          .join('&');
       final res = await _ghApi(
         client,
         token,
@@ -210,8 +211,7 @@ CustomToolDef _trackRepoTool(ToolRegistry registry, Queries queries) {
         },
         'source_message': <String, dynamic>{
           'type': 'string',
-          'description':
-              'The message that referenced this repo (for context)',
+          'description': 'The message that referenced this repo (for context)',
         },
       },
       'required': <String>['repo', 'reason'],
@@ -272,8 +272,7 @@ CustomToolDef _listTrackedReposTool(Queries queries) {
                   'starred': r.starred,
                   'tracked_at': r.trackedAt,
                   'last_crawled_at': r.lastCrawledAt,
-                  if (r.metadata != null)
-                    'metadata': jsonDecode(r.metadata!),
+                  if (r.metadata != null) 'metadata': jsonDecode(r.metadata!),
                 })
             .toList(),
       });

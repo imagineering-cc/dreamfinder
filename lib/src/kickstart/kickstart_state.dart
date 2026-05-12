@@ -66,8 +66,7 @@ class KickstartState {
   }
 
   /// Returns `true` if a kickstart is currently active for [groupId].
-  bool isKickstartActive(String groupId) =>
-      getActiveKickstart(groupId) != null;
+  bool isKickstartActive(String groupId) => getActiveKickstart(groupId) != null;
 
   /// Starts a new kickstart for [groupId] at step 1 (Workspace Setup).
   ///
