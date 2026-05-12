@@ -91,6 +91,9 @@ EVENT_TIMEZONE=               # IANA timezone for event display (e.g., Australia
 BOT_NAME=                     # Display name (default: "Dreamfinder")
 DATABASE_PATH=                # SQLite path (default: ./data/bot.db)
 LOG_LEVEL=                    # Logging level (default: info)
+RATE_LIMIT_PER_USER_SECONDS=  # Per-user cooldown in seconds (default: 5; raise to 1 for demos)
+RATE_LIMIT_GROUP_MAX=         # Max bot responses per group window (default: 5; raise to 20+ for demos)
+RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in seconds (default: 30)
 ```
 
 ## Coding Rules
