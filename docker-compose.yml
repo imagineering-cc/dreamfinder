@@ -12,6 +12,10 @@ services:
   bot:
     build:
       context: .
+      args:
+        - BUILD_VERSION=${VERSION:-dev}
+        - BUILD_SHA=${GIT_COMMIT:-local}
+        - BUILD_TIME=${BUILD_TIME:-unknown}
     depends_on:
       - signal-api
     env_file:
