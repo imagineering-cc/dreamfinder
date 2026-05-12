@@ -1,14 +1,4 @@
 services:
-  signal-api:
-    image: bbernhard/signal-cli-rest-api:0.97
-    ports:
-      - "8080:8080"
-    volumes:
-      - signal-data:/home/.local/share/signal-cli
-    environment:
-      - MODE=json-rpc
-    restart: unless-stopped
-
   bot:
     build:
       context: .
@@ -16,16 +6,11 @@ services:
         - BUILD_VERSION=${VERSION:-dev}
         - BUILD_SHA=${GIT_COMMIT:-local}
         - BUILD_TIME=${BUILD_TIME:-unknown}
-    depends_on:
-      - signal-api
     env_file:
       - .env
-    environment:
-      - SIGNAL_API_URL=http://signal-api:8080
     volumes:
       - bot-data:/app/data
     restart: unless-stopped
 
 volumes:
-  signal-data:
   bot-data:
