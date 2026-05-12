@@ -89,7 +89,10 @@ class MatrixClient {
     final response = await _getUri(uri, timeout: clientTimeout);
     final json = jsonDecode(response.body) as Map<String, dynamic>;
 
-    return _parseSyncResponse(json);
+    // Pass isInitialSync so the parser drops any timeline events the server
+    // returns despite the filter — defense-in-depth against non-compliant or
+    // race-y homeservers sending stale history on first connect.
+    return _parseSyncResponse(json, skipTimeline: isInitialSync);
   }
 
   /// Sends a text message to [roomId].
@@ -198,7 +201,18 @@ class MatrixClient {
   // Sync response parsing
   // ---------------------------------------------------------------------------
 
-  MatrixSyncResponse _parseSyncResponse(Map<String, dynamic> json) {
+  /// Parses a `/sync` response.
+  ///
+  /// When [skipTimeline] is `true`, timeline events are discarded even if the
+  /// server includes them. This is a client-side backstop for initial sync:
+  /// the filter sent with `since=null` already tells the server to return
+  /// `limit: 0` timeline events, but a non-compliant or race-y homeserver
+  /// could still include stale history. Dropping them here prevents historical
+  /// member-join events from triggering spurious welcome messages.
+  MatrixSyncResponse _parseSyncResponse(
+    Map<String, dynamic> json, {
+    bool skipTimeline = false,
+  }) {
     final nextBatch = json['next_batch'] as String? ?? '';
     final events = <MatrixEvent>[];
     final invites = <MatrixInvite>[];
@@ -216,16 +230,18 @@ class MatrixClient {
         final roomId = entry.key;
         final roomData = entry.value as Map<String, dynamic>;
 
-        // Parse timeline events.
-        final timeline = roomData['timeline'] as Map<String, dynamic>?;
-        if (timeline != null) {
-          final timelineEvents = timeline['events'] as List<dynamic>?;
-          if (timelineEvents != null) {
-            for (final eventJson in timelineEvents) {
-              events.add(MatrixEvent.fromJson(
-                eventJson as Map<String, dynamic>,
-                roomId: roomId,
-              ));
+        // Parse timeline events (skipped on initial sync — see [skipTimeline]).
+        if (!skipTimeline) {
+          final timeline = roomData['timeline'] as Map<String, dynamic>?;
+          if (timeline != null) {
+            final timelineEvents = timeline['events'] as List<dynamic>?;
+            if (timelineEvents != null) {
+              for (final eventJson in timelineEvents) {
+                events.add(MatrixEvent.fromJson(
+                  eventJson as Map<String, dynamic>,
+                  roomId: roomId,
+                ));
+              }
             }
           }
         }

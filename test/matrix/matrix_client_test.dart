@@ -370,6 +370,115 @@ void main() {
       expect(timelineFilter['limit'], 0);
     });
 
+    // Regression test for the PR #84 family: on a fresh deploy (no persisted
+    // sync token), any timeline events the homeserver returns must NOT surface
+    // to the caller — regardless of whether the server-side filter was honoured.
+    //
+    // The server-side filter (`timeline.limit: 0`) is the primary guard, but a
+    // non-compliant or race-y homeserver could still include stale history.
+    // The client therefore drops timeline events from the parsed response when
+    // `since` is null, preventing historical member-join events from triggering
+    // spurious welcome messages.
+    test(
+        'initial sync suppresses timeline events even if server returns them',
+        () async {
+      // Simulate a homeserver that ignores the filter and returns a member-join
+      // event from history (e.g., a user who joined 2 hours before the bot started).
+      final syncWithHistoricalJoin = <String, dynamic>{
+        'next_batch': 'initial_batch',
+        'rooms': {
+          'join': {
+            '!room:test': {
+              'timeline': {
+                'events': [
+                  {
+                    'event_id': r'$historical_join',
+                    'sender': '@alice:test',
+                    'type': 'm.room.member',
+                    'origin_server_ts': 1710000000000,
+                    'content': {
+                      'membership': 'join',
+                      'displayname': 'Alice',
+                    },
+                  },
+                ],
+              },
+              'summary': {'m.joined_member_count': 3},
+            },
+          },
+        },
+      };
+
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'sync': (_) => _jsonResponse(syncWithHistoricalJoin),
+        }),
+      );
+
+      // Initial sync — no `since` parameter.
+      final result = await client.sync();
+
+      // Despite the server returning a member-join event, it must not appear
+      // in the response so the welcome handler in dreamfinder.dart is never reached.
+      expect(
+        result.events,
+        isEmpty,
+        reason: 'Historical joins from initial sync must not reach the welcome handler',
+      );
+
+      // Member counts are still parsed (needed for DM detection).
+      expect(result.roomMemberCounts['!room:test'], 3);
+    });
+
+    test(
+        'incremental sync (with since token) surfaces member-join events normally',
+        () async {
+      // Confirm the guard is NOT applied to incremental syncs — real joins
+      // that happen after the bot is running must still trigger welcomes.
+      final syncWithNewJoin = <String, dynamic>{
+        'next_batch': 'batch_2',
+        'rooms': {
+          'join': {
+            '!room:test': {
+              'timeline': {
+                'events': [
+                  {
+                    'event_id': r'$live_join',
+                    'sender': '@bob:test',
+                    'type': 'm.room.member',
+                    'origin_server_ts': 1710000000001,
+                    'content': {
+                      'membership': 'join',
+                      'displayname': 'Bob',
+                    },
+                  },
+                ],
+              },
+              'summary': {'m.joined_member_count': 4},
+            },
+          },
+        },
+      };
+
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'sync': (_) => _jsonResponse(syncWithNewJoin),
+        }),
+      );
+
+      // Incremental sync — `since` token is present.
+      final result = await client.sync(since: 'batch_1');
+
+      expect(result.events, hasLength(1));
+      final event = result.events.first;
+      expect(event.isMemberJoin, isTrue);
+      expect(event.memberDisplayName, 'Bob');
+    });
+
     test('throws MatrixApiException on error status', () async {
       final client = MatrixClient(
         homeserver: homeserver,
