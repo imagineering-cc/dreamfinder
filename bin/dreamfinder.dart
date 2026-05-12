@@ -395,7 +395,11 @@ Future<void> main() async {
     await matrixClient.sendMessage(roomId: roomId, message: message);
   }
 
-  final rateLimiter = RateLimiter();
+  final rateLimiter = RateLimiter(
+    perUserCooldown: Duration(seconds: env.rateLimitPerUserSeconds),
+    perGroupWindow: Duration(seconds: env.rateLimitGroupWindowSeconds),
+    maxGroupMessages: env.rateLimitGroupMax,
+  );
 
   // Dream cycle orchestrator — triggered by "goodnight" messages.
   final dreamCycle = DreamCycle(

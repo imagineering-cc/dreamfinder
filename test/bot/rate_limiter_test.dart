@@ -106,6 +106,36 @@ void main() {
           isTrue);
     });
 
+    test('custom values are respected', () {
+      // Construct with non-default values and verify they take effect.
+      final limiter = RateLimiter(
+        perUserCooldown: const Duration(seconds: 1),
+        perGroupWindow: const Duration(seconds: 30),
+        maxGroupMessages: 20,
+      );
+
+      expect(limiter.perUserCooldown, equals(const Duration(seconds: 1)));
+      expect(limiter.maxGroupMessages, equals(20));
+      expect(limiter.perGroupWindow, equals(const Duration(seconds: 30)));
+
+      // With maxGroupMessages=20, 10 different senders should all be allowed.
+      for (var i = 0; i < 10; i++) {
+        expect(
+          limiter.shouldAllow(chatId: 'group-demo', senderId: 'user-$i'),
+          isTrue,
+          reason: 'user-$i should be allowed under a 20-message group cap',
+        );
+      }
+    });
+
+    test('uses defaults when constructed without arguments', () {
+      final limiter = RateLimiter();
+
+      expect(limiter.perUserCooldown, equals(const Duration(seconds: 5)));
+      expect(limiter.maxGroupMessages, equals(5));
+      expect(limiter.perGroupWindow, equals(const Duration(seconds: 30)));
+    });
+
     test('evictStale removes expired user and group entries', () async {
       final limiter = RateLimiter(
         perUserCooldown: const Duration(milliseconds: 50),

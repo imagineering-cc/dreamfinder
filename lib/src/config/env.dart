@@ -1,4 +1,15 @@
+import 'dart:io';
+
 import 'package:dotenv/dotenv.dart';
+
+/// Default per-user cooldown in seconds.
+const _defaultRateLimitPerUserSeconds = 5;
+
+/// Default maximum bot responses per group window.
+const _defaultRateLimitGroupMax = 5;
+
+/// Default group rate-limit window in seconds.
+const _defaultRateLimitGroupWindowSeconds = 30;
 
 /// Application configuration loaded from environment variables and `.env` file.
 class Env {
@@ -33,6 +44,9 @@ class Env {
     this.liveKitUrl,
     this.liveKitApiKey,
     this.liveKitApiSecret,
+    this.rateLimitPerUserSeconds = _defaultRateLimitPerUserSeconds,
+    this.rateLimitGroupMax = _defaultRateLimitGroupMax,
+    this.rateLimitGroupWindowSeconds = _defaultRateLimitGroupWindowSeconds,
   });
 
   factory Env.load() {
@@ -90,6 +104,21 @@ class Env {
       liveKitUrl: dotEnv['LIVEKIT_URL'],
       liveKitApiKey: dotEnv['LIVEKIT_API_KEY'],
       liveKitApiSecret: dotEnv['LIVEKIT_API_SECRET'],
+      rateLimitPerUserSeconds: _parsePositiveInt(
+        dotEnv['RATE_LIMIT_PER_USER_SECONDS'],
+        'RATE_LIMIT_PER_USER_SECONDS',
+        _defaultRateLimitPerUserSeconds,
+      ),
+      rateLimitGroupMax: _parsePositiveInt(
+        dotEnv['RATE_LIMIT_GROUP_MAX'],
+        'RATE_LIMIT_GROUP_MAX',
+        _defaultRateLimitGroupMax,
+      ),
+      rateLimitGroupWindowSeconds: _parsePositiveInt(
+        dotEnv['RATE_LIMIT_GROUP_WINDOW_SECONDS'],
+        'RATE_LIMIT_GROUP_WINDOW_SECONDS',
+        _defaultRateLimitGroupWindowSeconds,
+      ),
     );
   }
 
@@ -124,6 +153,9 @@ class Env {
     String? liveKitUrl,
     String? liveKitApiKey,
     String? liveKitApiSecret,
+    int rateLimitPerUserSeconds = _defaultRateLimitPerUserSeconds,
+    int rateLimitGroupMax = _defaultRateLimitGroupMax,
+    int rateLimitGroupWindowSeconds = _defaultRateLimitGroupWindowSeconds,
   }) =>
       Env._(
         anthropicApiKey: anthropicApiKey,
@@ -156,6 +188,9 @@ class Env {
         liveKitUrl: liveKitUrl,
         liveKitApiKey: liveKitApiKey,
         liveKitApiSecret: liveKitApiSecret,
+        rateLimitPerUserSeconds: rateLimitPerUserSeconds,
+        rateLimitGroupMax: rateLimitGroupMax,
+        rateLimitGroupWindowSeconds: rateLimitGroupWindowSeconds,
       );
 
   /// Anthropic API key. Null when using OAuth auth.
@@ -245,6 +280,25 @@ class Env {
   /// LiveKit API secret for HS256 JWT signing.
   final String? liveKitApiSecret;
 
+  /// Per-user cooldown in seconds (from `RATE_LIMIT_PER_USER_SECONDS`).
+  ///
+  /// Minimum time the bot waits before responding to the same user again.
+  /// Default: 5. Non-positive values fall back to the default with a warning.
+  final int rateLimitPerUserSeconds;
+
+  /// Maximum bot responses per group within [rateLimitGroupWindowSeconds]
+  /// (from `RATE_LIMIT_GROUP_MAX`).
+  ///
+  /// Raise this for demos with many concurrent users (e.g., 20).
+  /// Default: 5. Non-positive values fall back to the default with a warning.
+  final int rateLimitGroupMax;
+
+  /// Group rate-limit window in seconds (from `RATE_LIMIT_GROUP_WINDOW_SECONDS`).
+  ///
+  /// The rolling window over which [rateLimitGroupMax] responses are counted.
+  /// Default: 30. Non-positive values fall back to the default with a warning.
+  final int rateLimitGroupWindowSeconds;
+
   /// Returns `true` if [userId] is in the configured admin list.
   bool isAdmin(String? userId) =>
       userId != null && adminIds.contains(userId);
@@ -257,6 +311,32 @@ class Env {
   bool get githubEnabled => githubToken != null && githubToken!.isNotEmpty;
   bool get liveKitEnabled =>
       liveKitUrl != null && liveKitApiKey != null && liveKitApiSecret != null;
+
+  /// Parses an integer env var, falling back to [defaultValue] if unset or
+  /// non-positive, writing a warning to stderr on invalid/non-positive input.
+  static int _parsePositiveInt(
+    String? raw,
+    String varName,
+    int defaultValue,
+  ) {
+    if (raw == null || raw.isEmpty) return defaultValue;
+    final parsed = int.tryParse(raw);
+    if (parsed == null) {
+      stderr.writeln(
+        'WARNING: $varName has non-integer value "$raw"; '
+        'using default $defaultValue',
+      );
+      return defaultValue;
+    }
+    if (parsed <= 0) {
+      stderr.writeln(
+        'WARNING: $varName must be positive (got $parsed); '
+        'using default $defaultValue',
+      );
+      return defaultValue;
+    }
+    return parsed;
+  }
 
   /// Parses a comma-separated string into a trimmed list.
   static List<String> _parseList(String? value) {
