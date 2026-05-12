@@ -24,3 +24,4 @@ signal-cli-config/
 
 # Claude Code
 .claude/worktrees/
+.claude/settings.local.json

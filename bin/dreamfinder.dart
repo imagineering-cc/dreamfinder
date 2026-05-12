@@ -686,7 +686,7 @@ Future<void> main() async {
             await matrixClient.sendMessage(
               roomId: event.roomId,
               message: 'Welcome $displayName! '
-                  "Send me a DM and I'll get you set up. ✨",
+                  "Say 'kickstart' here and I'll walk us through setup. ✨",
             );
           } on Exception catch (e) {
             log.warning('Failed to send welcome message: $e');
