@@ -39,6 +39,11 @@ jobs:
       - name: Install dependencies
         run: dart pub get
 
+      - name: Format
+        # Fails fast if any file was committed without running `dart format .`
+        # first. Fix locally: run `dart format .` then re-commit.
+        run: dart format --output=none --set-exit-if-changed .
+
       - name: Analyze
         # --fatal-warnings is enabled; --fatal-infos is intentionally omitted
         # because the codebase has pre-existing info-level style lints in
