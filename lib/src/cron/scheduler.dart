@@ -195,10 +195,16 @@ class Scheduler {
       }
     }
 
-    // Run data cleanup once per day after 3 AM. Uses a date guard instead
+    // Run data cleanup once per day after 3 AM UTC. Uses a date guard instead
     // of exact minute matching so timer drift or restarts can't skip a day.
-    final todayStr = _dateString(now);
-    if (now.hour >= 3 && _lastCleanupDate != todayStr) {
+    //
+    // Normalised to UTC so the gate fires at the same wall-clock moment
+    // regardless of the host timezone. Without this, a developer or CI runner
+    // in a non-UTC timezone would see the gate fire at 3 AM *local* time,
+    // which is invisible and hard to debug.
+    final nowUtc = now.toUtc();
+    final todayStr = _dateString(nowUtc);
+    if (nowUtc.hour >= 3 && _lastCleanupDate != todayStr) {
       _lastCleanupDate = todayStr;
       cleanOldData();
       await backfill?.backfill();

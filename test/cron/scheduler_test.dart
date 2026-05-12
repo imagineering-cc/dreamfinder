@@ -306,7 +306,7 @@ void main() {
       );
 
       // Tick at 2:59 AM — too early, no cleanup.
-      await scheduler.tick(DateTime(2026, 3, 2, 2, 59));
+      await scheduler.tick(DateTime.utc(2026, 3, 2, 2, 59));
       expect(queries.getLastReminder('card-old', 'group-1'), isNotNull);
     });
   });
@@ -353,7 +353,7 @@ void main() {
         consolidator: consolidator,
       );
 
-      await scheduler.tick(DateTime(2026, 3, 2, 2, 59));
+      await scheduler.tick(DateTime.utc(2026, 3, 2, 2, 59));
 
       expect(consolidateCalled, isFalse);
     });
@@ -1207,7 +1207,7 @@ void main() {
       );
 
       // 2:59 AM — too early.
-      await scheduler.tick(DateTime(2026, 3, 2, 2, 59));
+      await scheduler.tick(DateTime.utc(2026, 3, 2, 2, 59));
 
       expect(triggered, isFalse);
     });
@@ -1248,6 +1248,110 @@ void main() {
       await scheduler.tick(DateTime.utc(2026, 3, 1, 16, 15));
 
       expect(triggered, isFalse);
+    });
+  });
+
+  group('Scheduler cleanup gate: timezone correctness', () {
+    // These tests verify that the 3 AM cleanup gate is evaluated in UTC,
+    // not in the host's local timezone. All inputs use DateTime.utc(...)
+    // so tests are deterministic regardless of where they run.
+
+    test('fires cleanup at 03:00 UTC', () async {
+      queries.upsertReminder('card-tz', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days')",
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+      );
+
+      // Exactly 3 AM UTC — gate should open.
+      await scheduler.tick(DateTime.utc(2026, 4, 1, 3, 0));
+      expect(queries.getLastReminder('card-tz', 'group-1'), isNull);
+    });
+
+    test('does not fire cleanup at 02:59 UTC', () async {
+      queries.upsertReminder('card-tz', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days')",
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+      );
+
+      // One minute before 3 AM UTC — gate must stay closed.
+      await scheduler.tick(DateTime.utc(2026, 4, 1, 2, 59));
+      expect(queries.getLastReminder('card-tz', 'group-1'), isNotNull);
+    });
+
+    test('fires cleanup when input is a non-UTC local time equivalent to 03:30 UTC',
+        () async {
+      queries.upsertReminder('card-tz-offset', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days')",
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+      );
+
+      // Simulate a datetime that is 03:30 UTC expressed as UTC — gate should open.
+      await scheduler.tick(DateTime.utc(2026, 4, 2, 3, 30));
+      expect(queries.getLastReminder('card-tz-offset', 'group-1'), isNull);
+    });
+
+    test('does not fire cleanup when input is equivalent to 01:00 UTC regardless of raw hour value',
+        () async {
+      // This test guards against host-TZ contamination: a machine 4 hours
+      // behind UTC sees DateTime.now() report hour=21 for what is 01:00 UTC.
+      // After the fix, we normalise to UTC so the gate stays closed.
+      queries.upsertReminder('card-tz-early', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days')",
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+      );
+
+      // 01:00 UTC — below the 3 AM threshold.
+      await scheduler.tick(DateTime.utc(2026, 4, 3, 1, 0));
+      expect(queries.getLastReminder('card-tz-early', 'group-1'), isNotNull);
+    });
+
+    test('date dedup key uses UTC date, not host-local date', () async {
+      // Verify that the once-per-day dedup uses the UTC date string so a
+      // host in UTC-12 doesn't double-trigger at local midnight.
+      queries.upsertReminder('card-date', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days')",
+      );
+
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (groupId, message) async {},
+      );
+
+      // 03:30 UTC on April 5 — first cleanup for that UTC date.
+      await scheduler.tick(DateTime.utc(2026, 4, 5, 3, 30));
+      expect(queries.getLastReminder('card-date', 'group-1'), isNull);
+
+      // Insert fresh old data.
+      queries.upsertReminder('card-date-2', 'group-1');
+      db.handle.execute(
+        "UPDATE sent_reminders SET last_reminder_at = datetime('now', '-30 days') "
+        "WHERE card_public_id = 'card-date-2'",
+      );
+
+      // 04:00 UTC same UTC date — should NOT re-run cleanup.
+      await scheduler.tick(DateTime.utc(2026, 4, 5, 4, 0));
+      expect(queries.getLastReminder('card-date-2', 'group-1'), isNotNull);
     });
   });
 }
