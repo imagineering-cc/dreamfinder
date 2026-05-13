@@ -79,7 +79,7 @@ void main() {
       final auth = MatrixAuth(homeserver: homeserver);
 
       expect(
-        () => auth.getAccessToken(),
+        auth.getAccessToken,
         throwsA(isA<StateError>()),
       );
     });
@@ -100,7 +100,7 @@ void main() {
       );
 
       expect(
-        () => auth.getAccessToken(),
+        auth.getAccessToken,
         throwsA(isA<MatrixAuthException>()),
       );
     });

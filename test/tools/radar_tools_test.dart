@@ -312,7 +312,7 @@ void main() {
         sourceChatId: 'room-2',
       );
 
-      registry.setContext(ToolContext(
+      registry.setContext(const ToolContext(
         senderId: 'test-user',
         isAdmin: true,
         chatId: 'room-1',

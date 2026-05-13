@@ -23,7 +23,7 @@ void main() {
   tearDown(() => db.close());
 
   /// Creates a mock HTTP client that returns the given response.
-  http.Client _mockClient({
+  http.Client mockClient({
     required int statusCode,
     required Map<String, dynamic> body,
   }) =>
@@ -31,12 +31,12 @@ void main() {
           (_) async => http.Response(jsonEncode(body), statusCode));
 
   /// Creates a mock client that returns a valid token response.
-  http.Client _successClient({
+  http.Client successClient({
     String accessToken = 'access-123',
     String refreshToken = 'refresh-456',
     int expiresIn = 28800,
   }) =>
-      _mockClient(
+      mockClient(
         statusCode: 200,
         body: {
           'access_token': accessToken,
@@ -51,7 +51,7 @@ void main() {
         queries: queries,
         log: log,
         initialRefreshToken: 'initial-refresh',
-        httpClient: _successClient(),
+        httpClient: successClient(),
       );
 
       final token = await manager.getAccessToken();
@@ -92,7 +92,7 @@ void main() {
         queries: queries,
         log: log,
         initialRefreshToken: 'initial-refresh',
-        httpClient: _successClient(refreshToken: 'new-refresh'),
+        httpClient: successClient(refreshToken: 'new-refresh'),
       );
 
       await manager.getAccessToken();
@@ -109,7 +109,7 @@ void main() {
         queries: queries,
         log: log,
         // No initialRefreshToken — should fall back to DB.
-        httpClient: _successClient(),
+        httpClient: successClient(),
       );
 
       final token = await manager.getAccessToken();
@@ -121,7 +121,7 @@ void main() {
         queries: queries,
         log: log,
         initialRefreshToken: 'env-refresh',
-        httpClient: _successClient(),
+        httpClient: successClient(),
       );
 
       final token = await manager.getAccessToken();
@@ -133,11 +133,11 @@ void main() {
         queries: queries,
         log: log,
         // No token anywhere.
-        httpClient: _successClient(),
+        httpClient: successClient(),
       );
 
       expect(
-        () => manager.getAccessToken(),
+        manager.getAccessToken,
         throwsA(isA<StateError>().having(
           (e) => e.message,
           'message',
@@ -151,14 +151,14 @@ void main() {
         queries: queries,
         log: log,
         initialRefreshToken: 'some-token',
-        httpClient: _mockClient(
+        httpClient: mockClient(
           statusCode: 400,
           body: {'error': 'invalid_grant'},
         ),
       );
 
       expect(
-        () => manager.getAccessToken(),
+        manager.getAccessToken,
         throwsA(isA<StateError>().having(
           (e) => e.message,
           'message',
@@ -203,7 +203,7 @@ void main() {
         final manager = OAuthTokenManager(
           queries: queries,
           log: log,
-          httpClient: _successClient(),
+          httpClient: successClient(),
         );
 
         expect(manager.health.status, equals(TokenHealthStatus.unknown));
@@ -214,7 +214,7 @@ void main() {
           queries: queries,
           log: log,
           initialRefreshToken: 'token',
-          httpClient: _successClient(),
+          httpClient: successClient(),
         );
 
         await manager.getAccessToken();
@@ -229,7 +229,7 @@ void main() {
           queries: queries,
           log: log,
           initialRefreshToken: 'bad-token',
-          httpClient: _mockClient(
+          httpClient: mockClient(
             statusCode: 401,
             body: {'error': 'unauthorized'},
           ),

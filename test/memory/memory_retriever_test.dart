@@ -152,7 +152,7 @@ void main() {
 
   test('skips records with null embeddings', () async {
     final records = [
-      MemoryRecord(
+      const MemoryRecord(
         id: 1,
         chatId: 'group-1',
         sourceType: MemorySourceType.message,
@@ -275,7 +275,7 @@ void main() {
       'same-chat memory is retrieved; cross-chat memory from other group is not',
       () async {
     final groupARecords = [
-      MemoryRecord(
+      const MemoryRecord(
         id: 1,
         chatId: 'group-A',
         sourceType: MemorySourceType.message,
@@ -284,7 +284,7 @@ void main() {
         embedding: [1.0, 0.0, 0.0],
         createdAt: '2026-03-01T12:00:00',
       ),
-      MemoryRecord(
+      const MemoryRecord(
         id: 2,
         chatId: 'group-B',
         sourceType: MemorySourceType.message,
@@ -293,7 +293,7 @@ void main() {
         embedding: [1.0, 0.0, 0.0],
         createdAt: '2026-03-02T12:00:00',
       ),
-      MemoryRecord(
+      const MemoryRecord(
         id: 3,
         chatId: 'group-B',
         sourceType: MemorySourceType.message,

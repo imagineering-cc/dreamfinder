@@ -20,8 +20,8 @@
 library;
 
 import 'dart:async';
-import 'dart:math';
 import 'dart:developer' as developer;
+import 'dart:math';
 
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;

@@ -11,6 +11,12 @@
 ///
 /// After running, Claude Code's token will be invalidated — run `/login` in
 /// Claude Code to re-authenticate.
+library;
+
+// This is a developer CLI tool — stdout IS its UI. Suppressing avoid_print
+// for the whole file is correct here; structured logging would be the wrong
+// shape for an interactive command-line utility.
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 

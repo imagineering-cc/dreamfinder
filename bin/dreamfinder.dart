@@ -2,8 +2,6 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:anthropic_sdk_dart/anthropic_sdk_dart.dart' as anthropic;
-import 'package:timezone/data/latest.dart' as tzdata;
-
 import 'package:dreamfinder/src/agent/agent_loop.dart';
 import 'package:dreamfinder/src/agent/calendar_retriever.dart';
 import 'package:dreamfinder/src/agent/conversation_history.dart';
@@ -22,9 +20,11 @@ import 'package:dreamfinder/src/db/message_repository.dart';
 import 'package:dreamfinder/src/db/queries.dart';
 import 'package:dreamfinder/src/db/schema.dart';
 import 'package:dreamfinder/src/dream/dream_cycle.dart';
+import 'package:dreamfinder/src/game/game_event_router.dart';
 import 'package:dreamfinder/src/kickstart/kickstart.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_prompt.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_state.dart';
+import 'package:dreamfinder/src/livekit/livekit_server_client.dart';
 import 'package:dreamfinder/src/logging/logger.dart';
 import 'package:dreamfinder/src/matrix/matrix_auth.dart';
 import 'package:dreamfinder/src/matrix/matrix_client.dart';
@@ -41,8 +41,6 @@ import 'package:dreamfinder/src/session/session.dart';
 import 'package:dreamfinder/src/session/session_prompt.dart';
 import 'package:dreamfinder/src/session/session_state.dart';
 import 'package:dreamfinder/src/session/session_timer.dart';
-import 'package:dreamfinder/src/game/game_event_router.dart';
-import 'package:dreamfinder/src/livekit/livekit_server_client.dart';
 import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
 import 'package:dreamfinder/src/tools/chat_config_tools.dart';
 import 'package:dreamfinder/src/tools/github_tools.dart';
@@ -51,6 +49,7 @@ import 'package:dreamfinder/src/tools/memory_tools.dart';
 import 'package:dreamfinder/src/tools/radar_tools.dart';
 import 'package:dreamfinder/src/tools/session_tools.dart';
 import 'package:dreamfinder/src/tools/standup_tools.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
 
 /// Maximum backoff for sync retry (30 seconds).
 const _maxBackoff = Duration(seconds: 30);
@@ -168,8 +167,7 @@ Future<void> main() async {
 
   // Expose recent memories via HTTP for the embodied avatar frontend.
   // This uses a simple recency query — no Voyage AI call needed.
-  health.getRecentMemories = (String chatId, {int limit = 5}) =>
-      queries.getRecentVisibleMemories(chatId, limit: limit);
+  health.getRecentMemories = queries.getRecentVisibleMemories;
 
   // Expose recent conversation history for the voice brain bridge.
   // Returns raw message rows; the health check handler groups by chat_id.
@@ -272,7 +270,7 @@ Future<void> main() async {
     );
     memoryRetriever = MemoryRetriever(
       client: voyageClient,
-      loadMemories: (chatId) => queries.getVisibleMemories(chatId),
+      loadMemories: queries.getVisibleMemories,
     );
     embeddingBackfill = EmbeddingBackfill(
       queries: queries,
@@ -425,16 +423,7 @@ Future<void> main() async {
     sendMessage: sendToRoom,
     backfill: embeddingBackfill,
     consolidator: memoryConsolidator,
-    triggerDream: ({
-      required String groupId,
-      required String triggeredByUuid,
-      required String date,
-    }) =>
-        dreamCycle.trigger(
-      groupId: groupId,
-      triggeredByUuid: triggeredByUuid,
-      date: date,
-    ),
+    triggerDream: dreamCycle.trigger,
     composeViaAgent: (groupId, taskDescription) async {
       final input = AgentInput(
         text: taskDescription,

@@ -1,10 +1,10 @@
 import 'package:dreamfinder/src/agent/agent_loop.dart';
 import 'package:dreamfinder/src/agent/system_prompt.dart';
-import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:test/test.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
 
 void main() {
-  setUpAll(() => tzdata.initializeTimeZones());
+  setUpAll(tzdata.initializeTimeZones);
 
   group('buildSystemPrompt — calendar events', () {
     const input = AgentInput(

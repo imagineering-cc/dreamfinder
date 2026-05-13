@@ -49,7 +49,7 @@ void main() {
 
     // Simulate a Matrix room message arriving.
     final response = await loop.processMessage(
-      AgentInput(
+      const AgentInput(
         text: 'What boards?',
         chatId: '!room123:matrix.test',
         senderId: '@user:matrix.test',

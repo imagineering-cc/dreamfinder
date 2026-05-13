@@ -244,12 +244,12 @@ void main() {
       // Insert test data with old column names.
       raw.execute(
         'INSERT INTO signal_workspace_links '
-        "(signal_group_id, workspace_public_id, workspace_name, created_by_uuid) "
+        '(signal_group_id, workspace_public_id, workspace_name, created_by_uuid) '
         "VALUES ('grp-1', 'ws-1', 'Test WS', 'user-1')",
       );
       raw.execute(
         'INSERT INTO signal_user_links '
-        "(signal_uuid, signal_display_name, kan_user_email) "
+        '(signal_uuid, signal_display_name, kan_user_email) '
         "VALUES ('uuid-1', 'Alice', 'alice@test.com')",
       );
       raw.execute(
@@ -257,7 +257,7 @@ void main() {
         "VALUES ('grp-1')",
       );
       raw.execute(
-        "INSERT INTO standup_sessions (signal_group_id, date) "
+        'INSERT INTO standup_sessions (signal_group_id, date) '
         "VALUES ('grp-1', '2026-03-16')",
       );
       raw.execute(
@@ -265,22 +265,22 @@ void main() {
         "VALUES (1, 'uuid-1', 'Alice')",
       );
       raw.execute(
-        "INSERT INTO dream_cycles (signal_group_id, date, triggered_by_uuid) "
+        'INSERT INTO dream_cycles (signal_group_id, date, triggered_by_uuid) '
         "VALUES ('grp-1', '2026-03-16', 'uuid-1')",
       );
       raw.execute(
         'INSERT INTO sent_reminders '
-        "(card_public_id, signal_group_id, last_reminder_at) "
+        '(card_public_id, signal_group_id, last_reminder_at) '
         "VALUES ('card-1', 'grp-1', datetime('now'))",
       );
       raw.execute(
         'INSERT INTO default_board_config '
-        "(signal_group_id, board_public_id, list_public_id, board_name, list_name) "
+        '(signal_group_id, board_public_id, list_public_id, board_name, list_name) '
         "VALUES ('grp-1', 'b-1', 'l-1', 'Board', 'List')",
       );
       raw.execute(
         'INSERT INTO calendar_reminders '
-        "(event_uid, signal_group_id, reminder_window, sent_at) "
+        '(event_uid, signal_group_id, reminder_window, sent_at) '
         "VALUES ('ev-1', 'grp-1', '24h', datetime('now'))",
       );
 
@@ -408,28 +408,28 @@ void main() {
 
       // Insert test data.
       v5db.execute(
-        "INSERT INTO signal_workspace_links "
-        "(signal_group_id, workspace_public_id, workspace_name, created_by_uuid) "
+        'INSERT INTO signal_workspace_links '
+        '(signal_group_id, workspace_public_id, workspace_name, created_by_uuid) '
         "VALUES ('grp-1', 'ws-1', 'Test WS', 'user-1')",
       );
       v5db.execute(
-        "INSERT INTO signal_user_links "
-        "(signal_uuid, signal_display_name, kan_user_email) "
+        'INSERT INTO signal_user_links '
+        '(signal_uuid, signal_display_name, kan_user_email) '
         "VALUES ('uuid-1', 'Alice', 'alice@test.com')",
       );
       v5db.execute(
-        "INSERT INTO dream_cycles (signal_group_id, date, triggered_by_uuid) "
+        'INSERT INTO dream_cycles (signal_group_id, date, triggered_by_uuid) '
         "VALUES ('grp-1', '2026-03-16', 'uuid-1')",
       );
       v5db.execute(
         "INSERT INTO standup_config (signal_group_id) VALUES ('grp-1')",
       );
       v5db.execute(
-        "INSERT INTO standup_sessions (signal_group_id, date) "
+        'INSERT INTO standup_sessions (signal_group_id, date) '
         "VALUES ('grp-1', '2026-03-16')",
       );
       v5db.execute(
-        "INSERT INTO standup_responses (session_id, signal_uuid, signal_display_name) "
+        'INSERT INTO standup_responses (session_id, signal_uuid, signal_display_name) '
         "VALUES (1, 'uuid-1', 'Alice')",
       );
 
@@ -530,7 +530,7 @@ void main() {
     test('personality_traits table has correct columns and constraints', () {
       // Insert a bot_identity first (foreign key target).
       db.handle.execute(
-        "INSERT INTO bot_identity (name, pronouns, tone) "
+        'INSERT INTO bot_identity (name, pronouns, tone) '
         "VALUES ('Test', 'they/them', 'test')",
       );
 

@@ -123,7 +123,7 @@ void main() {
     setUp(() {
       searchRegistry = ToolRegistry();
       retriever = FakeRetriever(results: [
-        MemorySearchResult(
+        const MemorySearchResult(
           record: MemoryRecord(
             id: 1,
             chatId: 'chat-1',
@@ -135,7 +135,7 @@ void main() {
           ),
           score: 0.95,
         ),
-        MemorySearchResult(
+        const MemorySearchResult(
           record: MemoryRecord(
             id: 2,
             chatId: 'chat-1',

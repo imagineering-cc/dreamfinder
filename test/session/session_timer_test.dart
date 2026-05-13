@@ -243,7 +243,9 @@ void main() {
     test('timers for different groups are independent', () {
       final firedGroups = <String>[];
       final callbacks = <String, void Function()>{};
-      void Function() lastCallback = () {};
+      // Type annotation needed: `() {}` infers as Null Function() and breaks
+      // the assignment from `callback` (which is void Function()) below.
+      void Function() lastCallback = () {}; // ignore: omit_local_variable_types
 
       final timer = SessionTimer(
         sessionState: state,

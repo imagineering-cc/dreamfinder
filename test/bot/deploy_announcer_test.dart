@@ -18,7 +18,7 @@ void main() {
 
   tearDown(() => db.close());
 
-  DeployAnnouncer _createAnnouncer({
+  DeployAnnouncer createAnnouncer({
     String currentVersion = 'v1.1+def456',
     String changelog = '- feat: add OAuth\n- fix: token rotation',
     String diffStat = ' lib/src/config/oauth.dart | 200 +\n 2 files changed',
@@ -41,7 +41,7 @@ void main() {
 
   group('DeployAnnouncer', () {
     test('first deploy seeds version without announcing', () async {
-      final announcer = _createAnnouncer();
+      final announcer = createAnnouncer();
 
       final result = await announcer.announceIfNewVersion();
 
@@ -56,7 +56,7 @@ void main() {
 
     test('same version does not announce', () async {
       queries.setMetadata('last_deployed_version', 'v1.1+def456');
-      final announcer = _createAnnouncer(currentVersion: 'v1.1+def456');
+      final announcer = createAnnouncer(currentVersion: 'v1.1+def456');
 
       final result = await announcer.announceIfNewVersion();
 
@@ -67,7 +67,7 @@ void main() {
 
     test('new version composes and sends announcement', () async {
       queries.setMetadata('last_deployed_version', 'v1.0+abc123');
-      final announcer = _createAnnouncer();
+      final announcer = createAnnouncer();
 
       final result = await announcer.announceIfNewVersion();
 
@@ -87,7 +87,7 @@ void main() {
 
     test('agent failure still updates version', () async {
       queries.setMetadata('last_deployed_version', 'v1.0+old');
-      final announcer = _createAnnouncer(
+      final announcer = createAnnouncer(
         composeViaAgent: (_, __) async => throw Exception('API down'),
       );
 
@@ -103,7 +103,7 @@ void main() {
 
     test('empty composition does not send message', () async {
       queries.setMetadata('last_deployed_version', 'v1.0+old');
-      final announcer = _createAnnouncer(
+      final announcer = createAnnouncer(
         composeViaAgent: (_, __) async => '',
       );
 
@@ -120,7 +120,7 @@ void main() {
 
     test('prompt includes changelog and diff stat', () async {
       queries.setMetadata('last_deployed_version', 'v1.0+old');
-      final announcer = _createAnnouncer(
+      final announcer = createAnnouncer(
         changelog: 'abc123 feat: awesome feature',
         diffStat: ' lib/awesome.dart | 50 +',
       );

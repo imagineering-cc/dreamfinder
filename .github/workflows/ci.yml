@@ -45,10 +45,11 @@ jobs:
         run: dart format --output=none --set-exit-if-changed .
 
       - name: Analyze
-        # --fatal-warnings is enabled; --fatal-infos is intentionally omitted
-        # because the codebase has pre-existing info-level style lints in
-        # tool/ and bin/ that are tracked separately (not blocking issues).
-        run: dart analyze --fatal-warnings
+        # --fatal-infos is enabled — info-level lints fail the build to prevent
+        # style drift. Suppression of specific rules happens via `// ignore:` or
+        # `// ignore_for_file:` comments at the source, with a comment explaining
+        # why. See tool/get_refresh_token.dart for the file-level ignore pattern.
+        run: dart analyze --fatal-infos
 
       - name: Test
         run: dart test
