@@ -209,6 +209,97 @@ void main() {
       }
     });
 
+    test('exposes claude failure fields in /health JSON', () async {
+      final client = HttpClient();
+      try {
+        final request = await client.get('localhost', port, '/health');
+        final response = await request.close();
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+
+        expect(json, contains('consecutive_claude_failures'));
+        expect(json['consecutive_claude_failures'], equals(0));
+        expect(json, contains('last_claude_error'));
+        expect(json['last_claude_error'], isNull);
+        expect(json['claude_ok'], isTrue);
+      } finally {
+        client.close();
+      }
+    });
+
+    test('failures below threshold stay ok', () async {
+      health.recordClaudeError(kind: 'transient', message: 'overloaded');
+      health.recordClaudeError(kind: 'transient', message: 'overloaded');
+
+      final client = HttpClient();
+      try {
+        final request = await client.get('localhost', port, '/health');
+        final response = await request.close();
+        expect(response.statusCode, HttpStatus.ok);
+
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        expect(json['status'], 'ok');
+        expect(json['consecutive_claude_failures'], equals(2));
+        expect(json['claude_ok'], isTrue);
+        // error_count tracks cumulative errors too.
+        expect(json['error_count'], equals(2));
+
+        final lastError = json['last_claude_error'] as Map<String, dynamic>;
+        expect(lastError['kind'], 'transient');
+        expect(lastError['message'], 'overloaded');
+        expect(lastError['at'], isNotNull);
+      } finally {
+        client.close();
+      }
+    });
+
+    test('three consecutive claude failures → degraded (503)', () async {
+      health.recordClaudeError(kind: 'billing', message: 'credit balance low');
+      health.recordClaudeError(kind: 'billing', message: 'credit balance low');
+      health.recordClaudeError(kind: 'billing', message: 'credit balance low');
+
+      final client = HttpClient();
+      try {
+        final request = await client.get('localhost', port, '/health');
+        final response = await request.close();
+        expect(response.statusCode, HttpStatus.serviceUnavailable);
+
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        expect(json['status'], 'degraded');
+        expect(json['consecutive_claude_failures'], equals(3));
+        expect(json['claude_ok'], isFalse);
+      } finally {
+        client.close();
+      }
+    });
+
+    test('a success resets the failure counter back to ok', () async {
+      health.recordClaudeError(kind: 'auth', message: 'invalid_grant');
+      health.recordClaudeError(kind: 'auth', message: 'invalid_grant');
+      health.recordClaudeError(kind: 'auth', message: 'invalid_grant');
+      // Now degraded; a single success must clear it.
+      health.recordClaudeSuccess();
+
+      final client = HttpClient();
+      try {
+        final request = await client.get('localhost', port, '/health');
+        final response = await request.close();
+        expect(response.statusCode, HttpStatus.ok);
+
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        expect(json['status'], 'ok');
+        expect(json['consecutive_claude_failures'], equals(0));
+        expect(json['claude_ok'], isTrue);
+        expect(json['last_claude_error'], isNull);
+        expect(json['last_claude_success'], isNotNull);
+      } finally {
+        client.close();
+      }
+    });
+
     test('returns degraded when processing is stuck', () async {
       // Use a health check with a very short stuck threshold for testing.
       await health.stop();

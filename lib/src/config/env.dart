@@ -44,6 +44,8 @@ class Env {
     this.liveKitUrl,
     this.liveKitApiKey,
     this.liveKitApiSecret,
+    this.notifyUrl,
+    this.notifyApiKey,
     this.rateLimitPerUserSeconds = _defaultRateLimitPerUserSeconds,
     this.rateLimitGroupMax = _defaultRateLimitGroupMax,
     this.rateLimitGroupWindowSeconds = _defaultRateLimitGroupWindowSeconds,
@@ -105,6 +107,8 @@ class Env {
       liveKitUrl: dotEnv['LIVEKIT_URL'],
       liveKitApiKey: dotEnv['LIVEKIT_API_KEY'],
       liveKitApiSecret: dotEnv['LIVEKIT_API_SECRET'],
+      notifyUrl: dotEnv['NOTIFY_URL'],
+      notifyApiKey: dotEnv['NOTIFY_API_KEY'],
       rateLimitPerUserSeconds: _parsePositiveInt(
         dotEnv['RATE_LIMIT_PER_USER_SECONDS'],
         'RATE_LIMIT_PER_USER_SECONDS',
@@ -154,6 +158,8 @@ class Env {
     String? liveKitUrl,
     String? liveKitApiKey,
     String? liveKitApiSecret,
+    String? notifyUrl,
+    String? notifyApiKey,
     int rateLimitPerUserSeconds = _defaultRateLimitPerUserSeconds,
     int rateLimitGroupMax = _defaultRateLimitGroupMax,
     int rateLimitGroupWindowSeconds = _defaultRateLimitGroupWindowSeconds,
@@ -189,6 +195,8 @@ class Env {
         liveKitUrl: liveKitUrl,
         liveKitApiKey: liveKitApiKey,
         liveKitApiSecret: liveKitApiSecret,
+        notifyUrl: notifyUrl,
+        notifyApiKey: notifyApiKey,
         rateLimitPerUserSeconds: rateLimitPerUserSeconds,
         rateLimitGroupMax: rateLimitGroupMax,
         rateLimitGroupWindowSeconds: rateLimitGroupWindowSeconds,
@@ -280,6 +288,15 @@ class Env {
 
   /// LiveKit API secret for HS256 JWT signing.
   final String? liveKitApiSecret;
+
+  /// Base URL of the `notify` sidecar used to escalate brain failures to
+  /// Telegram (e.g. `http://host.docker.internal:8090`). If null, the Telegram
+  /// escalation channel is disabled.
+  final String? notifyUrl;
+
+  /// Bearer token for the `notify` sidecar. If null, the Telegram escalation
+  /// channel is disabled.
+  final String? notifyApiKey;
 
   /// Per-user cooldown in seconds (from `RATE_LIMIT_PER_USER_SECONDS`).
   ///

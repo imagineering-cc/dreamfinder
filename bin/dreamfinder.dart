@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:anthropic_sdk_dart/anthropic_sdk_dart.dart' as anthropic;
 import 'package:dreamfinder/src/agent/agent_loop.dart';
 import 'package:dreamfinder/src/agent/calendar_retriever.dart';
+import 'package:dreamfinder/src/agent/claude_error.dart';
 import 'package:dreamfinder/src/agent/conversation_history.dart';
 import 'package:dreamfinder/src/agent/system_prompt.dart';
 import 'package:dreamfinder/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/bot/alerter.dart';
 import 'package:dreamfinder/src/bot/deploy_announcer.dart';
 import 'package:dreamfinder/src/bot/group_continuation.dart';
 import 'package:dreamfinder/src/bot/health_check.dart';
@@ -317,23 +320,120 @@ Future<void> main() async {
   // ignore: no_leading_underscores_for_local_identifiers
   String? _lastOAuthToken;
 
-  final agentLoop = AgentLoop(
-    createMessage: (messages, tools, systemPrompt) async {
-      if (oauthManager != null) {
-        final token = await oauthManager.getAccessToken();
-        if (token != _lastOAuthToken) {
-          _lastOAuthToken = token;
-          anthropicClient = anthropic.AnthropicClient(
-            apiKey: '',
-            headers: {
-              'Authorization': 'Bearer $token',
-              'anthropic-beta': 'oauth-2025-04-20',
-            },
-          );
-        }
+  // Once a bad OAuth refresh token forces a fallback to the API key, we stay on
+  // the API key (don't thrash back to the broken OAuth path every call).
+  var usingApiKeyFallback = false;
+
+  /// Human-readable auth mode for alerts/logs.
+  String authModeLabel() {
+    if (usingApiKeyFallback) return 'API key (OAuth fallback)';
+    return env.useOAuth ? 'OAuth (Claude Max)' : 'API key';
+  }
+
+  // The alerter escalates unrecoverable brain failures. Constructed before the
+  // agent loop so the resilient call wrapper can reach it. `sendToRoom` is
+  // assigned just below (it's defined a few lines down); we wire it via a late
+  // indirection so the alerter can be a `final`.
+  late final Future<void> Function(String, String) sendToRoomRef;
+  final alerter = Alerter(
+    notifyUrl: env.notifyUrl,
+    notifyApiKey: env.notifyApiKey,
+    announceRoomId: env.deployAnnounceGroupId,
+    authModeLabel: authModeLabel(),
+    sendToRoom: (room, msg) => sendToRoomRef(room, msg),
+    log: BotLogger(name: 'Alerter', level: LogLevel.fromString(env.logLevel)),
+  );
+
+  /// Ensures [anthropicClient] is configured for the current auth mode.
+  ///
+  /// Refreshes the OAuth access token (recreating the client only when the
+  /// token rotates) unless we've fallen back to the API key.
+  Future<void> ensureClient() async {
+    if (oauthManager != null && !usingApiKeyFallback) {
+      final token = await oauthManager.getAccessToken();
+      if (token != _lastOAuthToken) {
+        _lastOAuthToken = token;
+        anthropicClient = anthropic.AnthropicClient(
+          apiKey: '',
+          headers: {
+            'Authorization': 'Bearer $token',
+            'anthropic-beta': 'oauth-2025-04-20',
+          },
+        );
       }
-      return _callClaude(anthropicClient, messages, tools, systemPrompt);
-    },
+    }
+  }
+
+  /// Switches [anthropicClient] to the API key after an OAuth auth failure.
+  void fallBackToApiKey() {
+    usingApiKeyFallback = true;
+    anthropicClient = anthropic.AnthropicClient(apiKey: env.anthropicApiKey!);
+    alerter.authModeLabel = authModeLabel();
+    log.warning(
+      'OAuth auth failed — falling back to API key for subsequent calls. '
+      'River stays online on the metered API instead of going dark.',
+    );
+  }
+
+  /// Resilient Claude call: refreshes/repairs auth, retries transient errors
+  /// with exponential backoff (1s/2s/4s), falls back OAuth→API-key on auth
+  /// failures, and records brain health on every outcome. Non-retryable
+  /// `billing`/`auth`/`other` errors are re-thrown (classified) for the caller
+  /// to escalate.
+  Future<AgentResponse> resilientCreateMessage(
+    List<AgentMessage> messages,
+    List<ToolDefinition> tools,
+    String systemPrompt,
+  ) async {
+    const maxAttempts = 3;
+    var attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        await ensureClient();
+        final response =
+            await _callClaude(anthropicClient, messages, tools, systemPrompt);
+        health.recordClaudeSuccess();
+        return response;
+      } on Object catch (e) {
+        final kind = classifyClaudeError(e);
+        final short = _shortError(e);
+
+        // Auth failure under OAuth → degrade to API key and retry once
+        // immediately on the new client.
+        if (shouldFallBackToApiKey(
+          kind: kind,
+          oauthActive: oauthManager != null,
+          alreadyFellBack: usingApiKeyFallback,
+          hasApiKey:
+              env.anthropicApiKey != null && env.anthropicApiKey!.isNotEmpty,
+        )) {
+          fallBackToApiKey();
+          continue; // retry immediately on the API-key client
+        }
+
+        if (kind.isRetryable && attempt < maxAttempts) {
+          final backoff = Duration(seconds: 1 << (attempt - 1)); // 1,2,4s
+          log.warning('Transient Claude error — retrying', extra: {
+            'attempt': attempt,
+            'backoff_ms': backoff.inMilliseconds,
+            'error': short,
+          });
+          await Future<void>.delayed(backoff);
+          continue;
+        }
+
+        // Out of retries or non-retryable. Record brain health here (single
+        // source of truth) and throw a tagged failure so the main loop can
+        // escalate without re-classifying or double-counting the error.
+        health.recordClaudeError(kind: kind.name, message: short);
+        throw ClaudeCallFailure(kind, e);
+      }
+    }
+  }
+
+  final agentLoop = AgentLoop(
+    createMessage: resilientCreateMessage,
     toolRegistry: toolRegistry,
     history: history,
     onTyping: (chatId) => matrixClient.sendTypingIndicator(roomId: chatId),
@@ -391,6 +491,9 @@ Future<void> main() async {
   Future<void> sendToRoom(String roomId, String message) async {
     await matrixClient.sendMessage(roomId: roomId, message: message);
   }
+
+  // Back-fill the alerter's in-room sender now that sendToRoom exists.
+  sendToRoomRef = sendToRoom;
 
   final rateLimiter = RateLimiter(
     perUserCooldown: Duration(seconds: env.rateLimitPerUserSeconds),
@@ -875,11 +978,31 @@ Future<void> main() async {
             'elapsed_ms': stopwatch.elapsedMilliseconds,
           });
         } on Object catch (e, st) {
-          health.recordError();
           log.error('Error processing message: $e', extra: {
             'room': event.roomId,
             'stackTrace': '$st',
           });
+
+          // A ClaudeCallFailure means the resilient wrapper already recorded
+          // brain health for this; anything else is an unrelated processing
+          // error (Matrix send, corrupt history, …) that we count generically.
+          if (e is ClaudeCallFailure) {
+            // billing/auth here are unrecoverable capability failures — auth
+            // means the API-key fallback also failed (or wasn't available);
+            // billing means we hit the credit wall, the exact silent-death
+            // scenario this PR exists to prevent. Escalate loudly. (`other` is
+            // left to the health counter — it's often a one-off bad request,
+            // not a sustained outage.)
+            if (e.kind == ClaudeErrorKind.billing ||
+                e.kind == ClaudeErrorKind.auth) {
+              unawaited(
+                alerter.escalate(
+                    kind: e.kind.name, message: _shortError(e.cause)),
+              );
+            }
+          } else {
+            health.recordError();
+          }
 
           // Self-heal: clear corrupt conversation history.
           if (e.toString().contains('tool_use_id') ||
@@ -967,6 +1090,13 @@ List<Map<String, Object?>> _getRecentConversations(
 }
 
 /// Bridges agent loop abstract types and `anthropic_sdk_dart`.
+/// Trims an error's string form to a compact, single-line summary suitable for
+/// health JSON and alert bodies (full stack/JSON goes to the logs).
+String _shortError(Object e) {
+  final s = e.toString().replaceAll('\n', ' ').trim();
+  return s.length > 200 ? '${s.substring(0, 200)}…' : s;
+}
+
 Future<AgentResponse> _callClaude(
   anthropic.AnthropicClient client,
   List<AgentMessage> messages,
