@@ -61,7 +61,13 @@ void main() {
     test('rejects --text-file (arbitrary file read) even for admin', () async {
       final result = await run(makeRegistry(isAdmin: true), {
         'tool': 'outline',
-        'args': ['documents.create', '--title', 'x', '--text-file', '/app/.env'],
+        'args': [
+          'documents.create',
+          '--title',
+          'x',
+          '--text-file',
+          '/app/.env'
+        ],
       });
       expect(result['error'], contains('--text-file'));
     });
@@ -119,7 +125,13 @@ void main() {
     test('blocks create-board (structural) for non-admin', () async {
       final result = await run(makeRegistry(isAdmin: false), {
         'tool': 'kan',
-        'args': ['create-board', '--workspace-id', 'abc123def456', '--name', 'B'],
+        'args': [
+          'create-board',
+          '--workspace-id',
+          'abc123def456',
+          '--name',
+          'B'
+        ],
       });
       expect(result['error'], contains('admin'));
     });
@@ -128,7 +140,15 @@ void main() {
         () async {
       final escalate = await run(makeRegistry(isAdmin: false), {
         'tool': 'outline',
-        'args': ['users.invite', '--email', 'x@y.com', '--name', 'X', '--role', 'admin'],
+        'args': [
+          'users.invite',
+          '--email',
+          'x@y.com',
+          '--name',
+          'X',
+          '--role',
+          'admin'
+        ],
       });
       expect(escalate['error'], contains('admin'),
           reason: 'minting an admin requires admin');

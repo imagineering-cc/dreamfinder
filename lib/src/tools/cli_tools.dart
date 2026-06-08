@@ -155,13 +155,12 @@ void registerCliTools(
           'args': <String, dynamic>{
             'type': 'array',
             'items': <String, dynamic>{'type': 'string'},
-            'description':
-                'Subcommand and flags as an argv list, e.g. '
-                    '["create-card","--list-id","abc123def456","--title",'
-                    '"Plan the offsite"]. Each flag and each value is its own '
-                    'array element; values may contain spaces. Pass '
-                    '["<subcommand>","--help"] to discover a subcommand\'s '
-                    'flags.',
+            'description': 'Subcommand and flags as an argv list, e.g. '
+                '["create-card","--list-id","abc123def456","--title",'
+                '"Plan the offsite"]. Each flag and each value is its own '
+                'array element; values may contain spaces. Pass '
+                '["<subcommand>","--help"] to discover a subcommand\'s '
+                'flags.',
           },
         },
         'required': <String>['tool', 'args'],
@@ -309,8 +308,7 @@ Future<String> _runCli(
   return out;
 }
 
-String _err(String message) =>
-    jsonEncode(<String, dynamic>{'error': message});
+String _err(String message) => jsonEncode(<String, dynamic>{'error': message});
 
 /// Tool description, including the available subcommands so the model can pick
 /// without a round-trip. Kept compact; the model can run `["<cmd>","--help"]`
