@@ -57,6 +57,45 @@ void main() {
     expect(result['error'], contains('non-empty array'));
   });
 
+  group('forbidden flags (any sender)', () {
+    test('rejects --text-file (arbitrary file read) even for admin', () async {
+      final result = await run(makeRegistry(isAdmin: true), {
+        'tool': 'outline',
+        'args': ['documents.create', '--title', 'x', '--text-file', '/app/.env'],
+      });
+      expect(result['error'], contains('--text-file'));
+    });
+
+    test('rejects --text-file=PATH form', () async {
+      final result = await run(makeRegistry(isAdmin: true), {
+        'tool': 'outline',
+        'args': ['documents.create', '--text-file=/proc/self/environ'],
+      });
+      expect(result['error'], contains('--text-file'));
+    });
+
+    test('rejects --site credential selection', () async {
+      final result = await run(makeRegistry(isAdmin: true), {
+        'tool': 'kan',
+        'args': ['--site', 'xdeca', 'list-workspaces'],
+      });
+      expect(result['error'], contains('--site'));
+    });
+  });
+
+  group('args type contract', () {
+    test('rejects non-string args elements', () async {
+      final result = await run(makeRegistry(isAdmin: true), {
+        'tool': 'kan',
+        'args': [
+          'create-card',
+          {'nested': 'object'},
+        ],
+      });
+      expect(result['error'], contains('must be a string'));
+    });
+  });
+
   group('admin gating', () {
     test('blocks destructive kan subcommand for non-admin', () async {
       final result = await run(makeRegistry(isAdmin: false), {
@@ -65,6 +104,45 @@ void main() {
       });
       expect(result['error'], contains('admin'));
       expect(result['subcommand'], 'delete-board');
+    });
+
+    test('blocks outline raw escape hatch for non-admin', () async {
+      // The headline cage-match finding: raw could call any verb, bypassing
+      // the per-subcommand gate. It must itself be admin-gated.
+      final result = await run(makeRegistry(isAdmin: false), {
+        'tool': 'outline',
+        'args': ['raw', '--verb', 'collections.delete', '--body', '{"id":"x"}'],
+      });
+      expect(result['error'], contains('admin'));
+    });
+
+    test('blocks create-board (structural) for non-admin', () async {
+      final result = await run(makeRegistry(isAdmin: false), {
+        'tool': 'kan',
+        'args': ['create-board', '--workspace-id', 'abc123def456', '--name', 'B'],
+      });
+      expect(result['error'], contains('admin'));
+    });
+
+    test('blocks admin-role invite for non-admin but allows member invite',
+        () async {
+      final escalate = await run(makeRegistry(isAdmin: false), {
+        'tool': 'outline',
+        'args': ['users.invite', '--email', 'x@y.com', '--name', 'X', '--role', 'admin'],
+      });
+      expect(escalate['error'], contains('admin'),
+          reason: 'minting an admin requires admin');
+
+      // A plain member invite must NOT be admin-blocked (self-service
+      // onboarding). It will fail when the CLI runs (fake creds), but the
+      // error must not be the admin refusal.
+      final member = await run(makeRegistry(isAdmin: false), {
+        'tool': 'outline',
+        'args': ['users.invite', '--email', 'x@y.com', '--name', 'X'],
+      });
+      expect((member['error'] ?? '').toString().contains('admin privileges'),
+          isFalse,
+          reason: 'inviting a member is open for onboarding');
     });
 
     test('blocks invite-link rotation for non-admin', () async {
