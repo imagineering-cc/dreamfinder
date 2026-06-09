@@ -212,18 +212,27 @@ void main() {
       expect(client.isDm('!room:test'), isFalse);
     });
 
-    test('ensureMemberCount leaves count unknown on fetch failure', () async {
+    test('ensureMemberCount negative-caches on failure (probes at most once)',
+        () async {
+      var fetchCount = 0;
       final client = MatrixClient(
         homeserver: homeserver,
         accessToken: token,
         client: _mockClient({
-          // No 'joined_members' handler → mock returns 404.
+          'joined_members': (_) {
+            fetchCount++;
+            return http.Response('boom', 500);
+          },
         }),
       );
 
       await client.ensureMemberCount('!room:test');
+      await client
+          .ensureMemberCount('!room:test'); // second call must NOT refetch
+      expect(fetchCount, 1,
+          reason: 'failure is cached → no retry spam in the event loop');
       expect(client.isDm('!room:test'), isFalse,
-          reason: 'failed fetch → unknown → safe default (group)');
+          reason: 'failed fetch → sentinel → safe default (group)');
     });
 
     test('sendMessage sends with formatted body', () async {

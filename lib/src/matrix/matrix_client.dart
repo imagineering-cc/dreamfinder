@@ -186,19 +186,26 @@ class MatrixClient {
   /// whose member-count summary never arrives in an incremental sync.
   Future<void> ensureMemberCount(String roomId) async {
     if (_roomMemberCounts.containsKey(roomId)) return;
+    // Always record an entry — even on failure — so each room is probed at
+    // most once. This call sits in the sequential event loop; re-fetching a
+    // broken or slow room on every incoming message would spam
+    // /joined_members and stall processing for all other rooms. A failure
+    // caches the sentinel `0` (→ isDm false, the safe "group" default); the
+    // sync-summary path overwrites it with a fresh count whenever the room's
+    // membership changes, so a transient failure self-heals. _get already
+    // applies a 10s timeout, bounding any single stall.
+    var count = 0;
     try {
       final response = await _get(
         '/_matrix/client/v3/rooms/${Uri.encodeComponent(roomId)}/joined_members',
       );
-      if (response.statusCode != 200) return;
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       final joined = json['joined'] as Map<String, dynamic>?;
-      if (joined != null) {
-        _roomMemberCounts[roomId] = joined.length;
-      }
+      if (joined != null) count = joined.length;
     } on Exception {
-      // Leave the count unknown; isDm falls back to "group" (requires mention).
+      // Keep the sentinel 0.
     }
+    _roomMemberCounts[roomId] = count;
   }
 
   /// Checks if [text] contains a mention of the bot.
