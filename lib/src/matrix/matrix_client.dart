@@ -166,10 +166,39 @@ class MatrixClient {
 
   /// Returns `true` if [roomId] is a DM (exactly 2 joined members).
   ///
-  /// Uses cached member counts from sync responses.
+  /// Uses cached member counts. The cache is filled from sync room summaries
+  /// (`m.joined_member_count`), which Matrix only sends when the count changes
+  /// or in a room's first sync — so an idle room joined before this process's
+  /// sync window may have no cached entry. Call [ensureMemberCount] first to
+  /// backfill it on a cache miss; an unknown count is treated as "not a DM"
+  /// (the safe default: a group requires a mention).
   bool isDm(String roomId) {
     final count = _roomMemberCounts[roomId];
     return count != null && count == 2;
+  }
+
+  /// Backfills [_roomMemberCounts] for [roomId] if it's missing, by fetching
+  /// the joined-member list from the server. No-op on a cache hit. Failures
+  /// leave the count unknown (so [isDm] returns `false`) rather than throwing.
+  ///
+  /// This is what makes DM detection reliable for rooms the bot joined before
+  /// the current process started (e.g. long-lived 1:1 DMs and bridge rooms),
+  /// whose member-count summary never arrives in an incremental sync.
+  Future<void> ensureMemberCount(String roomId) async {
+    if (_roomMemberCounts.containsKey(roomId)) return;
+    try {
+      final response = await _get(
+        '/_matrix/client/v3/rooms/${Uri.encodeComponent(roomId)}/joined_members',
+      );
+      if (response.statusCode != 200) return;
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final joined = json['joined'] as Map<String, dynamic>?;
+      if (joined != null) {
+        _roomMemberCounts[roomId] = joined.length;
+      }
+    } on Exception {
+      // Leave the count unknown; isDm falls back to "group" (requires mention).
+    }
   }
 
   /// Checks if [text] contains a mention of the bot.

@@ -770,6 +770,12 @@ Future<void> main() async {
           health.recordMessageDropped('ignored_room');
           continue;
         }
+        // Backfill this room's member count before any DM-vs-group decision.
+        // A room joined before this process's sync window has no cached
+        // summary, so a 2-person DM would otherwise be misclassified as a
+        // group and wrongly require a mention to get a reply.
+        await matrixClient.ensureMemberCount(event.roomId);
+
         // Welcome new members joining a group room.
         if (event.isMemberJoin && !matrixClient.isDm(event.roomId)) {
           final displayName = event.memberDisplayName ??

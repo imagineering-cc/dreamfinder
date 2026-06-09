@@ -168,6 +168,64 @@ void main() {
       expect(client.isDm('!unknown:test'), isFalse);
     });
 
+    test('ensureMemberCount backfills DM detection on a cache miss', () async {
+      // No sync has run, so the room's count is unknown and isDm is false —
+      // the bug that made DMs joined before this process require a mention.
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'joined_members': (_) => _jsonResponse({
+                'joined': {
+                  '@bot:test': <String, dynamic>{},
+                  '@human:test': <String, dynamic>{},
+                },
+              }),
+        }),
+      );
+
+      expect(client.isDm('!stale-dm:test'), isFalse,
+          reason: 'unknown count → treated as group');
+
+      await client.ensureMemberCount('!stale-dm:test');
+
+      expect(client.isDm('!stale-dm:test'), isTrue,
+          reason: 'backfilled 2-member count → detected as DM');
+    });
+
+    test('ensureMemberCount counts >2 members as a group', () async {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'joined_members': (_) => _jsonResponse({
+                'joined': {
+                  '@bot:test': <String, dynamic>{},
+                  '@a:test': <String, dynamic>{},
+                  '@b:test': <String, dynamic>{},
+                },
+              }),
+        }),
+      );
+
+      await client.ensureMemberCount('!room:test');
+      expect(client.isDm('!room:test'), isFalse);
+    });
+
+    test('ensureMemberCount leaves count unknown on fetch failure', () async {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          // No 'joined_members' handler → mock returns 404.
+        }),
+      );
+
+      await client.ensureMemberCount('!room:test');
+      expect(client.isDm('!room:test'), isFalse,
+          reason: 'failed fetch → unknown → safe default (group)');
+    });
+
     test('sendMessage sends with formatted body', () async {
       http.Request? capturedRequest;
 
