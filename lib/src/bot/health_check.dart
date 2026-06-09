@@ -52,6 +52,19 @@ class HealthCheck {
   int _messagesDropped = 0;
   final Map<String, int> _dropReasons = {};
 
+  // --- Claude brain health ---
+  // The original health check only ever looked at the *last successful* Claude
+  // call, so a bot that polled fine but couldn't form a single reply (e.g.
+  // hitting the credit-balance wall) still reported `ok`. These fields make the
+  // failure rate visible so the Docker healthcheck trips and we get alerted.
+  DateTime? _lastClaudeError;
+  String? _lastClaudeErrorKind;
+  String? _lastClaudeErrorMessage;
+  int _consecutiveClaudeFailures = 0;
+
+  /// Number of consecutive Claude failures that flips health to `degraded`.
+  static const _claudeFailureThreshold = 3;
+
   /// Memory retriever — set after initialization when Voyage AI is enabled.
   MemoryRetriever? memoryRetriever;
 
@@ -106,8 +119,28 @@ class HealthCheck {
   }
 
   /// Records a successful Claude API response.
+  ///
+  /// Resets the consecutive-failure counter and clears the last-error fields:
+  /// a single success means the brain is back online.
   void recordClaudeSuccess() {
     _lastClaudeSuccess = DateTime.now();
+    _consecutiveClaudeFailures = 0;
+    _lastClaudeError = null;
+    _lastClaudeErrorKind = null;
+    _lastClaudeErrorMessage = null;
+  }
+
+  /// Records a failed Claude API call for brain-health tracking.
+  ///
+  /// [kind] is one of `transient`, `auth`, `billing`, `other`. [message] is a
+  /// short human-readable summary. Also bumps the cumulative [_errorCount] so
+  /// it appears alongside other errors.
+  void recordClaudeError({required String kind, required String message}) {
+    _errorCount++;
+    _consecutiveClaudeFailures++;
+    _lastClaudeError = DateTime.now();
+    _lastClaudeErrorKind = kind;
+    _lastClaudeErrorMessage = message;
   }
 
   /// Records that message processing has started.
@@ -226,7 +259,8 @@ class HealthCheck {
         _lastPoll != null && now.difference(_lastPoll!) >= _stalePollThreshold;
     final processingStuck = _processingStart != null &&
         now.difference(_processingStart!) >= _stuckProcessingThreshold;
-    final isDegraded = pollStale || processingStuck;
+    final brainDegraded = _consecutiveClaudeFailures >= _claudeFailureThreshold;
+    final isDegraded = pollStale || processingStuck || brainDegraded;
     final status = isDegraded ? 'degraded' : 'ok';
 
     request.response
@@ -245,6 +279,15 @@ class HealthCheck {
         'messages_processed': _messagesProcessed,
         'messages_dropped': _messagesDropped,
         'drop_reasons': _dropReasons,
+        'claude_ok': !brainDegraded,
+        'consecutive_claude_failures': _consecutiveClaudeFailures,
+        'last_claude_error': _lastClaudeError == null
+            ? null
+            : <String, Object?>{
+                'kind': _lastClaudeErrorKind,
+                'message': _lastClaudeErrorMessage,
+                'at': _lastClaudeError!.toUtc().toIso8601String(),
+              },
       }))
       ..close();
   }

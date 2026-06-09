@@ -127,4 +127,32 @@ void main() {
       expect(env.isAdmin('uuid-admin-2'), isTrue);
     });
   });
+
+  group('auth mode selection', () {
+    test('useDirectBearer is false when no long-lived token set', () {
+      final env = Env.forTesting();
+      expect(env.useDirectBearer, isFalse);
+    });
+
+    test('useDirectBearer is true when a long-lived OAuth token is set', () {
+      final env = Env.forTesting(claudeCodeOAuthToken: 'sk-ant-oat01-xyz');
+      expect(env.useDirectBearer, isTrue);
+    });
+
+    test('blank long-lived token does not enable direct Bearer', () {
+      final env = Env.forTesting(claudeCodeOAuthToken: '');
+      expect(env.useDirectBearer, isFalse);
+    });
+
+    test('direct Bearer and refresh-token modes are independent', () {
+      final env = Env.forTesting(
+        claudeCodeOAuthToken: 'sk-ant-oat01-xyz',
+        claudeRefreshToken: 'sk-ant-ort01-abc',
+      );
+      // Both getters report true; the entrypoint resolves precedence
+      // (direct Bearer wins) — these flags just describe what's configured.
+      expect(env.useDirectBearer, isTrue);
+      expect(env.useOAuth, isTrue);
+    });
+  });
 }
