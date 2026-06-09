@@ -46,6 +46,7 @@ import 'package:dreamfinder/src/session/session_state.dart';
 import 'package:dreamfinder/src/session/session_timer.dart';
 import 'package:dreamfinder/src/tools/bot_identity_tools.dart';
 import 'package:dreamfinder/src/tools/chat_config_tools.dart';
+import 'package:dreamfinder/src/tools/cli_tools.dart';
 import 'package:dreamfinder/src/tools/github_tools.dart';
 import 'package:dreamfinder/src/tools/kickstart_tools.dart';
 import 'package:dreamfinder/src/tools/memory_tools.dart';
@@ -123,25 +124,8 @@ Future<void> main() async {
       await mcpManager.startServer(config);
     }
   } else {
-    // Fallback: no config file, use legacy env-var-based setup.
-    if (env.kanEnabled) {
-      await mcpManager.startServer(McpServerConfig(
-        name: 'kan',
-        command: 'node',
-        args: <String>['mcp-servers/packages/kan/index.js'],
-        env: <String, String>{
-          'KAN_BASE_URL': env.kanBaseUrl!,
-          'KAN_API_KEY': env.kanApiKey!,
-        },
-      ));
-    }
-    if (env.outlineEnabled) {
-      await mcpManager.startServer(const McpServerConfig(
-        name: 'outline',
-        command: 'node',
-        args: <String>['mcp-servers/packages/outline/index.js'],
-      ));
-    }
+    // Fallback: no config file. Kan + Outline are handled by the `run_cli`
+    // executor (vendored CLIs), not MCP — only radicale remains on MCP here.
     if (env.radicaleEnabled) {
       await mcpManager.startServer(const McpServerConfig(
         name: 'radicale',
@@ -183,6 +167,15 @@ Future<void> main() async {
   registerBotIdentityTools(toolRegistry, queries);
   registerChatConfigTools(toolRegistry, queries);
   registerStandupTools(toolRegistry, queries);
+  // Kan + Outline are driven via the `run_cli` executor (vendored CLIs),
+  // not MCP servers — one tool, full CLI surface, including onboarding.
+  registerCliTools(
+    toolRegistry,
+    kanApiKey: env.kanApiKey,
+    kanBaseUrl: env.kanBaseUrl,
+    outlineApiKey: env.outlineApiKey,
+    outlineBaseUrl: env.outlineBaseUrl,
+  );
   final kickstartState = KickstartState(queries: queries);
   registerKickstartTools(
     toolRegistry,

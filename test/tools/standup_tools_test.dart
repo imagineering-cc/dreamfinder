@@ -136,15 +136,17 @@ void main() {
       });
       expect(result['success'], isTrue);
 
-      // Verify the response was recorded.
-      final today = DateTime.now().toIso8601String().substring(0, 10);
-      final session = queries.getActiveStandupSession('group-1', today);
-      expect(session, isNotNull);
-
-      final responses = queries.getStandupResponses(session!.id);
+      // Verify via the summary tool rather than recomputing "today" here:
+      // the product derives the session date from the group timezone, so a
+      // host-local DateTime.now() in the test would read a different day's
+      // session whenever the runner's zone straddles midnight vs the group's.
+      final summary =
+          await call('get_standup_summary', {'group_id': 'group-1'});
+      expect(summary['has_session'], isTrue);
+      final responses = summary['responses'] as List<dynamic>;
       expect(responses, hasLength(1));
-      expect(responses.first.yesterday, equals('Finished the login flow'));
-      expect(responses.first.today, equals('Starting dashboard'));
+      expect(responses.first['yesterday'], equals('Finished the login flow'));
+      expect(responses.first['today'], equals('Starting dashboard'));
     });
 
     test('updates existing response from same user', () async {
@@ -164,11 +166,12 @@ void main() {
         'today': 'Updated',
       });
 
-      final today = DateTime.now().toIso8601String().substring(0, 10);
-      final session = queries.getActiveStandupSession('group-1', today);
-      final responses = queries.getStandupResponses(session!.id);
+      // Verify via the summary tool (see note above) — host-tz-independent.
+      final summary =
+          await call('get_standup_summary', {'group_id': 'group-1'});
+      final responses = summary['responses'] as List<dynamic>;
       expect(responses, hasLength(1));
-      expect(responses.first.yesterday, equals('Updated'));
+      expect(responses.first['yesterday'], equals('Updated'));
     });
   });
 

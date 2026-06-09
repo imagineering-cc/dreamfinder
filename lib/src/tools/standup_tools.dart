@@ -240,8 +240,13 @@ CustomToolDef _getStandupSummaryTool(Queries queries) {
     },
     handler: (args) async {
       final groupId = args['group_id'] as String;
-      final date = args['date'] as String? ??
-          DateTime.now().toIso8601String().substring(0, 10);
+      // Default to "today" in the GROUP's timezone, matching how
+      // submit_standup_response keys the session. Using DateTime.now() here
+      // (system-local, = UTC in CI/containers) read a different day's session
+      // whenever the group timezone straddled midnight relative to the host —
+      // so an evening standup summary in Sydney silently saw the wrong day.
+      final date =
+          args['date'] as String? ?? _todayInGroupTimezone(queries, groupId);
 
       final session = queries.getActiveStandupSession(groupId, date);
       if (session == null) {

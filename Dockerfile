@@ -42,15 +42,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev 
 
 WORKDIR /app
 
-# Install MCP server dependencies (if submodule exists).
-COPY mcp-servers/packages/kan/package.json mcp-servers/packages/kan/
-COPY mcp-servers/packages/kan/ mcp-servers/packages/kan/
-RUN cd mcp-servers/packages/kan && npm install --omit=dev 2>/dev/null || true
+# Kan + Outline are driven by the vendored zero-dependency CLIs (no npm
+# install needed — they import only node builtins). The `run_cli` tool shells
+# out to these; CLI_TOOLS_DIR tells it where to find them.
+COPY cli-tools/ /app/cli-tools/
+ENV CLI_TOOLS_DIR=/app/cli-tools
 
-COPY mcp-servers/packages/outline/package.json mcp-servers/packages/outline/
-COPY mcp-servers/packages/outline/ mcp-servers/packages/outline/
-RUN cd mcp-servers/packages/outline && npm install --omit=dev 2>/dev/null || true
-
+# Radicale stays on MCP (no CLI equivalent) — install its deps.
 COPY mcp-servers/packages/radicale/package.json mcp-servers/packages/radicale/
 COPY mcp-servers/packages/radicale/ mcp-servers/packages/radicale/
 RUN cd mcp-servers/packages/radicale && npm install --omit=dev 2>/dev/null || true
