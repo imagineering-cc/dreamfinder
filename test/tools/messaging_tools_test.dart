@@ -79,6 +79,7 @@ ToolRegistry _makeRegistry(
     registry,
     matrixClient,
     whatsappManagementRoom: _mgmtRoom,
+    bridgeBotIds: const {'@whatsappbot:test'},
     replyPollInterval: const Duration(milliseconds: 10),
     replyTimeout: timeout,
   );
@@ -95,10 +96,26 @@ void main() {
       registerMessagingTools(
         registry,
         MatrixClient(homeserver: homeserver, accessToken: token),
+        bridgeBotIds: const {'@whatsappbot:test'},
       );
       final names =
           registry.getAllToolDefinitions().map((t) => t.name).toList();
       expect(names, contains('dm_user'));
+      expect(names, isNot(contains('start_private_chat')));
+    });
+
+    test('is not registered without bridge bot IDs', () {
+      // The bridge bot identity authenticates the bridge's reply — without
+      // it the tool would accept a permalink from any room member, so it
+      // must refuse to register.
+      final registry = ToolRegistry();
+      registerMessagingTools(
+        registry,
+        MatrixClient(homeserver: homeserver, accessToken: token),
+        whatsappManagementRoom: _mgmtRoom,
+      );
+      final names =
+          registry.getAllToolDefinitions().map((t) => t.name).toList();
       expect(names, isNot(contains('start_private_chat')));
     });
 
@@ -133,7 +150,14 @@ void main() {
       );
       final registry = _makeRegistry(client, isAdmin: true);
 
-      for (final bad in ['nick', '@nick:test', '12345', '+1 (800) FLOWERS']) {
+      for (final bad in [
+        'nick',
+        '@nick:test',
+        '12345',
+        '+1 (800) FLOWERS',
+        '61400000000', // no leading + — ambiguous local format
+        '+0400000000', // leading zero after +
+      ]) {
         final result = await registry.executeTool('start_private_chat', {
           'phone': bad,
           'message': 'hi',
@@ -143,6 +167,36 @@ void main() {
             reason: '"$bad" must be rejected');
       }
       expect(sends, 0, reason: 'no bridge command for invalid input');
+    });
+
+    test('returns structured errors for non-string args (no TypeError)',
+        () async {
+      // args come from model-generated JSON — a malformed call must come
+      // back as a structured error, not a thrown TypeError.
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({}),
+      );
+      final registry = _makeRegistry(client, isAdmin: true);
+
+      final badPhone = await registry.executeTool('start_private_chat', {
+        'phone': 61400000000, // int, not String
+        'message': 'hi',
+      });
+      expect(
+        (jsonDecode(badPhone) as Map<String, dynamic>)['error'],
+        contains('international'),
+      );
+
+      final badMessage = await registry.executeTool('start_private_chat', {
+        'phone': '+61400000000',
+        'message': <String>['not', 'a', 'string'],
+      });
+      expect(
+        (jsonDecode(badMessage) as Map<String, dynamic>)['error'],
+        contains('message'),
+      );
     });
 
     test('full happy path: command → bridge reply → join → send', () async {
@@ -259,6 +313,81 @@ void main() {
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
       expect(json['error'], contains('Timed out'));
+    });
+
+    test('ignores permalinks from senders that are not the bridge bot',
+        () async {
+      // Trust model: only the bridge bot's replies may name the portal.
+      // A permalink posted by anyone else in the management room must not
+      // be able to redirect the opener to an attacker-chosen room.
+      final impostorReply = {
+        'event_id': r'$impostor',
+        'sender': '@mallory:test',
+        'type': 'm.room.message',
+        'origin_server_ts': 2,
+        'content': {
+          'msgtype': 'm.text',
+          'body': 'here is your chat',
+          'format': 'org.matrix.custom.html',
+          'formatted_body':
+              '<a href="https://matrix.to/#/%21evilroom%3Atest">chat</a>',
+        },
+      };
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'whoami': (_) => _jsonResponse({'user_id': '@river:test'}),
+          'messages': (_) => _jsonResponse({
+                'chunk': [impostorReply, _commandEvent()],
+              }),
+          'mgmtroom': (_) => _jsonResponse({'event_id': r'$cmd1'}),
+        }),
+      );
+      final registry = _makeRegistry(
+        client,
+        isAdmin: true,
+        timeout: const Duration(milliseconds: 50),
+      );
+
+      final result = await registry.executeTool('start_private_chat', {
+        'phone': '+61400000000',
+        'message': 'hi',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      expect(json['error'], contains('Timed out'),
+          reason: 'a non-bridge sender\'s permalink must be ignored');
+    });
+
+    test('surfaces a join failure with join context instead of sending',
+        () async {
+      var portalSends = 0;
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'whoami': (_) => _jsonResponse({'user_id': '@river:test'}),
+          'messages': (_) => _jsonResponse({
+                'chunk': [_bridgeReplyEvent(), _commandEvent()],
+              }),
+          'join': (_) => http.Response('{"errcode":"M_FORBIDDEN"}', 403),
+          'mgmtroom': (_) => _jsonResponse({'event_id': r'$cmd1'}),
+          'portalroom': (_) {
+            portalSends++;
+            return _jsonResponse({'event_id': r'$opener'});
+          },
+        }),
+      );
+      final registry = _makeRegistry(client, isAdmin: true);
+
+      final result = await registry.executeTool('start_private_chat', {
+        'phone': '+61400000000',
+        'message': 'hi',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      expect(json['error'], contains('joining it failed'));
+      expect(portalSends, 0,
+          reason: 'a failed join must not be masked by a send attempt');
     });
 
     test('ignores stale bridge messages older than the command', () async {

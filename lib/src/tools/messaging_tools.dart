@@ -26,22 +26,28 @@ import '../matrix/models.dart';
 
 /// Registers the proactive-DM tools with the [registry].
 ///
-/// `start_private_chat` is only registered when [whatsappManagementRoom] is
-/// configured (the Matrix room shared with the WhatsApp bridge bot where
-/// `start-chat` commands are issued). [replyPollInterval] and [replyTimeout]
-/// exist for tests — production uses the defaults.
+/// `start_private_chat` is only registered when BOTH [whatsappManagementRoom]
+/// (the Matrix room shared with the WhatsApp bridge bot where `start-chat`
+/// commands are issued) AND [bridgeBotIds] are configured — the bridge bot
+/// identity is what authenticates the bridge's reply, so the tool refuses to
+/// exist without it. [replyPollInterval] and [replyTimeout] exist for tests —
+/// production uses the defaults.
 void registerMessagingTools(
   ToolRegistry registry,
   MatrixClient matrixClient, {
   String? whatsappManagementRoom,
+  Set<String> bridgeBotIds = const {},
   Duration replyPollInterval = const Duration(seconds: 2),
   Duration replyTimeout = const Duration(seconds: 30),
 }) {
   registry.registerCustomTool(_dmUserTool(matrixClient));
-  if (whatsappManagementRoom != null && whatsappManagementRoom.isNotEmpty) {
+  if (whatsappManagementRoom != null &&
+      whatsappManagementRoom.isNotEmpty &&
+      bridgeBotIds.isNotEmpty) {
     registry.registerCustomTool(_startPrivateChatTool(
       matrixClient,
       managementRoom: whatsappManagementRoom,
+      bridgeBotIds: bridgeBotIds,
       pollInterval: replyPollInterval,
       timeout: replyTimeout,
     ));
@@ -85,17 +91,20 @@ Future<String> _dmUser(
   MatrixClient matrixClient,
   Map<String, dynamic> args,
 ) async {
-  final userId = args['user_id'] as String?;
-  final message = args['message'] as String?;
+  // `args` crosses the type-system boundary (model-generated JSON) — validate
+  // with `is` checks rather than casts so a malformed call returns a
+  // structured error instead of throwing a TypeError.
+  final userId = args['user_id'];
+  final message = args['message'];
 
   // A valid Matrix user ID is `@localpart:server`. Validate before creating a
   // room so a typo doesn't spawn an empty DM.
-  if (userId == null || !userId.startsWith('@') || !userId.contains(':')) {
+  if (userId is! String || !userId.startsWith('@') || !userId.contains(':')) {
     return jsonEncode(<String, dynamic>{
       'error': 'user_id must be a full Matrix ID like @alice:imagineering.cc',
     });
   }
-  if (message == null || message.trim().isEmpty) {
+  if (message is! String || message.trim().isEmpty) {
     return jsonEncode(<String, dynamic>{
       'error': 'message is required and cannot be empty',
     });
@@ -121,9 +130,11 @@ Future<String> _dmUser(
 // start_private_chat — WhatsApp 1:1 via the mautrix bridge
 // -----------------------------------------------------------------------------
 
-/// Matches a phone number in international format after normalization
-/// (digits only, optional leading `+`).
-final _phonePattern = RegExp(r'^\+?[0-9]{6,15}$');
+/// Matches an E.164-style international phone number after normalization:
+/// mandatory `+`, then 6-15 digits not starting with 0. The mautrix bridge
+/// resolves identifiers internationally, so an ambiguous local-format number
+/// (no `+`) is rejected rather than guessed at.
+final _phonePattern = RegExp(r'^\+[1-9][0-9]{5,14}$');
 
 /// Extracts a Matrix room ID from a matrix.to permalink in the bridge's
 /// reply, e.g. `https://matrix.to/#/!abc123%3Aexample.com?via=example.com`.
@@ -135,6 +146,7 @@ final _matrixToRoomPattern =
 CustomToolDef _startPrivateChatTool(
   MatrixClient matrixClient, {
   required String managementRoom,
+  required Set<String> bridgeBotIds,
   required Duration pollInterval,
   required Duration timeout,
 }) {
@@ -146,17 +158,19 @@ CustomToolDef _startPrivateChatTool(
         'community member and ask for their email so they can be invited to '
         'Outline. The recipient just receives a normal WhatsApp message from '
         'the bot\'s own WhatsApp number; their reply arrives back here as a '
-        'direct message. Use a full international phone number. Each call is '
-        'a cold outbound message — send one complete, warm message rather '
-        'than fragments. Admin-only.',
+        'direct message. Requires a full international phone number starting '
+        'with +. Each call is a cold outbound message — send one complete, '
+        'warm message rather than fragments. NOTE: the bot is unresponsive '
+        'to other rooms for up to ~30s while the bridge sets up the chat. '
+        'Admin-only.',
     inputSchema: const <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
         'phone': <String, dynamic>{
           'type': 'string',
           'description':
-              'Phone number in international format, e.g. +61400000000. '
-                  'Spaces and dashes are tolerated.',
+              'Phone number in international format with leading +, e.g. '
+                  '+61400000000. Spaces and dashes are tolerated.',
         },
         'message': <String, dynamic>{
           'type': 'string',
@@ -171,6 +185,7 @@ CustomToolDef _startPrivateChatTool(
       matrixClient,
       args,
       managementRoom: managementRoom,
+      bridgeBotIds: bridgeBotIds,
       pollInterval: pollInterval,
       timeout: timeout,
     ),
@@ -181,21 +196,27 @@ Future<String> _startPrivateChat(
   MatrixClient matrixClient,
   Map<String, dynamic> args, {
   required String managementRoom,
+  required Set<String> bridgeBotIds,
   required Duration pollInterval,
   required Duration timeout,
 }) async {
-  final rawPhone = args['phone'] as String?;
-  final message = args['message'] as String?;
+  // `args` crosses the type-system boundary (model-generated JSON) — validate
+  // with `is` checks rather than casts so a malformed call returns a
+  // structured error instead of throwing a TypeError.
+  final rawPhone = args['phone'];
+  final message = args['message'];
 
   // Normalize: tolerate spaces/dashes/parens that humans paste in.
-  final phone = rawPhone?.replaceAll(RegExp(r'[\s\-()]'), '') ?? '';
+  final phone = rawPhone is String
+      ? rawPhone.replaceAll(RegExp(r'[\s\-()]'), '')
+      : '';
   if (!_phonePattern.hasMatch(phone)) {
     return jsonEncode(<String, dynamic>{
-      'error': 'phone must be an international number like +61400000000 '
-          '(got "${rawPhone ?? ''}")',
+      'error': 'phone must be an international number with leading + like '
+          '+61400000000 (got "${rawPhone is String ? rawPhone : rawPhone.runtimeType}")',
     });
   }
-  if (message == null || message.trim().isEmpty) {
+  if (message is! String || message.trim().isEmpty) {
     return jsonEncode(<String, dynamic>{
       'error': 'message is required and cannot be empty',
     });
@@ -212,26 +233,34 @@ Future<String> _startPrivateChat(
     // 2. Poll for the bridge's reply. We poll /messages instead of waiting on
     //    /sync because this handler runs *inside* the sequential sync loop —
     //    awaiting a future sync event from here would deadlock the bot.
-    final portalRoomId = await _awaitPortalReply(
+    final reply = await _awaitPortalReply(
       matrixClient,
       managementRoom: managementRoom,
+      bridgeBotIds: bridgeBotIds,
       commandEventId: commandEventId,
       pollInterval: pollInterval,
       timeout: timeout,
     );
-    if (portalRoomId.error != null) {
-      return jsonEncode(<String, dynamic>{'error': portalRoomId.error});
+    final String portal;
+    switch (reply) {
+      case _PortalFailed(:final reason):
+        return jsonEncode(<String, dynamic>{'error': reason});
+      case _PortalFound(:final roomId):
+        portal = roomId;
     }
-    final portal = portalRoomId.roomId!;
 
     // 3. Join the portal. The bridge invites us, but the loop's auto-join is
-    //    blocked while this handler runs — join explicitly. Tolerate failure:
-    //    if we're already joined (e.g. an existing chat), /join still 200s on
-    //    most servers, but don't let an edge case kill the send.
+    //    blocked while this handler runs — join explicitly. /join on a room
+    //    we're already a member of is idempotent (200), so any failure here
+    //    is a real one (permissions, bad room, bridge misbehavior) and is
+    //    surfaced with join context rather than masked by a less diagnostic
+    //    send error.
     try {
       await matrixClient.joinRoom(portal);
-    } on Exception {
-      // Already joined, or join raced the invite — try the send regardless.
+    } on Exception catch (e) {
+      return jsonEncode(<String, dynamic>{
+        'error': 'Bridge created portal $portal but joining it failed: $e',
+      });
     }
 
     // 4. Send the opener into the portal → delivered to WhatsApp.
@@ -250,31 +279,44 @@ Future<String> _startPrivateChat(
   }
 }
 
-/// Result of waiting for the bridge's `start-chat` reply: either a portal
-/// room ID or an error description.
-class _PortalReply {
-  const _PortalReply.ok(this.roomId) : error = null;
-  const _PortalReply.failed(this.error) : roomId = null;
+/// Result of waiting for the bridge's `start-chat` reply.
+sealed class _PortalReply {
+  const _PortalReply();
+}
 
-  final String? roomId;
-  final String? error;
+class _PortalFound extends _PortalReply {
+  const _PortalFound(this.roomId);
+  final String roomId;
+}
+
+class _PortalFailed extends _PortalReply {
+  const _PortalFailed(this.reason);
+  final String reason;
 }
 
 /// Polls [managementRoom] for the bridge bot's reply to our `start-chat`
-/// command (the first message newer than [commandEventId] from another
-/// sender), and extracts the portal room ID from its matrix.to permalink.
+/// command and extracts the portal room ID from its matrix.to permalink.
 ///
-/// A reply without a permalink (e.g. "user is not on WhatsApp") keeps the
-/// poll alive until [timeout] in case the link arrives in a follow-up
-/// message; on timeout the last such reply is surfaced as the error detail.
+/// Trust model: only events whose sender is in [bridgeBotIds] are considered
+/// — a permalink posted by anyone else in the management room must not be
+/// able to redirect the opener. Only events *newer* than [commandEventId]
+/// are considered: the newest-first scan hard-stops at the command event.
+/// When the command event is not in the fetched page, every event in the
+/// page is newer than it (room history is totally ordered), so the whole
+/// page is scanned.
+///
+/// A bridge reply without a permalink (e.g. "user is not on WhatsApp")
+/// keeps the poll alive until [timeout] in case the link arrives in a
+/// follow-up message; on timeout the last such reply is surfaced as the
+/// error detail.
 Future<_PortalReply> _awaitPortalReply(
   MatrixClient matrixClient, {
   required String managementRoom,
+  required Set<String> bridgeBotIds,
   required String commandEventId,
   required Duration pollInterval,
   required Duration timeout,
 }) async {
-  final botUserId = await matrixClient.whoAmI();
   final deadline = DateTime.now().add(timeout);
   String? lastBridgeText;
 
@@ -286,11 +328,13 @@ Future<_PortalReply> _awaitPortalReply(
       recent = const [];
     }
 
-    // Newest-first: scan replies until we reach our own command event —
-    // everything before it in the list is newer than the command.
+    // Newest-first: scan until we reach our own command event — everything
+    // before it in the list is newer than the command.
     for (final event in recent) {
       if (event.eventId == commandEventId) break;
-      if (event.sender == botUserId) continue;
+      // Only the bridge bot's replies are trusted; a permalink from any
+      // other member of the management room must not redirect the opener.
+      if (!bridgeBotIds.contains(event.sender)) continue;
       final text = event.body;
       if (text == null || text.isEmpty) continue;
 
@@ -298,14 +342,21 @@ Future<_PortalReply> _awaitPortalReply(
       final haystack = '${event.formattedBody ?? ''}\n$text';
       final match = _matrixToRoomPattern.firstMatch(haystack);
       if (match != null) {
-        final roomId = Uri.decodeComponent(match.group(1)!);
-        return _PortalReply.ok(roomId);
+        // decodeComponent throws ArgumentError (an Error, not Exception) on
+        // malformed percent-encoding — contain it here so a mangled reply
+        // degrades to "keep polling" rather than escaping the handler.
+        try {
+          return _PortalFound(Uri.decodeComponent(match.group(1)!));
+        } on ArgumentError {
+          lastBridgeText = text;
+          continue;
+        }
       }
       lastBridgeText = text;
     }
 
     if (DateTime.now().isAfter(deadline)) {
-      return _PortalReply.failed(
+      return _PortalFailed(
         lastBridgeText != null
             ? 'Bridge did not return a chat link. Bridge said: $lastBridgeText'
             : 'Timed out waiting for the WhatsApp bridge to respond.',

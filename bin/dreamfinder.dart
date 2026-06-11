@@ -182,14 +182,18 @@ Future<void> main() async {
     outlineBaseUrl: env.outlineBaseUrl,
   );
   // Proactive DM tools: Matrix-native dm_user always; WhatsApp
-  // start_private_chat only when the bridge management room is configured.
+  // start_private_chat only when the bridge management room AND bridge bot
+  // identities are configured (the bridge bot ID authenticates the bridge's
+  // reply to start-chat — the tool refuses to exist without it).
   registerMessagingTools(
     toolRegistry,
     matrixClient,
     whatsappManagementRoom: env.whatsappManagementRoom,
+    bridgeBotIds: env.bridgeBotIds.toSet(),
   );
   if (env.whatsappManagementRoom != null &&
-      env.whatsappManagementRoom!.isNotEmpty) {
+      env.whatsappManagementRoom!.isNotEmpty &&
+      env.bridgeBotIds.isNotEmpty) {
     log.info('WhatsApp proactive DM enabled', extra: {
       'managementRoom': env.whatsappManagementRoom,
     });
