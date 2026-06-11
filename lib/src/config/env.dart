@@ -23,6 +23,8 @@ class Env {
     this.matrixPassword,
     this.matrixIgnoreRooms = const [],
     this.matrixAlwaysRespondRooms = const [],
+    this.bridgeBotIds = const [],
+    this.whatsappManagementRoom,
     this.kanBaseUrl,
     this.kanApiKey,
     this.outlineBaseUrl,
@@ -90,6 +92,8 @@ class Env {
       matrixIgnoreRooms: _parseList(dotEnv['MATRIX_IGNORE_ROOMS']),
       matrixAlwaysRespondRooms:
           _parseList(dotEnv['MATRIX_ALWAYS_RESPOND_ROOMS']),
+      bridgeBotIds: _parseList(dotEnv['BRIDGE_BOT_IDS']),
+      whatsappManagementRoom: dotEnv['WHATSAPP_MANAGEMENT_ROOM'],
       kanBaseUrl: dotEnv['KAN_BASE_URL'],
       kanApiKey: dotEnv['KAN_API_KEY'],
       outlineBaseUrl: dotEnv['OUTLINE_BASE_URL'],
@@ -142,6 +146,8 @@ class Env {
     String? matrixPassword,
     List<String> matrixIgnoreRooms = const [],
     List<String> matrixAlwaysRespondRooms = const [],
+    List<String> bridgeBotIds = const [],
+    String? whatsappManagementRoom,
     String? kanBaseUrl,
     String? kanApiKey,
     String? outlineBaseUrl,
@@ -180,6 +186,8 @@ class Env {
         matrixPassword: matrixPassword,
         matrixIgnoreRooms: matrixIgnoreRooms,
         matrixAlwaysRespondRooms: matrixAlwaysRespondRooms,
+        bridgeBotIds: bridgeBotIds,
+        whatsappManagementRoom: whatsappManagementRoom,
         kanBaseUrl: kanBaseUrl,
         kanApiKey: kanApiKey,
         outlineBaseUrl: outlineBaseUrl,
@@ -252,6 +260,20 @@ class Env {
   /// Room IDs where the bot responds to every message, not just mentions
   /// (from `MATRIX_ALWAYS_RESPOND_ROOMS`, comma-separated).
   final List<String> matrixAlwaysRespondRooms;
+
+  /// Matrix user IDs of bridge appservice bots (from `BRIDGE_BOT_IDS`,
+  /// comma-separated, e.g. `@whatsappbot:imagineering.cc`).
+  ///
+  /// Excluded from DM member counting so bridge portal rooms (which always
+  /// contain the bridge bot as an extra member) are correctly detected as
+  /// DMs. See `MatrixClient.bridgeBotIds`.
+  final List<String> bridgeBotIds;
+
+  /// The bot's WhatsApp-bridge management room (from
+  /// `WHATSAPP_MANAGEMENT_ROOM`) — the room shared with the WhatsApp bridge
+  /// bot where `start-chat` commands are issued. If null, the
+  /// `start_private_chat` tool is disabled.
+  final String? whatsappManagementRoom;
 
   final String? kanBaseUrl;
   final String? kanApiKey;

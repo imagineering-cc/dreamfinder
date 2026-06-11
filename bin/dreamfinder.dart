@@ -50,6 +50,7 @@ import 'package:dreamfinder/src/tools/cli_tools.dart';
 import 'package:dreamfinder/src/tools/github_tools.dart';
 import 'package:dreamfinder/src/tools/kickstart_tools.dart';
 import 'package:dreamfinder/src/tools/memory_tools.dart';
+import 'package:dreamfinder/src/tools/messaging_tools.dart';
 import 'package:dreamfinder/src/tools/radar_tools.dart';
 import 'package:dreamfinder/src/tools/session_tools.dart';
 import 'package:dreamfinder/src/tools/standup_tools.dart';
@@ -103,6 +104,10 @@ Future<void> main() async {
   final matrixClient = MatrixClient(
     homeserver: env.matrixHomeserver,
     accessToken: matrixToken,
+    // Bridge appservice bots don't count toward DM detection — this is what
+    // makes bridged 1:1 portal rooms (bot + remote ghost + bridge bot)
+    // classify as DMs instead of groups.
+    bridgeBotIds: env.bridgeBotIds.toSet(),
   );
 
   try {
@@ -176,6 +181,23 @@ Future<void> main() async {
     outlineApiKey: env.outlineApiKey,
     outlineBaseUrl: env.outlineBaseUrl,
   );
+  // Proactive DM tools: Matrix-native dm_user always; WhatsApp
+  // start_private_chat only when the bridge management room AND bridge bot
+  // identities are configured (the bridge bot ID authenticates the bridge's
+  // reply to start-chat — the tool refuses to exist without it).
+  registerMessagingTools(
+    toolRegistry,
+    matrixClient,
+    whatsappManagementRoom: env.whatsappManagementRoom,
+    bridgeBotIds: env.bridgeBotIds.toSet(),
+  );
+  if (env.whatsappManagementRoom != null &&
+      env.whatsappManagementRoom!.isNotEmpty &&
+      env.bridgeBotIds.isNotEmpty) {
+    log.info('WhatsApp proactive DM enabled', extra: {
+      'managementRoom': env.whatsappManagementRoom,
+    });
+  }
   final kickstartState = KickstartState(queries: queries);
   registerKickstartTools(
     toolRegistry,

@@ -25,6 +25,7 @@ class MatrixClient {
   MatrixClient({
     required this.homeserver,
     required this.accessToken,
+    this.bridgeBotIds = const {},
     http.Client? client,
   }) : _client = client ?? http.Client();
 
@@ -34,13 +35,36 @@ class MatrixClient {
   /// The bot's access token for authentication.
   final String accessToken;
 
+  /// Matrix user IDs of bridge appservice bots (e.g.,
+  /// `@whatsappbot:imagineering.cc`), excluded from DM member counting.
+  ///
+  /// A mautrix bridge portal room for a 1:1 chat always contains a third
+  /// member — the bridge bot — so the raw "2 joined members = DM" heuristic
+  /// misclassifies every bridged 1:1 as a group (the Portal Member-Count
+  /// Trap). Counting *effective* members (everyone except bridge bots) makes
+  /// a portal with {bot, remote ghost, bridge bot} a DM, and — equally
+  /// important — makes a bridge *management* room ({bot, bridge bot},
+  /// effective count 1) NOT a DM.
+  final Set<String> bridgeBotIds;
+
   final http.Client _client;
 
   /// Cached bot user ID from [whoAmI].
   String? _botUserId;
 
-  /// Cached room member counts from sync responses (for DM detection).
+  /// Cached *effective* room member counts for DM detection: joined members
+  /// excluding [bridgeBotIds]. Filled by [ensureMemberCount] (member-list
+  /// fetch) and, when no bridge bots are configured, directly from sync
+  /// summaries (raw count == effective count in that case).
   final Map<String, int> _roomMemberCounts = {};
+
+  /// Last raw `m.joined_member_count` seen per room in sync summaries.
+  ///
+  /// Used purely as an invalidation signal: when the raw count changes and
+  /// [bridgeBotIds] is non-empty, the cached effective count is dropped so
+  /// the next [ensureMemberCount] refetches the member list (a raw count
+  /// alone can't tell us how many of the members are bridge bots).
+  final Map<String, int> _rawSummaryCounts = {};
 
   /// Returns the bot's Matrix user ID (e.g., `@bot:server`).
   ///
@@ -164,14 +188,45 @@ class MatrixClient {
     await _post('/_matrix/client/v3/join/$encoded');
   }
 
-  /// Returns `true` if [roomId] is a DM (exactly 2 joined members).
+  /// Fetches the most recent messages in [roomId], newest first.
   ///
-  /// Uses cached member counts. The cache is filled from sync room summaries
-  /// (`m.joined_member_count`), which Matrix only sends when the count changes
-  /// or in a room's first sync — so an idle room joined before this process's
-  /// sync window may have no cached entry. Call [ensureMemberCount] first to
-  /// backfill it on a cache miss; an unknown count is treated as "not a DM"
-  /// (the safe default: a group requires a mention).
+  /// Uses `GET /rooms/{id}/messages` (`dir=b`) — an on-demand read that is
+  /// independent of the `/sync` long-poll. This matters because the bot's
+  /// event loop is strictly sequential: a tool handler that needs to see a
+  /// room's *reply* to something it just sent (e.g. a bridge bot answering a
+  /// command) cannot wait for that reply to arrive via sync — the handler
+  /// itself is blocking the sync loop. Polling this endpoint instead avoids
+  /// the deadlock.
+  Future<List<MatrixEvent>> getRecentMessages({
+    required String roomId,
+    int limit = 20,
+  }) async {
+    final encodedRoomId = Uri.encodeComponent(roomId);
+    final uri =
+        Uri.parse('$homeserver/_matrix/client/v3/rooms/$encodedRoomId/messages')
+            .replace(queryParameters: <String, String>{
+      'dir': 'b',
+      'limit': limit.toString(),
+    });
+    final response = await _getUri(uri);
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    final chunk = json['chunk'] as List<dynamic>? ?? const <dynamic>[];
+    return [
+      for (final event in chunk)
+        MatrixEvent.fromJson(event as Map<String, dynamic>, roomId: roomId),
+    ];
+  }
+
+  /// Returns `true` if [roomId] is a DM (exactly 2 *effective* joined
+  /// members — i.e. excluding any [bridgeBotIds]).
+  ///
+  /// Uses cached member counts. With no bridge bots configured, the cache is
+  /// filled from sync room summaries (`m.joined_member_count`); with bridge
+  /// bots configured, summaries only *invalidate* the cache and the count
+  /// comes from [ensureMemberCount]'s member-list fetch. Either way an idle
+  /// room joined before this process's sync window may have no cached entry —
+  /// call [ensureMemberCount] first to backfill it; an unknown count is
+  /// treated as "not a DM" (the safe default: a group requires a mention).
   bool isDm(String roomId) {
     final count = _roomMemberCounts[roomId];
     return count != null && count == 2;
@@ -201,7 +256,11 @@ class MatrixClient {
       );
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       final joined = json['joined'] as Map<String, dynamic>?;
-      if (joined != null) count = joined.length;
+      if (joined != null) {
+        // Effective count: bridge appservice bots don't count toward DM
+        // detection (see [bridgeBotIds] — the Portal Member-Count Trap).
+        count = joined.keys.where((id) => !bridgeBotIds.contains(id)).length;
+      }
     } on Exception {
       // Keep the sentinel 0.
     }
@@ -288,7 +347,18 @@ class MatrixClient {
           final joinedCount = summary['m.joined_member_count'] as int?;
           if (joinedCount != null) {
             memberCounts[roomId] = joinedCount;
-            _roomMemberCounts[roomId] = joinedCount;
+            if (_rawSummaryCounts[roomId] != joinedCount) {
+              _rawSummaryCounts[roomId] = joinedCount;
+              if (bridgeBotIds.isEmpty) {
+                // No bridge bots configured: raw count IS the effective count.
+                _roomMemberCounts[roomId] = joinedCount;
+              } else {
+                // Membership changed and the raw count can't tell us how many
+                // members are bridge bots — drop the cached effective count so
+                // the next ensureMemberCount() refetches the member list.
+                _roomMemberCounts.remove(roomId);
+              }
+            }
           }
         }
       }

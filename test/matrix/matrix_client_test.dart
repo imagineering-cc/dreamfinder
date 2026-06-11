@@ -212,6 +212,198 @@ void main() {
       expect(client.isDm('!room:test'), isFalse);
     });
 
+    // The Portal Member-Count Trap: a mautrix bridge portal for a 1:1 chat
+    // contains the bot, the remote user's ghost, AND the bridge bot — raw
+    // count 3 → misclassified as a group → the bot ignores the person's
+    // reply (they won't type the bot's name into WhatsApp). Excluding bridge
+    // bots from the effective count defuses this.
+    test('portal room counts as DM when bridge bot is excluded', () async {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        bridgeBotIds: {'@whatsappbot:test'},
+        client: _mockClient({
+          'joined_members': (_) => _jsonResponse({
+                'joined': {
+                  '@bot:test': <String, dynamic>{},
+                  '@whatsapp_61400000000:test': <String, dynamic>{},
+                  '@whatsappbot:test': <String, dynamic>{},
+                },
+              }),
+        }),
+      );
+
+      await client.ensureMemberCount('!portal:test');
+      expect(client.isDm('!portal:test'), isTrue,
+          reason: 'bot + ghost + bridge bot → effective 2 → DM');
+    });
+
+    test('bridge management room is NOT a DM (effective count 1)', () async {
+      // The room where the bot talks to the bridge bot itself: raw count 2
+      // would classify it as a DM and the bot would chat with the bridge's
+      // command output. Excluding the bridge bot makes the effective count 1.
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        bridgeBotIds: {'@whatsappbot:test'},
+        client: _mockClient({
+          'joined_members': (_) => _jsonResponse({
+                'joined': {
+                  '@bot:test': <String, dynamic>{},
+                  '@whatsappbot:test': <String, dynamic>{},
+                },
+              }),
+        }),
+      );
+
+      await client.ensureMemberCount('!mgmt:test');
+      expect(client.isDm('!mgmt:test'), isFalse);
+    });
+
+    test('multi-member portal still counts as a group', () async {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        bridgeBotIds: {'@whatsappbot:test'},
+        client: _mockClient({
+          'joined_members': (_) => _jsonResponse({
+                'joined': {
+                  '@bot:test': <String, dynamic>{},
+                  '@whatsapp_111:test': <String, dynamic>{},
+                  '@whatsapp_222:test': <String, dynamic>{},
+                  '@whatsappbot:test': <String, dynamic>{},
+                },
+              }),
+        }),
+      );
+
+      await client.ensureMemberCount('!wagroup:test');
+      expect(client.isDm('!wagroup:test'), isFalse,
+          reason: 'bot + 2 ghosts + bridge bot → effective 3 → group');
+    });
+
+    test(
+        'with bridge bots configured, a summary count change invalidates the '
+        'effective count and triggers a member-list refetch', () async {
+      var fetchCount = 0;
+      final syncResponse = <String, dynamic>{
+        'next_batch': 'batch_2',
+        'rooms': {
+          'join': {
+            '!portal:test': {
+              'timeline': {'events': <dynamic>[]},
+              'summary': {'m.joined_member_count': 3},
+            },
+          },
+        },
+      };
+
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        bridgeBotIds: {'@whatsappbot:test'},
+        client: _mockClient({
+          'joined_members': (_) {
+            fetchCount++;
+            return _jsonResponse({
+              'joined': {
+                '@bot:test': <String, dynamic>{},
+                '@whatsapp_61400000000:test': <String, dynamic>{},
+                '@whatsappbot:test': <String, dynamic>{},
+              },
+            });
+          },
+          'sync': (_) => _jsonResponse(syncResponse),
+        }),
+      );
+
+      // Backfill, then a summary arrives (membership changed) — the cached
+      // effective count must be dropped and recomputed from the member list,
+      // NOT overwritten with the raw count (which includes the bridge bot).
+      await client.ensureMemberCount('!portal:test');
+      expect(client.isDm('!portal:test'), isTrue);
+      expect(fetchCount, 1);
+
+      await client.sync(since: 'batch_1');
+      expect(client.isDm('!portal:test'), isFalse,
+          reason: 'invalidated → unknown → safe group default until refetch');
+
+      await client.ensureMemberCount('!portal:test');
+      expect(fetchCount, 2, reason: 'invalidation must trigger a refetch');
+      expect(client.isDm('!portal:test'), isTrue);
+    });
+
+    test('without bridge bots, summary counts still populate the cache',
+        () async {
+      // No-regression guard: the pre-bridge behavior (summary → cache,
+      // zero extra HTTP) must be preserved when BRIDGE_BOT_IDS is unset.
+      var fetchCount = 0;
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'joined_members': (_) {
+            fetchCount++;
+            return _jsonResponse({'joined': <String, dynamic>{}});
+          },
+          'sync': (_) => _jsonResponse({
+                'next_batch': 'batch_2',
+                'rooms': {
+                  'join': {
+                    '!dm:test': {
+                      'timeline': {'events': <dynamic>[]},
+                      'summary': {'m.joined_member_count': 2},
+                    },
+                  },
+                },
+              }),
+        }),
+      );
+
+      await client.sync(since: 'batch_1');
+      expect(client.isDm('!dm:test'), isTrue);
+
+      await client.ensureMemberCount('!dm:test');
+      expect(fetchCount, 0, reason: 'summary filled the cache — no refetch');
+    });
+
+    test('getRecentMessages fetches newest-first with dir=b', () async {
+      http.Request? capturedRequest;
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'messages': (req) {
+            capturedRequest = req;
+            return _jsonResponse({
+              'chunk': [
+                {
+                  'event_id': r'$newest',
+                  'sender': '@whatsappbot:test',
+                  'type': 'm.room.message',
+                  'origin_server_ts': 2,
+                  'content': {'msgtype': 'm.text', 'body': 'reply'},
+                },
+                {
+                  'event_id': r'$older',
+                  'sender': '@bot:test',
+                  'type': 'm.room.message',
+                  'origin_server_ts': 1,
+                  'content': {'msgtype': 'm.text', 'body': 'command'},
+                },
+              ],
+            });
+          },
+        }),
+      );
+
+      final messages = await client.getRecentMessages(roomId: '!mgmt:test');
+      expect(messages, hasLength(2));
+      expect(messages.first.eventId, r'$newest');
+      expect(messages.first.body, 'reply');
+      expect(capturedRequest!.url.queryParameters['dir'], 'b');
+    });
+
     test('ensureMemberCount negative-caches on failure (probes at most once)',
         () async {
       var fetchCount = 0;
