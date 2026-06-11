@@ -70,9 +70,8 @@ CustomToolDef _dmUserTool(MatrixClient matrixClient) {
       'properties': <String, dynamic>{
         'user_id': <String, dynamic>{
           'type': 'string',
-          'description':
-              'Full Matrix user ID of the recipient, e.g. '
-                  '@alice:imagineering.cc',
+          'description': 'Full Matrix user ID of the recipient, e.g. '
+              '@alice:imagineering.cc',
         },
         'message': <String, dynamic>{
           'type': 'string',
@@ -140,8 +139,7 @@ final _phonePattern = RegExp(r'^\+[1-9][0-9]{5,14}$');
 /// reply, e.g. `https://matrix.to/#/!abc123%3Aexample.com?via=example.com`.
 /// The room ID may be URL-encoded (`!` → `%21`, `:` → `%3A`) and may carry
 /// `?via=` parameters — both are handled by the capture + decode.
-final _matrixToRoomPattern =
-    RegExp(r'matrix\.to/#/((?:!|%21)[^?\s"<>)\]]+)');
+final _matrixToRoomPattern = RegExp(r'matrix\.to/#/((?:!|%21)[^?\s"<>)\]]+)');
 
 CustomToolDef _startPrivateChatTool(
   MatrixClient matrixClient, {
@@ -207,9 +205,8 @@ Future<String> _startPrivateChat(
   final message = args['message'];
 
   // Normalize: tolerate spaces/dashes/parens that humans paste in.
-  final phone = rawPhone is String
-      ? rawPhone.replaceAll(RegExp(r'[\s\-()]'), '')
-      : '';
+  final phone =
+      rawPhone is String ? rawPhone.replaceAll(RegExp(r'[\s\-()]'), '') : '';
   if (!_phonePattern.hasMatch(phone)) {
     return jsonEncode(<String, dynamic>{
       'error': 'phone must be an international number with leading + like '

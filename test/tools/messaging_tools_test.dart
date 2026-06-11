@@ -47,8 +47,7 @@ Map<String, dynamic> _bridgeReplyEvent() => {
       'origin_server_ts': 2,
       'content': {
         'msgtype': 'm.notice',
-        'body':
-            'Created portal room with +61400000000: !portalroom:test',
+        'body': 'Created portal room with +61400000000: !portalroom:test',
         'format': 'org.matrix.custom.html',
         'formatted_body': 'Created portal room with +61400000000: '
             '<a href="https://matrix.to/#/%21portalroom%3Atest?via=test">'
