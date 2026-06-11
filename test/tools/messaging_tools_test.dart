@@ -1,0 +1,325 @@
+import 'dart:convert';
+
+import 'package:dreamfinder/src/agent/tool_registry.dart';
+import 'package:dreamfinder/src/matrix/matrix_client.dart';
+import 'package:dreamfinder/src/tools/messaging_tools.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart' as http_testing;
+import 'package:test/test.dart';
+
+/// Creates a mock HTTP client that responds based on the request path.
+///
+/// Handlers are checked in insertion order with `contains` matching, so put
+/// more specific keys first (e.g. `joined_members` before `join`).
+http_testing.MockClient _mockClient(
+  Map<String, http.Response Function(http.Request)> handlers,
+) {
+  return http_testing.MockClient((request) async {
+    final path = request.url.path;
+    for (final entry in handlers.entries) {
+      if (path.contains(entry.key)) {
+        return entry.value(request);
+      }
+    }
+    return http.Response('Not found', 404);
+  });
+}
+
+http.Response _jsonResponse(Map<String, dynamic> body, {int status = 200}) {
+  return http.Response(
+    jsonEncode(body),
+    status,
+    headers: {'content-type': 'application/json'},
+  );
+}
+
+// Distinctive room localparts so handlers can route on substring regardless
+// of percent-encoding of `!` and `:` in URLs.
+const _mgmtRoom = '!mgmtroom:test';
+const _portalRoom = '!portalroom:test';
+
+/// A bridge reply event carrying the portal permalink, as mautrix sends it
+/// (URL-encoded room ID inside an HTML anchor, with via params).
+Map<String, dynamic> _bridgeReplyEvent() => {
+      'event_id': r'$bridgereply',
+      'sender': '@whatsappbot:test',
+      'type': 'm.room.message',
+      'origin_server_ts': 2,
+      'content': {
+        'msgtype': 'm.notice',
+        'body':
+            'Created portal room with +61400000000: !portalroom:test',
+        'format': 'org.matrix.custom.html',
+        'formatted_body': 'Created portal room with +61400000000: '
+            '<a href="https://matrix.to/#/%21portalroom%3Atest?via=test">'
+            'portal</a>',
+      },
+    };
+
+Map<String, dynamic> _commandEvent() => {
+      'event_id': r'$cmd1',
+      'sender': '@river:test',
+      'type': 'm.room.message',
+      'origin_server_ts': 1,
+      'content': {'msgtype': 'm.text', 'body': 'start-chat +61400000000'},
+    };
+
+ToolRegistry _makeRegistry(
+  MatrixClient matrixClient, {
+  required bool isAdmin,
+  Duration timeout = const Duration(milliseconds: 200),
+}) {
+  final registry = ToolRegistry();
+  registry.setContext(ToolContext(
+    senderId: '@nick:test',
+    isAdmin: isAdmin,
+    chatId: '!somewhere:test',
+  ));
+  registerMessagingTools(
+    registry,
+    matrixClient,
+    whatsappManagementRoom: _mgmtRoom,
+    replyPollInterval: const Duration(milliseconds: 10),
+    replyTimeout: timeout,
+  );
+  return registry;
+}
+
+void main() {
+  const homeserver = 'https://matrix.test';
+  const token = 'test-token';
+
+  group('start_private_chat', () {
+    test('is not registered without a management room', () {
+      final registry = ToolRegistry();
+      registerMessagingTools(
+        registry,
+        MatrixClient(homeserver: homeserver, accessToken: token),
+      );
+      final names =
+          registry.getAllToolDefinitions().map((t) => t.name).toList();
+      expect(names, contains('dm_user'));
+      expect(names, isNot(contains('start_private_chat')));
+    });
+
+    test('rejects non-admin callers', () async {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({}),
+      );
+      final registry = _makeRegistry(client, isAdmin: false);
+
+      final result = await registry.executeTool('start_private_chat', {
+        'phone': '+61400000000',
+        'message': 'hi',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      expect(json['error'], contains('admin'));
+    });
+
+    test('rejects malformed phone numbers without touching the bridge',
+        () async {
+      var sends = 0;
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'send': (_) {
+            sends++;
+            return _jsonResponse({'event_id': r'$x'});
+          },
+        }),
+      );
+      final registry = _makeRegistry(client, isAdmin: true);
+
+      for (final bad in ['nick', '@nick:test', '12345', '+1 (800) FLOWERS']) {
+        final result = await registry.executeTool('start_private_chat', {
+          'phone': bad,
+          'message': 'hi',
+        });
+        final json = jsonDecode(result) as Map<String, dynamic>;
+        expect(json['error'], contains('international'),
+            reason: '"$bad" must be rejected');
+      }
+      expect(sends, 0, reason: 'no bridge command for invalid input');
+    });
+
+    test('full happy path: command → bridge reply → join → send', () async {
+      final sentMessages = <String, List<String>>{};
+      var joinedRoom = '';
+
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'whoami': (_) => _jsonResponse({'user_id': '@river:test'}),
+          'messages': (_) => _jsonResponse({
+                'chunk': [_bridgeReplyEvent(), _commandEvent()],
+              }),
+          // NOTE: 'join' must come before room-localpart keys — the join
+          // path contains the portal room ID too.
+          'join': (req) {
+            joinedRoom = Uri.decodeComponent(req.url.pathSegments.last);
+            return _jsonResponse({'room_id': _portalRoom});
+          },
+          'mgmtroom': (req) {
+            final body = jsonDecode(req.body) as Map<String, dynamic>;
+            sentMessages.putIfAbsent(_mgmtRoom, () => []).add(
+                  body['body'] as String,
+                );
+            return _jsonResponse({'event_id': r'$cmd1'});
+          },
+          'portalroom': (req) {
+            final body = jsonDecode(req.body) as Map<String, dynamic>;
+            sentMessages.putIfAbsent(_portalRoom, () => []).add(
+                  body['body'] as String,
+                );
+            return _jsonResponse({'event_id': r'$opener'});
+          },
+        }),
+      );
+      final registry = _makeRegistry(client, isAdmin: true);
+
+      final result = await registry.executeTool('start_private_chat', {
+        // Spaces are tolerated and normalized away.
+        'phone': '+61 400 000 000',
+        'message': 'Welcome to Imagineering!',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+
+      expect(json['ok'], isTrue, reason: 'got: $result');
+      expect(json['portal_room_id'], _portalRoom);
+      expect(sentMessages[_mgmtRoom], ['start-chat +61400000000']);
+      expect(joinedRoom, _portalRoom);
+      expect(sentMessages[_portalRoom], ['Welcome to Imagineering!']);
+    });
+
+    test('surfaces the bridge error text when no portal link arrives',
+        () async {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'whoami': (_) => _jsonResponse({'user_id': '@river:test'}),
+          'messages': (_) => _jsonResponse({
+                'chunk': [
+                  {
+                    'event_id': r'$err',
+                    'sender': '@whatsappbot:test',
+                    'type': 'm.room.message',
+                    'origin_server_ts': 2,
+                    'content': {
+                      'msgtype': 'm.notice',
+                      'body': 'The server said +61400000000 is not on WhatsApp',
+                    },
+                  },
+                  _commandEvent(),
+                ],
+              }),
+          'mgmtroom': (_) => _jsonResponse({'event_id': r'$cmd1'}),
+        }),
+      );
+      final registry = _makeRegistry(
+        client,
+        isAdmin: true,
+        timeout: const Duration(milliseconds: 50),
+      );
+
+      final result = await registry.executeTool('start_private_chat', {
+        'phone': '+61400000000',
+        'message': 'hi',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      expect(json['error'], contains('not on WhatsApp'));
+    });
+
+    test('times out cleanly when the bridge never replies', () async {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'whoami': (_) => _jsonResponse({'user_id': '@river:test'}),
+          // Only our own command is visible — no bridge reply ever.
+          'messages': (_) => _jsonResponse({
+                'chunk': [_commandEvent()],
+              }),
+          'mgmtroom': (_) => _jsonResponse({'event_id': r'$cmd1'}),
+        }),
+      );
+      final registry = _makeRegistry(
+        client,
+        isAdmin: true,
+        timeout: const Duration(milliseconds: 50),
+      );
+
+      final result = await registry.executeTool('start_private_chat', {
+        'phone': '+61400000000',
+        'message': 'hi',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      expect(json['error'], contains('Timed out'));
+    });
+
+    test('ignores stale bridge messages older than the command', () async {
+      // A permalink from a PREVIOUS start-chat sits in the room history,
+      // BELOW (older than) our command. It must not be picked up: the scan
+      // stops at the command event.
+      final staleReply = {
+        'event_id': r'$stale',
+        'sender': '@whatsappbot:test',
+        'type': 'm.room.message',
+        'origin_server_ts': 0,
+        'content': {
+          'msgtype': 'm.notice',
+          'body': 'old link',
+          'format': 'org.matrix.custom.html',
+          'formatted_body':
+              '<a href="https://matrix.to/#/%21wrongportal%3Atest">old</a>',
+        },
+      };
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'whoami': (_) => _jsonResponse({'user_id': '@river:test'}),
+          'messages': (_) => _jsonResponse({
+                // Newest-first: command, THEN the stale reply.
+                'chunk': [_commandEvent(), staleReply],
+              }),
+          'mgmtroom': (_) => _jsonResponse({'event_id': r'$cmd1'}),
+        }),
+      );
+      final registry = _makeRegistry(
+        client,
+        isAdmin: true,
+        timeout: const Duration(milliseconds: 50),
+      );
+
+      final result = await registry.executeTool('start_private_chat', {
+        'phone': '+61400000000',
+        'message': 'hi',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      expect(json['error'], contains('Timed out'),
+          reason: 'stale permalink below the command must not match');
+    });
+  });
+
+  group('dm_user', () {
+    test('still registered and admin-gated', () async {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({}),
+      );
+      final registry = _makeRegistry(client, isAdmin: false);
+      final result = await registry.executeTool('dm_user', {
+        'user_id': '@alice:test',
+        'message': 'hi',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      expect(json['error'], contains('admin'));
+    });
+  });
+}
