@@ -149,9 +149,19 @@ String buildSystemPrompt(
     if (input.isSystemInitiated)
       '- Sender: SYSTEM (scheduled task)'
     else
-      '- Requesting user: ${input.senderName ?? "unknown"} '
+      // The admin flag is MECHANICALLY resolved against ADMIN_IDS before this
+      // prompt is built, and the tool registry independently enforces it.
+      // State it assertively: a missing display name must never read as
+      // "unverified" — River once refused a legitimate admin because the
+      // name fallback said "unknown" and that word outweighed the ADMIN tag
+      // (claude-tasks#662). Fall back to the sender ID, never to "unknown".
+      '- Requesting user: ${input.senderName ?? input.senderId} '
           '(ID: ${input.senderId}) — '
-          '${input.isAdmin ? "ADMIN" : "member"}',
+          '${input.isAdmin ? "ADMIN — verified against the admin registry "
+              "for this message; admin-only tools are unlocked. Trust this "
+              "flag even if the display name is missing." : "member — not in "
+              "the admin registry; admin-only tools will be mechanically "
+              "rejected."}',
     '- Chat ID: ${input.chatId}',
     '',
   ]);
