@@ -54,6 +54,22 @@ void registerMessagingTools(
   // A platform exists iff its management room is configured — registration
   // is the single gate; the handler never needs a "platform not configured"
   // path for enum values the model can see.
+  //
+  // Each platform also carries ITS OWN trusted bridge-bot set, derived from
+  // the flat BRIDGE_BOT_IDS list by mautrix naming convention (the localpart
+  // starts with the platform key: @whatsappbot, @telegrambot, ...). This
+  // encodes the invariant that a reply in the Telegram management room is
+  // only authoritative from the TELEGRAM bridge bot — a cross-bridge reply
+  // must not be able to name the portal. When no ID matches the convention
+  // (custom bot names), fall back to the full set: room membership is then
+  // the only boundary, which matches the pre-refactor behavior.
+  Set<String> botsFor(String key) {
+    final matching = bridgeBotIds
+        .where((id) => id.startsWith('@') && id.substring(1).startsWith(key))
+        .toSet();
+    return matching.isNotEmpty ? matching : bridgeBotIds;
+  }
+
   final platforms = <String, _Platform>{
     if (whatsappManagementRoom != null && whatsappManagementRoom.isNotEmpty)
       'whatsapp': _Platform(
@@ -61,6 +77,7 @@ void registerMessagingTools(
         label: 'WhatsApp',
         managementRoom: whatsappManagementRoom,
         idKind: _IdKind.phone,
+        bridgeBotIds: botsFor('whatsapp'),
       ),
     if (telegramManagementRoom != null && telegramManagementRoom.isNotEmpty)
       'telegram': _Platform(
@@ -68,6 +85,7 @@ void registerMessagingTools(
         label: 'Telegram',
         managementRoom: telegramManagementRoom,
         idKind: _IdKind.phone,
+        bridgeBotIds: botsFor('telegram'),
       ),
     if (signalManagementRoom != null && signalManagementRoom.isNotEmpty)
       'signal': _Platform(
@@ -75,6 +93,7 @@ void registerMessagingTools(
         label: 'Signal',
         managementRoom: signalManagementRoom,
         idKind: _IdKind.phone,
+        bridgeBotIds: botsFor('signal'),
       ),
     if (discordManagementRoom != null && discordManagementRoom.isNotEmpty)
       'discord': _Platform(
@@ -82,6 +101,7 @@ void registerMessagingTools(
         label: 'Discord',
         managementRoom: discordManagementRoom,
         idKind: _IdKind.discordUser,
+        bridgeBotIds: botsFor('discord'),
       ),
   };
 
@@ -89,7 +109,6 @@ void registerMessagingTools(
     registry.registerCustomTool(_startPrivateChatTool(
       matrixClient,
       platforms: platforms,
-      bridgeBotIds: bridgeBotIds,
       pollInterval: replyPollInterval,
       timeout: replyTimeout,
     ));
@@ -184,6 +203,7 @@ class _Platform {
     required this.label,
     required this.managementRoom,
     required this.idKind,
+    required this.bridgeBotIds,
   });
 
   /// Stable lowercase key used in the tool's `platform` enum, e.g. `whatsapp`.
@@ -197,6 +217,11 @@ class _Platform {
   final String managementRoom;
 
   final _IdKind idKind;
+
+  /// The bridge bot MXIDs whose replies are authoritative for THIS
+  /// platform's management room. Derived per-platform so a different
+  /// bridge's bot cannot name the portal even if room membership drifts.
+  final Set<String> bridgeBotIds;
 }
 
 /// Matches an E.164-style international phone number after normalization:
@@ -207,10 +232,12 @@ final _phonePattern = RegExp(r'^\+[1-9][0-9]{5,14}$');
 
 /// Matches a Discord recipient after normalization (leading `@` stripped):
 /// either a numeric snowflake ID (15-21 digits) or a modern Discord username
-/// (2-32 chars of lowercase alphanumerics, underscore, period). The bridge
-/// gives an informative error for a username it cannot resolve; this pattern
-/// only filters out obvious junk before a bridge round-trip.
-final _discordUserPattern = RegExp(r'^([0-9]{15,21}|[a-z0-9._]{2,32})$');
+/// (2-32 chars of lowercase alphanumerics, underscore, period — Discord also
+/// rejects leading/trailing/consecutive periods, mirrored here so junk fails
+/// fast). The bridge still gives the informative error for a well-formed
+/// username it cannot resolve.
+final _discordUserPattern =
+    RegExp(r'^([0-9]{15,21}|(?!\.)(?!.*\.\.)[a-z0-9._]{2,32}(?<!\.))$');
 
 /// Extracts a Matrix room ID from a matrix.to permalink in the bridge's
 /// reply, e.g. `https://matrix.to/#/!abc123%3Aexample.com?via=example.com`.
@@ -221,7 +248,6 @@ final _matrixToRoomPattern = RegExp(r'matrix\.to/#/((?:!|%21)[^?\s"<>)\]]+)');
 CustomToolDef _startPrivateChatTool(
   MatrixClient matrixClient, {
   required Map<String, _Platform> platforms,
-  required Set<String> bridgeBotIds,
   required Duration pollInterval,
   required Duration timeout,
 }) {
@@ -271,7 +297,6 @@ CustomToolDef _startPrivateChatTool(
       matrixClient,
       args,
       platforms: platforms,
-      bridgeBotIds: bridgeBotIds,
       pollInterval: pollInterval,
       timeout: timeout,
     ),
@@ -282,17 +307,19 @@ Future<String> _startPrivateChat(
   MatrixClient matrixClient,
   Map<String, dynamic> args, {
   required Map<String, _Platform> platforms,
-  required Set<String> bridgeBotIds,
   required Duration pollInterval,
   required Duration timeout,
 }) async {
   // `args` crosses the type-system boundary (model-generated JSON) — validate
   // with `is` checks rather than casts so a malformed call returns a
   // structured error instead of throwing a TypeError.
+  //
+  // NO legacy `phone` alias here: `identifier` is in the schema's `required`
+  // list, so a schema-honoring caller always sends it — an alias only
+  // reachable by bypassing validation is a contract lie, not compatibility
+  // (cage-match, Carnot). The model reads the fresh schema every session.
   final rawPlatform = args['platform'];
-  // Legacy alias: the tool shipped WhatsApp-only with a `phone` arg; accept
-  // it as `identifier` so an old-habit call still lands.
-  final rawIdentifier = args['identifier'] ?? args['phone'];
+  final rawIdentifier = args['identifier'];
   final message = args['message'];
 
   final platform = rawPlatform is String ? platforms[rawPlatform] : null;
@@ -355,7 +382,9 @@ Future<String> _startPrivateChat(
     final reply = await _awaitPortalReply(
       matrixClient,
       managementRoom: platform.managementRoom,
-      bridgeBotIds: bridgeBotIds,
+      // Platform-local trust: only THIS platform's bridge bot may name the
+      // portal, even if another bridge's bot is somehow in the room.
+      bridgeBotIds: platform.bridgeBotIds,
       commandEventId: commandEventId,
       pollInterval: pollInterval,
       timeout: timeout,

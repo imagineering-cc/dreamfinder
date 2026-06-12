@@ -135,7 +135,7 @@ void main() {
 
       final result = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
-        'phone': '+61400000000',
+        'identifier': '+61400000000',
         'message': 'hi',
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
@@ -167,7 +167,7 @@ void main() {
       ]) {
         final result = await registry.executeTool('start_private_chat', {
           'platform': 'whatsapp',
-          'phone': bad,
+          'identifier': bad,
           'message': 'hi',
         });
         final json = jsonDecode(result) as Map<String, dynamic>;
@@ -190,7 +190,7 @@ void main() {
 
       final badPhone = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
-        'phone': 61400000000, // int, not String
+        'identifier': 61400000000, // int, not String
         'message': 'hi',
       });
       expect(
@@ -200,7 +200,7 @@ void main() {
 
       final badMessage = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
-        'phone': '+61400000000',
+        'identifier': '+61400000000',
         'message': <String>['not', 'a', 'string'],
       });
       expect(
@@ -248,7 +248,7 @@ void main() {
       final result = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
         // Spaces are tolerated and normalized away.
-        'phone': '+61 400 000 000',
+        'identifier': '+61 400 000 000',
         'message': 'Welcome to Imagineering!',
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
@@ -293,7 +293,7 @@ void main() {
 
       final result = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
-        'phone': '+61400000000',
+        'identifier': '+61400000000',
         'message': 'hi',
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
@@ -321,7 +321,7 @@ void main() {
 
       final result = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
-        'phone': '+61400000000',
+        'identifier': '+61400000000',
         'message': 'hi',
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
@@ -365,7 +365,7 @@ void main() {
 
       final result = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
-        'phone': '+61400000000',
+        'identifier': '+61400000000',
         'message': 'hi',
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
@@ -396,7 +396,7 @@ void main() {
 
       final result = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
-        'phone': '+61400000000',
+        'identifier': '+61400000000',
         'message': 'hi',
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
@@ -442,7 +442,7 @@ void main() {
 
       final result = await registry.executeTool('start_private_chat', {
         'platform': 'whatsapp',
-        'phone': '+61400000000',
+        'identifier': '+61400000000',
         'message': 'hi',
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
@@ -564,38 +564,144 @@ void main() {
       expect(sentMessages[_portalRoom], ['Yo from River!']);
     });
 
-    test('legacy phone arg is accepted as identifier alias', () async {
-      // The tool shipped WhatsApp-only with a `phone` arg; an old-habit
-      // call with platform + phone must still validate and proceed to the
-      // bridge command (we stop at the mocked send).
-      var mgmtSends = 0;
+    test('cross-bridge reply is NOT trusted (per-platform bot sets)', () async {
+      // Trust model: a WHATSAPP bridge bot's permalink posted in the
+      // TELEGRAM management room must not name the portal — each platform
+      // trusts only its own bridge bot, even though both bots are in the
+      // flat BRIDGE_BOT_IDS config.
+      final crossBridgeReply = {
+        'event_id': r'$crossreply',
+        'sender': '@whatsappbot:test', // wrong bridge for telegram
+        'type': 'm.room.message',
+        'origin_server_ts': 2,
+        'content': {
+          'msgtype': 'm.notice',
+          'body': 'Created portal room',
+          'format': 'org.matrix.custom.html',
+          'formatted_body':
+              '<a href="https://matrix.to/#/%21portalroom%3Atest">portal</a>',
+        },
+      };
       final client = MatrixClient(
         homeserver: homeserver,
         accessToken: token,
         client: _mockClient({
           'whoami': (_) => _jsonResponse({'user_id': '@river:test'}),
-          'messages': (_) => _jsonResponse({'chunk': []}),
-          'mgmtroom': (_) {
-            mgmtSends++;
-            return _jsonResponse({'event_id': r'$cmd1'});
-          },
+          'messages': (_) => _jsonResponse({
+                'chunk': [crossBridgeReply, _commandEvent()],
+              }),
+          'tgbridge': (_) => _jsonResponse({'event_id': r'$cmd1'}),
         }),
       );
       final registry = _makeRegistry(
         client,
         isAdmin: true,
-        timeout: const Duration(milliseconds: 30),
+        telegramRoom: _tgMgmtRoom,
+        timeout: const Duration(milliseconds: 50),
       );
       final result = await registry.executeTool('start_private_chat', {
-        'platform': 'whatsapp',
-        'phone': '+61400000000',
+        'platform': 'telegram',
+        'identifier': '+61400000000',
         'message': 'hi',
       });
       final json = jsonDecode(result) as Map<String, dynamic>;
-      // Times out (no bridge reply mocked) but the command was issued —
-      // which proves the alias passed validation.
-      expect(json['error'], contains('Timed out'));
-      expect(mgmtSends, greaterThan(0));
+      expect(json['error'], contains('Timed out'),
+          reason: 'another bridge\'s bot must not be able to name the portal');
+    });
+
+    test('signal appears in the platform enum when configured', () {
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({}),
+      );
+      final registry = ToolRegistry();
+      registry.setContext(ToolContext(
+        senderId: '@nick:test',
+        isAdmin: true,
+        chatId: '!somewhere:test',
+      ));
+      registerMessagingTools(
+        registry,
+        client,
+        signalManagementRoom: '!sigbridge:test',
+        bridgeBotIds: const {'@signalbot:test'},
+      );
+      final tool = registry
+          .getAllToolDefinitions()
+          .singleWhere((t) => t.name == 'start_private_chat');
+      final schema = tool.inputSchema as Map<String, dynamic>;
+      final properties = schema['properties'] as Map<String, dynamic>;
+      final platform = properties['platform'] as Map<String, dynamic>;
+      expect(platform['enum'], ['signal']);
+    });
+
+    test('discord full happy path drives the discord management room',
+        () async {
+      final sentMessages = <String, List<String>>{};
+      final dcBridgeReply = {
+        'event_id': r'$dcreply',
+        'sender': '@discordbot:test',
+        'type': 'm.room.message',
+        'origin_server_ts': 2,
+        'content': {
+          'msgtype': 'm.notice',
+          'body': 'Created portal room',
+          'format': 'org.matrix.custom.html',
+          'formatted_body':
+              '<a href="https://matrix.to/#/%21portalroom%3Atest">portal</a>',
+        },
+      };
+      final client = MatrixClient(
+        homeserver: homeserver,
+        accessToken: token,
+        client: _mockClient({
+          'whoami': (_) => _jsonResponse({'user_id': '@river:test'}),
+          'messages': (_) => _jsonResponse({
+                'chunk': [dcBridgeReply, _commandEvent()],
+              }),
+          'join': (_) => _jsonResponse({'room_id': _portalRoom}),
+          'dcbridge': (req) {
+            final body = jsonDecode(req.body) as Map<String, dynamic>;
+            sentMessages.putIfAbsent(_dcMgmtRoom, () => []).add(
+                  body['body'] as String,
+                );
+            return _jsonResponse({'event_id': r'$cmd1'});
+          },
+          'portalroom': (req) {
+            final body = jsonDecode(req.body) as Map<String, dynamic>;
+            sentMessages.putIfAbsent(_portalRoom, () => []).add(
+                  body['body'] as String,
+                );
+            return _jsonResponse({'event_id': r'$opener'});
+          },
+        }),
+      );
+      final registry = ToolRegistry();
+      registry.setContext(ToolContext(
+        senderId: '@nick:test',
+        isAdmin: true,
+        chatId: '!somewhere:test',
+      ));
+      registerMessagingTools(
+        registry,
+        client,
+        discordManagementRoom: _dcMgmtRoom,
+        bridgeBotIds: const {'@discordbot:test'},
+        replyPollInterval: const Duration(milliseconds: 10),
+        replyTimeout: const Duration(milliseconds: 200),
+      );
+
+      // Leading @ is stripped; both snowflake and username shapes accepted.
+      final result = await registry.executeTool('start_private_chat', {
+        'platform': 'discord',
+        'identifier': '@some.username',
+        'message': 'Yo from River!',
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      expect(json['ok'], isTrue, reason: 'got: $result');
+      expect(sentMessages[_dcMgmtRoom], ['start-chat some.username']);
+      expect(sentMessages[_portalRoom], ['Yo from River!']);
     });
 
     test('discord identifiers are validated per platform', () async {
@@ -616,7 +722,15 @@ void main() {
         discordRoom: _dcMgmtRoom,
       );
 
-      for (final bad in ['Bad Name!', 'a', '+61400000000', 'UPPER']) {
+      for (final bad in [
+        'Bad Name!',
+        'a',
+        '+61400000000',
+        'UPPER',
+        '.abc', // leading dot — Discord rejects
+        'abc.', // trailing dot
+        'a..b', // consecutive dots
+      ]) {
         final result = await registry.executeTool('start_private_chat', {
           'platform': 'discord',
           'identifier': bad,
