@@ -467,7 +467,7 @@ void main() {
       final tool = registry
           .getAllToolDefinitions()
           .singleWhere((t) => t.name == 'start_private_chat');
-      final schema = tool.inputSchema as Map<String, dynamic>;
+      final schema = tool.inputSchema;
       final properties = schema['properties'] as Map<String, dynamic>;
       final platform = properties['platform'] as Map<String, dynamic>;
       expect(platform['enum'], unorderedEquals(['whatsapp', 'telegram']),
@@ -616,7 +616,7 @@ void main() {
         client: _mockClient({}),
       );
       final registry = ToolRegistry();
-      registry.setContext(ToolContext(
+      registry.setContext(const ToolContext(
         senderId: '@nick:test',
         isAdmin: true,
         chatId: '!somewhere:test',
@@ -630,7 +630,7 @@ void main() {
       final tool = registry
           .getAllToolDefinitions()
           .singleWhere((t) => t.name == 'start_private_chat');
-      final schema = tool.inputSchema as Map<String, dynamic>;
+      final schema = tool.inputSchema;
       final properties = schema['properties'] as Map<String, dynamic>;
       final platform = properties['platform'] as Map<String, dynamic>;
       expect(platform['enum'], ['signal']);
@@ -678,7 +678,7 @@ void main() {
         }),
       );
       final registry = ToolRegistry();
-      registry.setContext(ToolContext(
+      registry.setContext(const ToolContext(
         senderId: '@nick:test',
         isAdmin: true,
         chatId: '!somewhere:test',
