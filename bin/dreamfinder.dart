@@ -181,21 +181,28 @@ Future<void> main() async {
     outlineApiKey: env.outlineApiKey,
     outlineBaseUrl: env.outlineBaseUrl,
   );
-  // Proactive DM tools: Matrix-native dm_user always; WhatsApp
-  // start_private_chat only when the bridge management room AND bridge bot
-  // identities are configured (the bridge bot ID authenticates the bridge's
-  // reply to start-chat — the tool refuses to exist without it).
+  // Proactive DM tools: Matrix-native dm_user always; start_private_chat
+  // platforms appear iff their bridge management room is configured AND
+  // bridge bot identities are set (the bridge bot ID authenticates the
+  // bridge's reply to start-chat — the tool refuses to exist without it).
   registerMessagingTools(
     toolRegistry,
     matrixClient,
     whatsappManagementRoom: env.whatsappManagementRoom,
+    telegramManagementRoom: env.telegramManagementRoom,
+    signalManagementRoom: env.signalManagementRoom,
+    discordManagementRoom: env.discordManagementRoom,
     bridgeBotIds: env.bridgeBotIds.toSet(),
   );
-  if (env.whatsappManagementRoom != null &&
-      env.whatsappManagementRoom!.isNotEmpty &&
-      env.bridgeBotIds.isNotEmpty) {
-    log.info('WhatsApp proactive DM enabled', extra: {
-      'managementRoom': env.whatsappManagementRoom,
+  final proactivePlatforms = <String, String?>{
+    'whatsapp': env.whatsappManagementRoom,
+    'telegram': env.telegramManagementRoom,
+    'signal': env.signalManagementRoom,
+    'discord': env.discordManagementRoom,
+  }..removeWhere((_, room) => room == null || room.isEmpty);
+  if (proactivePlatforms.isNotEmpty && env.bridgeBotIds.isNotEmpty) {
+    log.info('Proactive bridged DM enabled', extra: {
+      'platforms': proactivePlatforms.keys.toList(),
     });
   }
   final kickstartState = KickstartState(queries: queries);

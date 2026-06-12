@@ -25,6 +25,9 @@ class Env {
     this.matrixAlwaysRespondRooms = const [],
     this.bridgeBotIds = const [],
     this.whatsappManagementRoom,
+    this.telegramManagementRoom,
+    this.signalManagementRoom,
+    this.discordManagementRoom,
     this.kanBaseUrl,
     this.kanApiKey,
     this.outlineBaseUrl,
@@ -94,6 +97,9 @@ class Env {
           _parseList(dotEnv['MATRIX_ALWAYS_RESPOND_ROOMS']),
       bridgeBotIds: _parseList(dotEnv['BRIDGE_BOT_IDS']),
       whatsappManagementRoom: dotEnv['WHATSAPP_MANAGEMENT_ROOM'],
+      telegramManagementRoom: dotEnv['TELEGRAM_MANAGEMENT_ROOM'],
+      signalManagementRoom: dotEnv['SIGNAL_MANAGEMENT_ROOM'],
+      discordManagementRoom: dotEnv['DISCORD_MANAGEMENT_ROOM'],
       kanBaseUrl: dotEnv['KAN_BASE_URL'],
       kanApiKey: dotEnv['KAN_API_KEY'],
       outlineBaseUrl: dotEnv['OUTLINE_BASE_URL'],
@@ -148,6 +154,9 @@ class Env {
     List<String> matrixAlwaysRespondRooms = const [],
     List<String> bridgeBotIds = const [],
     String? whatsappManagementRoom,
+    String? telegramManagementRoom,
+    String? signalManagementRoom,
+    String? discordManagementRoom,
     String? kanBaseUrl,
     String? kanApiKey,
     String? outlineBaseUrl,
@@ -188,6 +197,9 @@ class Env {
         matrixAlwaysRespondRooms: matrixAlwaysRespondRooms,
         bridgeBotIds: bridgeBotIds,
         whatsappManagementRoom: whatsappManagementRoom,
+        telegramManagementRoom: telegramManagementRoom,
+        signalManagementRoom: signalManagementRoom,
+        discordManagementRoom: discordManagementRoom,
         kanBaseUrl: kanBaseUrl,
         kanApiKey: kanApiKey,
         outlineBaseUrl: outlineBaseUrl,
@@ -271,9 +283,24 @@ class Env {
 
   /// The bot's WhatsApp-bridge management room (from
   /// `WHATSAPP_MANAGEMENT_ROOM`) — the room shared with the WhatsApp bridge
-  /// bot where `start-chat` commands are issued. If null, the
-  /// `start_private_chat` tool is disabled.
+  /// bot where `start-chat` commands are issued. If null, the WhatsApp
+  /// platform is absent from the `start_private_chat` tool.
   final String? whatsappManagementRoom;
+
+  /// The bot's Telegram-bridge management room (from
+  /// `TELEGRAM_MANAGEMENT_ROOM`). Same role as [whatsappManagementRoom] but
+  /// for the mautrix-telegram bridge; null disables the Telegram platform in
+  /// `start_private_chat`.
+  final String? telegramManagementRoom;
+
+  /// The bot's Signal-bridge management room (from `SIGNAL_MANAGEMENT_ROOM`).
+  /// Null disables the Signal platform in `start_private_chat`.
+  final String? signalManagementRoom;
+
+  /// The bot's Discord-bridge management room (from
+  /// `DISCORD_MANAGEMENT_ROOM`). Null disables the Discord platform in
+  /// `start_private_chat`.
+  final String? discordManagementRoom;
 
   final String? kanBaseUrl;
   final String? kanApiKey;

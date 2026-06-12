@@ -3,16 +3,21 @@
 /// `dm_user`: open a direct message with a Matrix user and send them a message
 /// — e.g. to onboard someone by DMing them an invite link.
 ///
-/// `start_private_chat`: open a 1:1 chat with a *WhatsApp* user via the
-/// mautrix-whatsapp bridge and send them a message — the bot's only way to
-/// reach someone who has no Matrix account. Drives the bridge's `start-chat`
-/// command in the bot's WhatsApp management room, polls for the bridge's
-/// reply (out-of-band — see [MatrixClient.getRecentMessages]), joins the
-/// created portal room, and sends the opener into it. The recipient just
-/// gets a WhatsApp message; their reply flows back into the portal where the
-/// normal DM response path handles it (portal rooms count as DMs once
-/// bridge bots are excluded from member counting — see
-/// [MatrixClient.bridgeBotIds]).
+/// `start_private_chat`: open a 1:1 chat with a user on a *bridged platform*
+/// (WhatsApp / Telegram / Signal / Discord) via the corresponding mautrix
+/// bridge and send them a message — the bot's only way to reach someone who
+/// has no Matrix account. Drives the bridge's `start-chat` command in that
+/// platform's management room (the grammar is uniform across the mautrix
+/// bridges), polls for the bridge's reply (out-of-band — see
+/// [MatrixClient.getRecentMessages]), joins the created portal room, and
+/// sends the opener into it. The recipient just gets a normal message on
+/// their platform; their reply flows back into the portal where the normal
+/// DM response path handles it (portal rooms count as DMs once bridge bots
+/// are excluded from member counting — see [MatrixClient.bridgeBotIds]).
+///
+/// Which platforms appear in the tool's `platform` enum is **explicit system
+/// state**: a platform is available iff its management room is configured.
+/// No platform is inferred, defaulted-in, or guessed at runtime.
 ///
 /// Both tools are gated admin-only: cold-DMing arbitrary people is an abuse
 /// vector, so only an admin may trigger them.
@@ -26,27 +31,64 @@ import '../matrix/models.dart';
 
 /// Registers the proactive-DM tools with the [registry].
 ///
-/// `start_private_chat` is only registered when BOTH [whatsappManagementRoom]
-/// (the Matrix room shared with the WhatsApp bridge bot where `start-chat`
-/// commands are issued) AND [bridgeBotIds] are configured — the bridge bot
-/// identity is what authenticates the bridge's reply, so the tool refuses to
-/// exist without it. [replyPollInterval] and [replyTimeout] exist for tests —
-/// production uses the defaults.
+/// `start_private_chat` is only registered when at least one platform
+/// management room (the Matrix room shared with that bridge's bot where
+/// `start-chat` commands are issued) AND [bridgeBotIds] are configured — the
+/// bridge bot identity is what authenticates the bridge's reply, so the tool
+/// refuses to exist without it. Each platform appears in the tool's
+/// `platform` enum iff its room is configured. [replyPollInterval] and
+/// [replyTimeout] exist for tests — production uses the defaults.
 void registerMessagingTools(
   ToolRegistry registry,
   MatrixClient matrixClient, {
   String? whatsappManagementRoom,
+  String? telegramManagementRoom,
+  String? signalManagementRoom,
+  String? discordManagementRoom,
   Set<String> bridgeBotIds = const {},
   Duration replyPollInterval = const Duration(seconds: 2),
   Duration replyTimeout = const Duration(seconds: 30),
 }) {
   registry.registerCustomTool(_dmUserTool(matrixClient));
-  if (whatsappManagementRoom != null &&
-      whatsappManagementRoom.isNotEmpty &&
-      bridgeBotIds.isNotEmpty) {
+
+  // A platform exists iff its management room is configured — registration
+  // is the single gate; the handler never needs a "platform not configured"
+  // path for enum values the model can see.
+  final platforms = <String, _Platform>{
+    if (whatsappManagementRoom != null && whatsappManagementRoom.isNotEmpty)
+      'whatsapp': _Platform(
+        key: 'whatsapp',
+        label: 'WhatsApp',
+        managementRoom: whatsappManagementRoom,
+        idKind: _IdKind.phone,
+      ),
+    if (telegramManagementRoom != null && telegramManagementRoom.isNotEmpty)
+      'telegram': _Platform(
+        key: 'telegram',
+        label: 'Telegram',
+        managementRoom: telegramManagementRoom,
+        idKind: _IdKind.phone,
+      ),
+    if (signalManagementRoom != null && signalManagementRoom.isNotEmpty)
+      'signal': _Platform(
+        key: 'signal',
+        label: 'Signal',
+        managementRoom: signalManagementRoom,
+        idKind: _IdKind.phone,
+      ),
+    if (discordManagementRoom != null && discordManagementRoom.isNotEmpty)
+      'discord': _Platform(
+        key: 'discord',
+        label: 'Discord',
+        managementRoom: discordManagementRoom,
+        idKind: _IdKind.discordUser,
+      ),
+  };
+
+  if (platforms.isNotEmpty && bridgeBotIds.isNotEmpty) {
     registry.registerCustomTool(_startPrivateChatTool(
       matrixClient,
-      managementRoom: whatsappManagementRoom,
+      platforms: platforms,
       bridgeBotIds: bridgeBotIds,
       pollInterval: replyPollInterval,
       timeout: replyTimeout,
@@ -61,7 +103,8 @@ CustomToolDef _dmUserTool(MatrixClient matrixClient) {
         'Proactively open a direct message with a Matrix user and send them a '
         'message — e.g. to onboard someone by DMing them a Kan invite link. '
         'LIMITATIONS: only works for users with a Matrix account on this '
-        'homeserver — for WhatsApp contacts use start_private_chat instead. '
+        'homeserver — for WhatsApp/Telegram/Signal/Discord contacts use '
+        'start_private_chat instead. '
         'The recipient receives a DM invite they must accept before the message '
         'is visible. Each call opens a fresh DM room, so send a complete '
         'message rather than many fragments. Admin-only.',
@@ -126,14 +169,48 @@ Future<String> _dmUser(
 }
 
 // -----------------------------------------------------------------------------
-// start_private_chat — WhatsApp 1:1 via the mautrix bridge
+// start_private_chat — bridged-platform 1:1 via the mautrix bridges
 // -----------------------------------------------------------------------------
 
+/// What shape of identifier a platform's bridge resolves.
+enum _IdKind { phone, discordUser }
+
+/// One bridged platform the tool can open chats on. Existence of an instance
+/// == the platform is configured; there is deliberately no "configured but
+/// disabled" state.
+class _Platform {
+  const _Platform({
+    required this.key,
+    required this.label,
+    required this.managementRoom,
+    required this.idKind,
+  });
+
+  /// Stable lowercase key used in the tool's `platform` enum, e.g. `whatsapp`.
+  final String key;
+
+  /// Human label used in messages back to the model, e.g. `WhatsApp`.
+  final String label;
+
+  /// The Matrix room shared with this platform's bridge bot where
+  /// `start-chat` commands are issued.
+  final String managementRoom;
+
+  final _IdKind idKind;
+}
+
 /// Matches an E.164-style international phone number after normalization:
-/// mandatory `+`, then 6-15 digits not starting with 0. The mautrix bridge
-/// resolves identifiers internationally, so an ambiguous local-format number
+/// mandatory `+`, then 6-15 digits not starting with 0. The mautrix bridges
+/// resolve identifiers internationally, so an ambiguous local-format number
 /// (no `+`) is rejected rather than guessed at.
 final _phonePattern = RegExp(r'^\+[1-9][0-9]{5,14}$');
+
+/// Matches a Discord recipient after normalization (leading `@` stripped):
+/// either a numeric snowflake ID (15-21 digits) or a modern Discord username
+/// (2-32 chars of lowercase alphanumerics, underscore, period). The bridge
+/// gives an informative error for a username it cannot resolve; this pattern
+/// only filters out obvious junk before a bridge round-trip.
+final _discordUserPattern = RegExp(r'^([0-9]{15,21}|[a-z0-9._]{2,32})$');
 
 /// Extracts a Matrix room ID from a matrix.to permalink in the bridge's
 /// reply, e.g. `https://matrix.to/#/!abc123%3Aexample.com?via=example.com`.
@@ -143,46 +220,57 @@ final _matrixToRoomPattern = RegExp(r'matrix\.to/#/((?:!|%21)[^?\s"<>)\]]+)');
 
 CustomToolDef _startPrivateChatTool(
   MatrixClient matrixClient, {
-  required String managementRoom,
+  required Map<String, _Platform> platforms,
   required Set<String> bridgeBotIds,
   required Duration pollInterval,
   required Duration timeout,
 }) {
+  final labels = platforms.values.map((p) => p.label).join(', ');
   return CustomToolDef(
     name: 'start_private_chat',
     description:
-        'Proactively open a private 1:1 WhatsApp chat with someone via the '
-        'WhatsApp bridge and send them a message — e.g. to welcome a new '
+        'Proactively open a private 1:1 chat with someone on a bridged '
+        'platform ($labels) and send them a message — e.g. to welcome a new '
         'community member and ask for their email so they can be invited to '
-        'Outline. The recipient just receives a normal WhatsApp message from '
-        'the bot\'s own WhatsApp number; their reply arrives back here as a '
-        'direct message. Requires a full international phone number starting '
-        'with +. Each call is a cold outbound message — send one complete, '
-        'warm message rather than fragments. NOTE: the bot is unresponsive '
-        'to other rooms for up to ~30s while the bridge sets up the chat. '
-        'Admin-only.',
-    inputSchema: const <String, dynamic>{
+        'Outline. The recipient just receives a normal message from the '
+        'bot\'s own account on that platform; their reply arrives back here '
+        'as a direct message. WhatsApp/Telegram/Signal take a full '
+        'international phone number starting with +; Discord takes a '
+        'username or numeric user ID. Each call is a cold outbound message — '
+        'send one complete, warm message rather than fragments. NOTE: the '
+        'bot is unresponsive to other rooms for up to ~30s while the bridge '
+        'sets up the chat. Admin-only.',
+    inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
-        'phone': <String, dynamic>{
+        'platform': <String, dynamic>{
+          'type': 'string',
+          // Only configured platforms exist — the model cannot pick one the
+          // system can't deliver on (explicit identity over inference).
+          'enum': platforms.keys.toList(),
+          'description': 'Which bridged platform to open the chat on.',
+        },
+        'identifier': <String, dynamic>{
           'type': 'string',
           'description':
-              'Phone number in international format with leading +, e.g. '
-                  '+61400000000. Spaces and dashes are tolerated.',
+              'Who to message. Phone number in international format with '
+                  'leading + (e.g. +61400000000; spaces and dashes tolerated) '
+                  'for WhatsApp/Telegram/Signal; username or numeric user ID '
+                  'for Discord.',
         },
         'message': <String, dynamic>{
           'type': 'string',
-          'description': 'The message text to send on WhatsApp.',
+          'description': 'The message text to send.',
         },
       },
-      'required': <String>['phone', 'message'],
+      'required': <String>['platform', 'identifier', 'message'],
     },
     // Cold outbound DMs are a spam/abuse vector — only admins may trigger them.
     requiresAdmin: true,
     handler: (args) => _startPrivateChat(
       matrixClient,
       args,
-      managementRoom: managementRoom,
+      platforms: platforms,
       bridgeBotIds: bridgeBotIds,
       pollInterval: pollInterval,
       timeout: timeout,
@@ -193,7 +281,7 @@ CustomToolDef _startPrivateChatTool(
 Future<String> _startPrivateChat(
   MatrixClient matrixClient,
   Map<String, dynamic> args, {
-  required String managementRoom,
+  required Map<String, _Platform> platforms,
   required Set<String> bridgeBotIds,
   required Duration pollInterval,
   required Duration timeout,
@@ -201,18 +289,51 @@ Future<String> _startPrivateChat(
   // `args` crosses the type-system boundary (model-generated JSON) — validate
   // with `is` checks rather than casts so a malformed call returns a
   // structured error instead of throwing a TypeError.
-  final rawPhone = args['phone'];
+  final rawPlatform = args['platform'];
+  // Legacy alias: the tool shipped WhatsApp-only with a `phone` arg; accept
+  // it as `identifier` so an old-habit call still lands.
+  final rawIdentifier = args['identifier'] ?? args['phone'];
   final message = args['message'];
 
-  // Normalize: tolerate spaces/dashes/parens that humans paste in.
-  final phone =
-      rawPhone is String ? rawPhone.replaceAll(RegExp(r'[\s\-()]'), '') : '';
-  if (!_phonePattern.hasMatch(phone)) {
+  final platform = rawPlatform is String ? platforms[rawPlatform] : null;
+  if (platform == null) {
     return jsonEncode(<String, dynamic>{
-      'error': 'phone must be an international number with leading + like '
-          '+61400000000 (got "${rawPhone is String ? rawPhone : rawPhone.runtimeType}")',
+      'error': 'platform must be one of: ${platforms.keys.join(', ')} '
+          '(got "${rawPlatform is String ? rawPlatform : rawPlatform.runtimeType}"). '
+          'Platforms are only listed when their bridge is configured.',
     });
   }
+
+  final String identifier;
+  switch (platform.idKind) {
+    case _IdKind.phone:
+      // Normalize: tolerate spaces/dashes/parens that humans paste in.
+      final phone = rawIdentifier is String
+          ? rawIdentifier.replaceAll(RegExp(r'[\s\-()]'), '')
+          : '';
+      if (!_phonePattern.hasMatch(phone)) {
+        return jsonEncode(<String, dynamic>{
+          'error': '${platform.label} needs an international number with leading '
+              '+ like +61400000000 '
+              '(got "${rawIdentifier is String ? rawIdentifier : rawIdentifier.runtimeType}")',
+        });
+      }
+      identifier = phone;
+    case _IdKind.discordUser:
+      // Normalize: strip a pasted leading @ and surrounding whitespace.
+      final user = rawIdentifier is String
+          ? rawIdentifier.trim().replaceFirst(RegExp(r'^@'), '')
+          : '';
+      if (!_discordUserPattern.hasMatch(user)) {
+        return jsonEncode(<String, dynamic>{
+          'error': '${platform.label} needs a username (lowercase letters, '
+              'digits, underscore, period) or numeric user ID '
+              '(got "${rawIdentifier is String ? rawIdentifier : rawIdentifier.runtimeType}")',
+        });
+      }
+      identifier = user;
+  }
+
   if (message is! String || message.trim().isEmpty) {
     return jsonEncode(<String, dynamic>{
       'error': 'message is required and cannot be empty',
@@ -220,11 +341,12 @@ Future<String> _startPrivateChat(
   }
 
   try {
-    // 1. Issue the bridge command. The bridge replies in the same room with a
+    // 1. Issue the bridge command. The `start-chat` grammar is uniform across
+    //    the mautrix bridges; the bridge replies in the same room with a
     //    matrix.to permalink to the portal room (creating it if needed).
     final commandEventId = await matrixClient.sendMessage(
-      roomId: managementRoom,
-      message: 'start-chat $phone',
+      roomId: platform.managementRoom,
+      message: 'start-chat $identifier',
     );
 
     // 2. Poll for the bridge's reply. We poll /messages instead of waiting on
@@ -232,11 +354,12 @@ Future<String> _startPrivateChat(
     //    awaiting a future sync event from here would deadlock the bot.
     final reply = await _awaitPortalReply(
       matrixClient,
-      managementRoom: managementRoom,
+      managementRoom: platform.managementRoom,
       bridgeBotIds: bridgeBotIds,
       commandEventId: commandEventId,
       pollInterval: pollInterval,
       timeout: timeout,
+      platformLabel: platform.label,
     );
     final String portal;
     switch (reply) {
@@ -260,18 +383,19 @@ Future<String> _startPrivateChat(
       });
     }
 
-    // 4. Send the opener into the portal → delivered to WhatsApp.
+    // 4. Send the opener into the portal → delivered to the platform.
     await matrixClient.sendMessage(roomId: portal, message: message);
 
     return jsonEncode(<String, dynamic>{
       'ok': true,
+      'platform': platform.key,
       'portal_room_id': portal,
-      'note': 'WhatsApp message sent to $phone. Their reply will arrive as a '
-          'direct message from this portal room.',
+      'note': '${platform.label} message sent to $identifier. Their reply '
+          'will arrive as a direct message from this portal room.',
     });
   } on Exception catch (e) {
     return jsonEncode(<String, dynamic>{
-      'error': 'Failed to start WhatsApp chat with $phone: $e',
+      'error': 'Failed to start ${platform.label} chat with $identifier: $e',
     });
   }
 }
@@ -313,6 +437,7 @@ Future<_PortalReply> _awaitPortalReply(
   required String commandEventId,
   required Duration pollInterval,
   required Duration timeout,
+  required String platformLabel,
 }) async {
   final deadline = DateTime.now().add(timeout);
   String? lastBridgeText;
@@ -356,7 +481,7 @@ Future<_PortalReply> _awaitPortalReply(
       return _PortalFailed(
         lastBridgeText != null
             ? 'Bridge did not return a chat link. Bridge said: $lastBridgeText'
-            : 'Timed out waiting for the WhatsApp bridge to respond.',
+            : 'Timed out waiting for the $platformLabel bridge to respond.',
       );
     }
     await Future<void>.delayed(pollInterval);
