@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Body - Dreamfinder Engine</title>
+<link rel="stylesheet" href="engine.css">
+</head>
+<body>
+<div class="wrap">
+
+<nav class="crumbs"><a href="index.html">Engine</a> / The Body</nav>
+
+<header class="hero">
+  <div class="kicker">✨ The Body &middot; voice + 3D avatar engine</div>
+  <h1>The Body</h1>
+  <p class="lede">Audio in &rarr; speech &rarr; a lip-synced 3D head out. Two completely
+  different voice backends sit behind one function signature, hot-swappable mid-sentence.
+  That swap is the engine.</p>
+</header>
+
+<p>This half lives in the <span class="path">embodied-dreamfinder</span> repo: a browser
+client (Three.js avatar + Web Audio) and a small Express server that hands out tokens.
+Run it with <code>npm start</code> (serves on <code>http://127.0.0.1:3001</code> - use
+the IP, not <code>localhost</code>, or Chrome blocks the mic) and, for the local-voice
+mode, <code>npm run agent</code>.</p>
+
+<h2>The crown jewel: one interface, two substrates</h2>
+<p>Both voice backends export the identical function:</p>
+<pre><code>export async function startVoicePipeline(room, localParticipant) { ... }</code></pre>
+
+<table>
+<tr><th>Substrate</th><th>File</th><th>Stack</th><th>When</th></tr>
+<tr><td>Realtime</td><td><span class="path">voice-pipeline.js</span></td><td>OpenAI Realtime (audio-native over WebSocket)</td><td>High quality, low latency, interactive</td></tr>
+<tr><td>Local</td><td><span class="path">voice-pipeline-local.js</span></td><td>Whisper STT &rarr; Claude Haiku (Max) &rarr; Piper/Kokoro TTS</td><td>Budget, on-prem-able</td></tr>
+</table>
+
+<div class="seam">
+<strong>What makes them swappable is a fixed audio contract.</strong> Both substrates
+emit <strong>PCM16, 24 kHz mono, in 480-sample (20 ms) chunks, base64-encoded</strong>.
+Because the bytes downstream are identical, the avatar/playback layer cannot tell which
+backend produced them. Swap the producer, keep the consumer. That contract - not any
+class hierarchy - is the real interface.
+</div>
+
+<p>The swap itself (triggered by a <code>switch_voice_mode</code> tool the model can
+call) tears down only the transport and resets the mouth; everything expensive survives:</p>
+<table>
+<tr><th>Survives the swap</th><th>Torn down</th></tr>
+<tr><td>Web Audio context, the TalkingHead avatar, the Three.js scene, the spark particles, mood state</td><td>The WebSocket / LiveKit transport, any in-flight audio, viseme morphs (reset to 0)</td></tr>
+</table>
+
+<h2>The avatar layer</h2>
+<details>
+<summary>Talking head + visemes</summary>
+<p>The avatar is a <code>TalkingHead</code> instance driving a GLB with 67 blend shapes
+(52 ARKit + 15 Oculus visemes). Lip sync runs in an AudioWorklet: the
+<span class="path">headaudio/</span> ML module classifies each audio chunk into a viseme
+name in ~10 ms and calls <code>setViseme(name, value)</code> to drive the morph targets.
+Mood is a string (<code>'happy'</code>, <code>'thinking'</code>...) mapped to blend-shape
+combos via <code>setMood()</code>.</p>
+</details>
+<details>
+<summary>Sparks (mood-reactive particles)</summary>
+<p><span class="path">sparks.js</span> is a self-contained GLSL particle system:
+<code>new SparkSystem(scene, opts)</code> then <code>setMood()</code>,
+<code>setEnergy(0..1)</code> (driven by audio frequency bins), <code>burst()</code>.
+Palettes are swappable (warm gold for Dreamfinder, cool starlight for Lyra). Pure
+Three.js, no other deps - the most directly reusable file in the repo.</p>
+</details>
+<details>
+<summary>The papyrus QR conjure (River's signature move)</summary>
+<p><code>showQRCode(url)</code> raises the right hand, conjures a 3D papyrus scroll bearing
+a QR code, tracks the hand bone each frame, and billboards to camera. The URL is
+<strong>hardcoded</strong> to <code>imagineering.cc</code> on purpose - never let an LLM
+choose the QR target, or you have a prompt-injection phishing vector. Tightly coupled to
+the TalkingHead armature; treat it as a reference for gesture+mesh choreography rather
+than a drop-in.</p>
+</details>
+
+<h2>Embedding the avatar elsewhere - the fast path</h2>
+<p>You do not need the voice stack to use the face. <span class="path">avatar-renderer.js</span>
+is a standalone, iframe-embeddable renderer with a tiny control surface:</p>
+<pre><code>// same-origin window functions:
+__onAudioChunk(base64pcm)   // feed it PCM16 (24kHz, the contract above)
+__setMood('happy')
+__interruptPlayback()
+
+// or cross-origin via postMessage:
+iframe.contentWindow.postMessage({ type: 'audio', data: base64pcm }, '*');
+iframe.contentWindow.postMessage({ type: 'mood',  mood: 'thinking' }, '*');</code></pre>
+<p>Feed it audio + mood from <em>any</em> source - your own TTS, a game server, a
+livestream - and it lip-syncs. No auth, no voice connection, just rendering.</p>
+
+<h2>How to build your own avatar on it</h2>
+<details>
+<summary>Step 1 - Bring your own GLB</summary>
+<p>Any rigged humanoid with compatible viseme blend shapes (15 Oculus or 52 ARKit) drops
+in. Load via the <code>?avatar=</code> URL param or swap the default.</p>
+</details>
+<details>
+<summary>Step 2 - Choose how voice is produced</summary>
+<p>Reuse a substrate as-is, or write your own <code>startVoicePipeline</code> wrapping
+your STT/TTS/LLM. The only rule: emit audio on the PCM16 / 24 kHz / 480-sample / base64
+contract and the avatar just works.</p>
+</details>
+<details>
+<summary>Step 3 - Drive mood and reskin</summary>
+<p>Map your character's emotions to mood strings, and swap the sparks palette (or the
+whole shader). Replace the papyrus conjure with your own gesture, or drop it.</p>
+</details>
+<details>
+<summary>Step 4 - Replace the persona</summary>
+<p>The system prompt and tool definitions are hardcoded constants in
+<span class="path">app.js</span> (Dreamfinder vs Lyra). Swap them for your character.
+This is the most River-specific code in the body - expect to rewrite it wholesale.</p>
+</details>
+
+<h2>How it reaches a brain</h2>
+<p>The body shares <strong>no code</strong> with the Dart brain. In local-voice mode the
+agent sends a line of text to a brain over HTTP and speaks the reply. That single
+text-in / text-out boundary is the seam between the two halves - covered on the
+<a href="roadmap.html#brain-api">roadmap page</a> as the Brain API. It is why you can
+point this body at River's brain, your brain, or no brain at all (Realtime mode talks
+straight to OpenAI).</p>
+
+<div class="footer">
+  <a href="brain.html">&larr; The Brain</a> &middot;
+  <a href="index.html">Engine overview</a> &middot;
+  Next: <a href="roadmap.html">What would make it more engine-like? &rarr;</a><br>
+  Engine core: <span class="path">embodied-dreamfinder/voice-pipeline*.js</span>,
+  <span class="path">avatar-renderer.js</span>, <span class="path">sparks.js</span>
+</div>
+
+</div>
+</body>
+</html>

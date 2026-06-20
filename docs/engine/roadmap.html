@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Making it more engine-like - Dreamfinder Engine</title>
+<link rel="stylesheet" href="engine.css">
+</head>
+<body>
+<div class="wrap">
+
+<nav class="crumbs"><a href="index.html">Engine</a> / Making it more engine-like</nav>
+
+<header class="hero">
+  <div class="kicker">🛠 The honest part</div>
+  <h1>What would make it more engine-like</h1>
+  <p class="lede">Andy's real question. The seams are already clean - but a thing becomes
+  an engine when you <em>depend on it and configure it</em>, not when you <em>fork it and
+  edit it</em>. Today Dreamfinder is mostly the second kind. Here is the short, concrete
+  path to the first.</p>
+</header>
+
+<div class="seam">
+<strong>The throughline.</strong> Nothing below is a big rewrite. It is
+<strong>three extractions</strong> (pull clean code out into things you can depend on),
+<strong>two interfaces</strong> (turn a convention into a contract), and
+<strong>one rename</strong> (give the best-designed boundary in the system a name). All
+of it is already 80% true in the code; this is about making it <em>declared</em> rather
+than <em>implied</em>.</p>
+</div>
+
+<h2>Brain: from "a folder of clean classes" to "a package you depend on"</h2>
+
+<details open>
+<summary>Extraction 1 - publish the agent core as a Dart package</summary>
+<p><span class="path">lib/src/agent/</span> (AgentLoop, ToolRegistry,
+ConversationHistory) is genuinely decoupled, but it lives <em>inside</em> the app. Pull it
+into a <code>dreamfinder_engine</code> package and have the app depend on it. Then
+"build your own bot" becomes <code>dependencies: dreamfinder_engine: ^1.0.0</code>
+instead of "fork the repo and delete the parts you do not want." This single move is the
+difference between a codebase and an engine.</p>
+</details>
+
+<details>
+<summary>Interface 1 - make <code>PlatformClient</code> a real abstract class</summary>
+<p>Right now the platform seam is a <em>convention</em>: the main loop happens to call
+<code>MatrixClient.sync()</code> / <code>.sendMessage()</code> directly. Define an
+<code>abstract class PlatformClient</code> (sync, send, join, typing, isDm, isMentioned)
+and a Discord or Slack client becomes a <em>compile-checked drop-in</em>. The seam exists;
+it just is not yet a type the compiler enforces.</p>
+</details>
+
+<details>
+<summary>Builder - shrink <code>main()</code> from 1090 lines to ~30</summary>
+<p>The entry point mixes wiring, feature orchestration, and the sync loop. An engine would
+expose <code>DreamfinderBot.builder()</code> taking <code>(platformClient, llmFn, tools,
+systemPromptBuilder)</code> and running the loop, so an app's <code>main()</code> is a
+short, declarative assembly. The feature modules (kickstart, dream cycle, radar) become
+opt-in plugins discovered from config - the same pattern MCP servers already use.</p>
+</details>
+
+<h2>Body: from "constants in app.js" to "character as data"</h2>
+
+<details>
+<summary>Extraction 2 - publish the renderer and sparks as npm packages</summary>
+<p><span class="path">avatar-renderer.js</span> (already has a clean window/postMessage
+API) and <span class="path">sparks.js</span> (zero deps beyond Three.js) are
+near-publishable today. Ship them as <code>@imagineering/avatar-renderer</code> and
+<code>@imagineering/sparks</code> and other projects embed a talking head with an
+<code>npm install</code>.</p>
+</details>
+
+<details>
+<summary>Extraction 3 - lift the substrate's transport coupling</summary>
+<p><code>startVoicePipeline(room, localParticipant)</code> takes a LiveKit
+<code>room</code>, so the substrate knows about LiveKit. The <em>real</em> interface is
+already the PCM contract (24 kHz / 480-sample / base64). Formalize that with a
+transport-agnostic <code>AudioSink</code>/<code>AudioSource</code> and a substrate stops
+caring whether it is LiveKit, raw WebRTC, or a file.</p>
+</details>
+
+<details>
+<summary>Interface 2 - externalize the persona to <code>character.json</code></summary>
+<p>System prompt, tools, mood map, spark palette, and GLB path are hardcoded constants in
+<span class="path">app.js</span>, duplicated for Dreamfinder and Lyra. That duplication
+already proves the pattern - it is just not extracted. Make a new character a
+<strong>data file</strong>, not a code fork. Same idea as the brain's "feature as
+config."</p>
+</details>
+
+<h2 id="brain-api">The rename: name the Brain API</h2>
+<div class="seam">
+<p>The two halves share zero code. They communicate by the body sending a line of text to
+the brain over HTTP and getting back text (plus a mood). <strong>That accidental boundary
+is the best-designed interface in the whole system</strong> - it is small, stateless, and
+already lets you mix any brain with any body.</p>
+<p>It just does not have a name or a spec. Write one: <code>POST /brain</code>,
+<code>{ text, context } &rarr; { text, mood }</code>. The moment it is a named contract,
+"my brain + River's body", "River's brain + my avatar", and "both replaced" all become
+supported configurations instead of happy accidents.</p>
+</div>
+
+<h2>The whole roadmap on one screen</h2>
+<table>
+<tr><th>Move</th><th>Type</th><th>Effort</th><th>Unlocks</th></tr>
+<tr><td>Agent core &rarr; Dart package</td><td>Extraction</td><td>M</td><td>Depend instead of fork</td></tr>
+<tr><td><code>PlatformClient</code> abstract class</td><td>Interface</td><td>S</td><td>Drop-in Discord/Slack</td></tr>
+<tr><td><code>DreamfinderBot.builder()</code></td><td>Refactor</td><td>M</td><td>30-line main(), plugin features</td></tr>
+<tr><td>avatar-renderer + sparks &rarr; npm</td><td>Extraction</td><td>S</td><td>Embed with npm install</td></tr>
+<tr><td>Substrate &rarr; AudioSink/Source</td><td>Extraction</td><td>M</td><td>Transport-agnostic voice</td></tr>
+<tr><td>Persona &rarr; character.json</td><td>Interface</td><td>S</td><td>New character = data, not code</td></tr>
+<tr><td>Name the Brain API</td><td>Rename</td><td>S</td><td>Mix any brain with any body</td></tr>
+</table>
+
+<p class="note">None of these are load-bearing for using the engine <em>today</em> - the
+seams already work, as the brain and body pages show. They are what turns "clone River and
+edit" into "install the engine and configure." If Andy is building his own bot now, he can
+use every seam as-is; this page is the map of where the rough edges are, and the best
+first contributions if he wants to push the engine forward.</p>
+
+<div class="footer">
+  <a href="body.html">&larr; The Body</a> &middot;
+  <a href="index.html">Engine overview</a> &middot;
+  <a href="brain.html">The Brain</a><br>
+  Built in the spirit of
+  <a href="https://www.imaginationinfrastructuring.com/">Imagination Infrastructure</a>.
+</div>
+
+</div>
+</body>
+</html>
