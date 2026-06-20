@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Brain - Dreamfinder Engine</title>
+<link rel="stylesheet" href="engine.css">
+</head>
+<body>
+<div class="wrap">
+
+<nav class="crumbs"><a href="index.html">Engine</a> / The Brain</nav>
+
+<header class="hero">
+  <div class="kicker">🧠 The Brain &middot; Dart chat-agent engine</div>
+  <h1>The Brain</h1>
+  <p class="lede">Message in &rarr; Claude call with tools &rarr; reply out. The loop
+  does not know what platform it is on, which LLM it is calling, or what tools exist.
+  That ignorance is the whole point - it is what makes it an engine.</p>
+</header>
+
+<p>Everything that matters lives in three files under
+<span class="path">lib/src/agent/</span>. If you delete every other directory and keep
+these, you still have a working agent core:</p>
+
+<table>
+<tr><th>File</th><th>Class</th><th>Job</th></tr>
+<tr><td><span class="path">agent_loop.dart</span></td><td><code>AgentLoop</code></td><td>The finite-state loop: call the model, run any tools it asks for, loop, return the final text.</td></tr>
+<tr><td><span class="path">tool_registry.dart</span></td><td><code>ToolRegistry</code></td><td>Where tools are registered and looked up. Merges your custom tools with MCP-server tools into one list.</td></tr>
+<tr><td><span class="path">conversation_history.dart</span></td><td><code>ConversationHistory</code></td><td>Per-chat memory, stored and replayed as atomic turns so tool-call blocks never get orphaned.</td></tr>
+</table>
+
+<h2>The three seams you plug into</h2>
+
+<p>The engine is defined by three injection points. Implement these and the rest is
+yours.</p>
+
+<div class="seam">
+<strong>Seam 1 - the LLM.</strong> <code>AgentLoop</code> never imports the Anthropic
+SDK. It takes a function:
+<pre><code>typedef CreateMessageFn = Future&lt;AgentResponse&gt; Function(
+  List&lt;AgentMessage&gt; messages,
+  List&lt;ToolDefinition&gt; tools,
+  String systemPrompt,
+);</code></pre>
+Give it one that calls Claude, GPT, a local model, whatever. The loop only cares that it
+gets back an <code>AgentResponse</code> (text blocks + tool-use blocks + a stop reason).
+<span class="note">In River this is wired to Claude on the Max plan via direct-Bearer
+OAuth - see the auth section below.</span>
+</div>
+
+<div class="seam">
+<strong>Seam 2 - the tools.</strong> A tool is a name, a JSON-Schema input, and a
+handler. Register as many as you like:
+<pre><code>toolRegistry.registerCustomTool(CustomToolDef(
+  name: 'open_door',
+  description: 'Open the named door',
+  inputSchema: {'type': 'object', 'properties': {'door': {'type': 'string'}}},
+  requiresAdmin: false,
+  handler: (args) async =&gt; doorService.open(args['door'] as String),
+));</code></pre>
+The loop calls your handler when the model asks for the tool, feeds the result back, and
+continues. You can also point the registry at MCP servers (next section) to get whole
+tool suites without writing Dart.
+</div>
+
+<div class="seam">
+<strong>Seam 3 - the platform.</strong> The loop's entry point is platform-neutral:
+<pre><code>Future&lt;String&gt; processMessage(AgentInput input, {required String systemPrompt});
+
+// AgentInput carries only neutral facts about a message:
+AgentInput(text: ..., chatId: ..., senderId: ..., isAdmin: ..., isGroup: ...);</code></pre>
+Matrix, Discord, Slack, a webhook, a CLI - anything that can produce an
+<code>AgentInput</code> and deliver the returned string can drive the engine. River's
+Matrix client (<span class="path">lib/src/matrix/matrix_client.dart</span>) is just one
+implementation; swap it and the loop is untouched.
+</div>
+
+<h2>Tools without code: MCP</h2>
+<p>The fastest way to add capability is not to write Dart at all. Drop a server into
+<span class="path">mcp-config.json</span>:</p>
+<pre><code>[
+  { "name": "kan", "command": "node", "args": ["mcp-servers/kan/index.js"],
+    "env": { "KAN_API_KEY": "$KAN_API_KEY" } }
+]</code></pre>
+<p><code>McpManager</code> (<span class="path">lib/src/mcp/mcp_manager.dart</span>) spawns
+each server, discovers its tools, and the registry merges them in. Adding a capability
+becomes: write (or grab) an MCP server, add a line, restart. This is how River talks to
+Kan.bn and Outline.</p>
+
+<h2 id="minimal">A minimal bot, end to end</h2>
+<p>Strip away River's features and the skeleton of <em>any</em> bot on this engine is
+small:</p>
+<pre><code>// 1. The pieces
+final history  = ConversationHistory(maxMessages: 40);
+final registry = ToolRegistry()..registerCustomTool(myTool);
+final loop = AgentLoop(
+  createMessage: myClaudeCall,   // Seam 1
+  toolRegistry: registry,        // Seam 2
+  history: history,
+);
+
+// 2. The platform glue (pseudo): for each inbound message...
+await for (final msg in myPlatform.incoming()) {
+  final reply = await loop.processMessage(            // Seam 3
+    AgentInput(text: msg.body, chatId: msg.room,
+               senderId: msg.sender, isAdmin: false),
+    systemPrompt: 'You are Spark, a helpful assistant.',
+  );
+  await myPlatform.send(msg.room, reply);
+}</code></pre>
+<p>That is the whole contract. River's <span class="path">bin/dreamfinder.dart</span> is
+1090 lines, but almost all of it is <em>feature wiring</em> (kickstart, dream cycle,
+standup cron, repo radar, RAG memory) layered on top of exactly this skeleton.</p>
+
+<h2>How to build your own bot on it</h2>
+<details>
+<summary>Step 1 - Implement the LLM seam</summary>
+<p>Write a <code>CreateMessageFn</code> that calls your model and maps its response into
+<code>AgentResponse</code>. Reuse River's Anthropic wrapper in
+<span class="path">bin/dreamfinder.dart</span> if you are using Claude - it already
+handles OAuth, retries, and error classification.</p>
+</details>
+<details>
+<summary>Step 2 - Bring a platform client</summary>
+<p>Reuse <code>MatrixClient</code> if you are on Matrix, or write a thin client for your
+platform exposing roughly: receive events, send a message, join a room, send typing.
+Translate each inbound event into an <code>AgentInput</code>.</p>
+</details>
+<details>
+<summary>Step 3 - Register your tools and/or MCP servers</summary>
+<p>Delete River's tool registrations (everything in <span class="path">lib/src/tools/</span>
+is River-specific) and register your own. Or wire in MCP servers via the config file.</p>
+</details>
+<details>
+<summary>Step 4 - Write your system prompt</summary>
+<p>River assembles its prompt from identity + memories + calendar + state in
+<span class="path">lib/src/agent/system_prompt.dart</span>. Yours can start as a single
+string passed to <code>processMessage</code> and grow from there.</p>
+</details>
+<details>
+<summary>Step 5 - Persist (optional)</summary>
+<p>Pass a <code>MessageRepository</code> (SQLite, <span class="path">lib/src/db/</span>)
+into <code>ConversationHistory</code> and history survives restarts. Skip it and the bot
+is stateless across reboots. Everything else works the same.</p>
+</details>
+
+<h2>Auth: always Max, never metered</h2>
+<p>A hard rule in this project: programmatic Claude calls run on the Max plan at zero
+marginal cost, <strong>never</strong> on a metered API key. River authenticates with a
+Claude Code OAuth token (<code>CLAUDE_CODE_OAUTH_TOKEN</code> from
+<code>claude setup-token</code>) used as a direct Bearer header
+(<code>anthropic-beta: oauth-2025-04-20</code>). Forced tool use works fine over this
+path. If you fork the engine, keep this discipline - a metered key that hits a credit
+wall makes the bot go silently brain-dead, which is exactly the failure this project was
+hardened against.</p>
+
+<div class="footer">
+  <a href="index.html">&larr; Engine overview</a> &middot;
+  Next: <a href="body.html">The Body &rarr;</a> &middot;
+  <a href="roadmap.html">What would make it more engine-like?</a><br>
+  Engine core: <span class="path">dreamfinder/lib/src/agent/</span> +
+  <span class="path">lib/src/mcp/</span>
+</div>
+
+</div>
+</body>
+</html>

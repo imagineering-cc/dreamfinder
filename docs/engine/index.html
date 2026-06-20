@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Dreamfinder Engine - Getting Started</title>
+<link rel="stylesheet" href="engine.css">
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Imagineering &middot; Technical Imagination Infrastructure</div>
+  <h1>The Dreamfinder Engine</h1>
+  <p class="lede">A getting-started guide for building your own bot or avatar on the
+  same machinery that runs River. Written for Andy.</p>
+</header>
+
+<p>Dreamfinder (the character is named <strong>River</strong>) is two programs that
+have never shared a line of code: a <strong>brain</strong> that thinks in chat, and a
+<strong>body</strong> that speaks and moves in 3D. Each one has a small, genuinely
+reusable core wrapped in a lot of River-specific decoration. This guide's whole job is
+to show you where the core ends and the decoration begins, so you can keep the core and
+replace the rest with <em>your</em> character.</p>
+
+<div class="seam">
+<strong>The one idea to take away.</strong> An "engine" is something you
+<em>depend on and configure</em>, not something you <em>fork and edit</em>. Dreamfinder
+today is about 80% of the way there: the seams exist and are clean, but they are held
+together by convention rather than packaged as libraries. This guide shows you how to
+use the seams that exist now, and the <a href="roadmap.html">roadmap page</a> is an
+honest account of the handful of extractions that would make it a true drop-in engine.</p>
+</div>
+
+<h2>The two halves</h2>
+
+<div class="cards">
+  <a class="card" href="brain.html">
+    <div class="emoji">🧠</div>
+    <h3>The Brain</h3>
+    <p class="note">Dart. A chat-agent engine: message in &rarr; Claude call with tools
+    &rarr; reply out. Platform-agnostic, LLM-agnostic, tool-agnostic. Runs on Matrix
+    today; the agent loop does not know Matrix exists.</p>
+    <p><strong>Read this to:</strong> build a chat/PM bot on any platform.</p>
+  </a>
+  <a class="card" href="body.html">
+    <div class="emoji">✨</div>
+    <h3>The Body</h3>
+    <p class="note">JavaScript + Three.js. A voice + 3D avatar engine: audio in &rarr;
+    speech &rarr; lip-synced talking head out. Two voice backends behind one interface,
+    hot-swappable mid-sentence.</p>
+    <p><strong>Read this to:</strong> embed a talking avatar anywhere.</p>
+  </a>
+</div>
+
+<p>They meet at exactly one place: the body sends a line of text to the brain over HTTP
+and gets a line of text back to speak. That accidental boundary is the cleanest
+interface in the whole system. We call it the <a href="roadmap.html#brain-api">Brain
+API</a>, and it is what lets you mix and match - your brain with River's body, River's
+brain with your avatar, or both replaced.</p>
+
+<h2>What counts as "the engine"</h2>
+
+<p>Throughout the guide, two tags mark every component:</p>
+<p>
+  <span class="tag engine">engine</span> reusable core - keep it, configure it.<br>
+  <span class="tag glue">glue</span> River-specific - this is where <em>your</em>
+  character's code goes instead.
+</p>
+
+<table>
+<tr><th>Half</th><th><span class="tag engine">engine</span></th><th><span class="tag glue">glue</span></th></tr>
+<tr>
+  <td>Brain</td>
+  <td><code>lib/src/agent/</code> (AgentLoop, ToolRegistry, ConversationHistory, system-prompt builder), <code>lib/src/mcp/</code>, <code>lib/src/db/</code></td>
+  <td>everything in <code>lib/src/tools/</code>, the 1090-line <code>bin/dreamfinder.dart</code> wiring, the Matrix client</td>
+</tr>
+<tr>
+  <td>Body</td>
+  <td><code>voice-pipeline*.js</code> (the substrate swap), <code>avatar-renderer.js</code>, <code>headaudio/</code> visemes, <code>sparks.js</code></td>
+  <td>the persona system prompts and tool defs in <code>app.js</code>, LiveKit room/topic names, the papyrus-QR move</td>
+</tr>
+</table>
+
+<h2>Pick your path</h2>
+
+<details>
+<summary>I want to build my own chat bot (different platform, different character)</summary>
+<p>Go to <a href="brain.html">The Brain</a>. You will implement two small interfaces
+(an LLM call and a platform client), register your own tools, and write a system prompt.
+The agent loop, conversation history, tool routing, and MCP integration come for free.
+The <a href="brain.html#minimal">minimal-bot sketch</a> is ~40 lines.</p>
+</details>
+
+<details>
+<summary>I want a talking 3D avatar on my own site or event</summary>
+<p>Go to <a href="body.html">The Body</a>. The fastest path is the standalone
+<code>avatar-renderer.js</code> - drop it in an iframe, feed it PCM audio and a mood
+string, and it lip-syncs. The full path is swapping the voice substrate to your own
+STT/TTS/LLM behind the <code>startVoicePipeline</code> interface.</p>
+</details>
+
+<details>
+<summary>I want both - my own embodied character, end to end</summary>
+<p>Read both leaf pages, then the <a href="roadmap.html#brain-api">Brain API</a> section:
+that is the contract your brain must speak so any body can drive it. Build the brain
+first (you can test it in chat with no avatar), then point a body at it.</p>
+</details>
+
+<details>
+<summary>I just want to understand how River works to contribute</summary>
+<p>Read the two leaf pages top to bottom. The <a href="roadmap.html">roadmap</a> doubles
+as a map of the codebase's current rough edges - those are the best places to make a
+first contribution.</p>
+</details>
+
+<h2>Lineage</h2>
+<p>Dreamfinder is built in the spirit of the
+<a href="https://www.imaginationinfrastructuring.com/">Imagination Infrastructure</a>
+movement - civic imagination infrastructure at the social layer - but one layer down the
+stack: the servers, bots, bridges, and avatars themselves. The full character and
+mission writeup lives in
+<a href="https://outline.imagineering.cc/doc/identity-lineage-XSJpjcVyMv">Identity &amp;
+Lineage</a> on the Imagineering Outline.</p>
+
+<div class="footer">
+  Guide pages:
+  <a href="index.html">Overview</a> &middot;
+  <a href="brain.html">The Brain</a> &middot;
+  <a href="body.html">The Body</a> &middot;
+  <a href="roadmap.html">Making it more engine-like</a><br>
+  Source: <code>dreamfinder/docs/engine/</code> &middot; companion repos:
+  <code>dreamfinder/</code> (brain), <code>embodied-dreamfinder/</code> (body).
+</div>
+
+</div>
+</body>
+</html>
