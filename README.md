@@ -12,11 +12,11 @@ task management (Kan.bn), knowledge base (Outline), calendar (Radicale), web
 automation (Playwright), and custom bot tools. No slash commands — just natural
 language.
 
-> 🧠✨ **New here? Read the [Dreamfinder Engine guide](docs/engine/index.html)** — a
+> 🧠✨ **New here? Read the [Dreamfinder Engine guide](https://imagineering.cc/engine/)** — a
 > getting-started walkthrough of the reusable "engine" behind River: the chat-agent core
 > (this repo) and the embodied voice/avatar (the `embodied-dreamfinder` repo), how to
-> build your own bot on it, and what would make it more engine-like. Open the HTML in a
-> browser.
+> build your own bot on it, and what would make it more engine-like. Read it live at
+> [imagineering.cc/engine](https://imagineering.cc/engine/) (source under `docs/engine/`).
 
 > **Status**: Deployed and running. 710+ tests, 16 domain tables, schema v7.
 > Migrating from Signal to Matrix — a
