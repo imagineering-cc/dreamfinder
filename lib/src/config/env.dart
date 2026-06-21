@@ -44,6 +44,7 @@ class Env {
     this.healthPort = 8081,
     this.apiKey,
     this.deployAnnounceGroupId,
+    this.eventReminderRoomId,
     this.voyageApiKey,
     this.githubToken,
     this.githubRepo,
@@ -116,6 +117,7 @@ class Env {
       healthPort: int.tryParse(dotEnv['HEALTH_PORT'] ?? '') ?? 8081,
       apiKey: dotEnv['API_KEY'],
       deployAnnounceGroupId: dotEnv['DEPLOY_ANNOUNCE_GROUP_ID'],
+      eventReminderRoomId: dotEnv['EVENT_REMINDER_ROOM_ID'],
       voyageApiKey: dotEnv['VOYAGE_API_KEY'],
       githubToken: dotEnv['GITHUB_TOKEN'],
       githubRepo: dotEnv['GITHUB_REPO'],
@@ -173,6 +175,7 @@ class Env {
     int healthPort = 8081,
     String? apiKey,
     String? deployAnnounceGroupId,
+    String? eventReminderRoomId,
     String? voyageApiKey,
     String? githubToken,
     String? githubRepo,
@@ -216,6 +219,7 @@ class Env {
         healthPort: healthPort,
         apiKey: apiKey,
         deployAnnounceGroupId: deployAnnounceGroupId,
+        eventReminderRoomId: eventReminderRoomId,
         voyageApiKey: voyageApiKey,
         githubToken: githubToken,
         githubRepo: githubRepo,
@@ -337,6 +341,11 @@ class Env {
   /// Group/room ID to send deploy announcements to.
   /// If null, deploy announcements are disabled.
   final String? deployAnnounceGroupId;
+
+  /// Matrix room ID of the Imagineering group (a mautrix-telegram portal room)
+  /// to send the weekly "session starts in 5 minutes" reminder to.
+  /// If null, the event reminder is disabled. See [Scheduler].
+  final String? eventReminderRoomId;
 
   /// Voyage AI API key for generating text embeddings.
   /// If null, the RAG memory system is disabled.
