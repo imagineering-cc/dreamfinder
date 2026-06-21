@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dreamfinder/src/cron/scheduler.dart';
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/queries.dart';
@@ -39,13 +41,14 @@ void main() {
         eventReminderRoomId: roomId,
       );
 
-  group('isOnlineEventWeek parity', () {
+  group('eventVenueFor parity', () {
     test('anchor week and every even week is online', () {
       final s = buildScheduler([]);
-      expect(s.isOnlineEventWeek(DateTime.utc(2026, 6, 20)), isTrue); // anchor
-      expect(s.isOnlineEventWeek(DateTime.utc(2026, 6, 27)), isFalse);
-      expect(s.isOnlineEventWeek(DateTime.utc(2026, 7, 4)), isTrue);
-      expect(s.isOnlineEventWeek(DateTime.utc(2026, 7, 11)), isFalse);
+      expect(s.eventVenueFor(DateTime.utc(2026, 6, 20)),
+          EventVenue.online); // anchor
+      expect(s.eventVenueFor(DateTime.utc(2026, 6, 27)), EventVenue.inPerson);
+      expect(s.eventVenueFor(DateTime.utc(2026, 7, 4)), EventVenue.online);
+      expect(s.eventVenueFor(DateTime.utc(2026, 7, 11)), EventVenue.inPerson);
     });
   });
 
@@ -100,6 +103,20 @@ void main() {
       expect(sent, hasLength(1));
       expect(sent.first.value, contains('world.imagineering.cc'));
     });
+
+    test('strips wrapping quotes an LLM may add', () async {
+      final sent = <MapEntry<String, String>>[];
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (g, m) async => sent.add(MapEntry(g, m)),
+        eventReminderRoomId: '!room:imagineering.cc',
+        composeViaAgent: (g, t) async => '"Wands out, dreamers!"',
+      );
+
+      await scheduler.tick(inPersonSaturday);
+
+      expect(sent.single.value, equals('Wands out, dreamers!'));
+    });
   });
 
   group('event reminder guards', () {
@@ -138,6 +155,34 @@ void main() {
       final sent = <MapEntry<String, String>>[];
       // First tick lands at 14:58 Melbourne == 04:58 UTC.
       await buildScheduler(sent).tick(DateTime.utc(2026, 6, 27, 4, 58));
+      expect(sent, hasLength(1));
+    });
+
+    test('does not send when room id is only whitespace', () async {
+      final sent = <MapEntry<String, String>>[];
+      await buildScheduler(sent, roomId: '   ').tick(inPersonSaturday);
+      expect(sent, isEmpty);
+    });
+
+    test('does not double-send when ticks overlap a slow compose', () async {
+      final sent = <MapEntry<String, String>>[];
+      final gate = Completer<String>();
+      final scheduler = Scheduler(
+        queries: queries,
+        sendMessage: (g, m) async => sent.add(MapEntry(g, m)),
+        eventReminderRoomId: '!room:imagineering.cc',
+        composeViaAgent: (g, t) => gate.future, // hangs until released
+      );
+
+      // First tick enters the window, claims the in-flight latch, and awaits
+      // the slow compose. A second tick overlaps before it completes — it must
+      // observe the latch and bail rather than composing + sending again.
+      final t1 = scheduler.tick(inPersonSaturday);
+      await scheduler.tick(DateTime.utc(2026, 6, 27, 4, 56));
+
+      gate.complete('Released line 🪄');
+      await t1;
+
       expect(sent, hasLength(1));
     });
   });

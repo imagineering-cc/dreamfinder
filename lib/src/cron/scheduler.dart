@@ -158,6 +158,12 @@ class Scheduler {
   /// Public so tests can call it directly with a controlled timestamp.
   Future<void> tick(DateTime now) async {
     _ensureTimeZonesInitialized();
+
+    // Time-critical fixed-schedule nudge first, so heavier per-config work
+    // (standup/radar agent composition can each await an LLM call) can't delay
+    // the "starts in 5 minutes" send past the 15:00 session start.
+    await _maybeSendEventReminder(now);
+
     final configs = queries.getAllStandupConfigs();
     for (final config in configs) {
       if (!config.enabled) continue;
@@ -201,10 +207,6 @@ class Scheduler {
         await _maybeRunRadar(config.groupId, now, localNow);
       }
     }
-
-    // Weekly Imagineering event reminder — independent of standup configs
-    // (it fires on a weekend, which the standup loop skips).
-    await _maybeSendEventReminder(now);
 
     // Run data cleanup once per day after 3 AM UTC. Uses a date guard instead
     // of exact minute matching so timer drift or restarts can't skip a day.
@@ -589,22 +591,18 @@ class Scheduler {
   /// for the Friday WhatsApp reminder.)
   static final _eventAnchorDate = DateTime.utc(2026, 6, 20);
 
-  /// Hardcoded fallbacks used when agent composition is unavailable.
-  static const _onlineFallback =
-      "Imagineering starts in 5 minutes — and we're online this week! "
-      'Hop into TechWorld at world.imagineering.cc and find us in '
-      'The Imagination Center. ✨';
-  static const _inPersonFallback =
-      'Imagineering starts in 5 minutes — in person this week at '
-      '318 Russell St, Level 55. Wands out, dreamers, for 3 hours of '
-      'bringing ideas alive with AI. 🪄';
+  /// Guards against a second concurrent send when one tick's async
+  /// compose/send outlives the 60s timer interval and the next tick overlaps.
+  /// The `bot_metadata` date guard handles cross-restart/cross-day idempotency;
+  /// this in-memory latch handles the same-process overlapping-tick race.
+  bool _eventReminderInFlight = false;
 
-  /// Whether the Saturday containing [localNow] is an ONLINE week (vs
-  /// in-person), by week parity from [_eventAnchorDate]. Public for tests.
-  bool isOnlineEventWeek(DateTime localNow) {
+  /// The venue for the Saturday containing [localNow], by week parity from
+  /// [_eventAnchorDate]. Public for tests.
+  EventVenue eventVenueFor(DateTime localNow) {
     final localDate = DateTime.utc(localNow.year, localNow.month, localNow.day);
     final weeks = (localDate.difference(_eventAnchorDate).inDays / 7).floor();
-    return weeks % 2 == 0;
+    return weeks.isEven ? EventVenue.online : EventVenue.inPerson;
   }
 
   /// Sends the weekly Imagineering "starts in 5 minutes" reminder when it's
@@ -614,10 +612,10 @@ class Scheduler {
   /// agent loop (falling back to a hardcoded line on empty/exception), and
   /// posts to [eventReminderRoomId] — a mautrix-telegram portal room, so the
   /// message lands in the bridged Imagineering Telegram group. Idempotent per
-  /// day via a `bot_metadata` date guard so a duplicate tick within the same
-  /// minute can't double-send.
+  /// day via a `bot_metadata` date guard, and per-process via
+  /// [_eventReminderInFlight] so overlapping ticks can't double-send.
   Future<void> _maybeSendEventReminder(DateTime now) async {
-    final roomId = eventReminderRoomId;
+    final roomId = eventReminderRoomId?.trim();
     if (roomId == null || roomId.isEmpty) return;
 
     final localNow = _toLocalTime(now, _eventTimezone);
@@ -625,42 +623,33 @@ class Scheduler {
     if (localNow.hour != _eventReminderHour) return;
     if (localNow.minute < _eventReminderMinute) return;
 
-    // Fire at most once per Saturday.
+    // Bail if a prior overlapping tick is still composing/sending, or if we
+    // already sent today. Claim the in-flight latch BEFORE any await so a
+    // concurrent tick observes it (the metadata guard alone is check-then-act
+    // across the await boundary and would let a slow send double-fire).
+    if (_eventReminderInFlight) return;
     final guardKey = 'event_reminder::${_dateString(localNow)}';
     if (queries.getMetadata(guardKey) != null) return;
 
-    final online = isOnlineEventWeek(localNow);
-    final task = online
-        ? 'The weekly Imagineering session starts in 5 minutes (at 3pm) and '
-            "it's ONLINE this week, inside TechWorld. Write ONE short, funny, "
-            'in-character message for the group telling everyone it starts in '
-            '5 minutes and to head to world.imagineering.cc and join in the '
-            'room called "The Imagination Center". 1-2 sentences, playful, a '
-            'stray emoji is fine. Output only the message.'
-        : 'The weekly Imagineering session starts in 5 minutes (at 3pm) and '
-            "it's IN-PERSON this week at 318 Russell St, Level 55, for 3 "
-            'hours of bringing dreams alive with AI. Write ONE short, funny, '
-            'in-character message for the group telling everyone it starts in '
-            '5 minutes and where to go (318 Russell St, Level 55), with a '
-            'playful wizard/wand vibe. 1-2 sentences, a stray emoji is fine. '
-            'Output only the message.';
-
-    var message = online ? _onlineFallback : _inPersonFallback;
-    final compose = composeViaAgent;
-    if (compose != null) {
-      try {
-        final composed = await compose(roomId, task);
-        if (composed.isNotEmpty) message = composed;
-      } on Exception catch (e) {
-        developer.log(
-          'Event reminder composition failed, using fallback: $e',
-          name: 'Scheduler',
-          level: 900,
-        );
-      }
-    }
-
+    _eventReminderInFlight = true;
     try {
+      final venue = eventVenueFor(localNow);
+      var message = venue.fallback;
+      final compose = composeViaAgent;
+      if (compose != null) {
+        try {
+          final composed = await compose(roomId, venue.composePrompt);
+          final cleaned = _stripWrappingQuotes(composed.trim());
+          if (cleaned.isNotEmpty) message = cleaned;
+        } on Exception catch (e) {
+          developer.log(
+            'Event reminder composition failed, using fallback: $e',
+            name: 'Scheduler',
+            level: 900,
+          );
+        }
+      }
+
       await sendMessage(roomId, message);
       // Mark only after a successful send so a transient failure retries on the
       // next tick (still within the 14:55–15:00 window).
@@ -671,7 +660,21 @@ class Scheduler {
         name: 'Scheduler',
         level: 900,
       );
+    } finally {
+      _eventReminderInFlight = false;
     }
+  }
+
+  /// Strips a single pair of wrapping quotes (straight or smart) that an LLM
+  /// may add around its composed message, so they aren't broadcast verbatim.
+  static String _stripWrappingQuotes(String s) {
+    if (s.length < 2) return s;
+    const closers = {'"': '"', '“': '”', "'": "'"};
+    final closer = closers[s[0]];
+    if (closer != null && s.endsWith(closer)) {
+      return s.substring(1, s.length - 1).trim();
+    }
+    return s;
   }
 
   /// Removes old reminders and calendar reminders from the database.
@@ -703,4 +706,51 @@ class Scheduler {
   String _dateString(DateTime dt) =>
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
       '${dt.day.toString().padLeft(2, '0')}';
+}
+
+/// The two venues the weekly Imagineering session alternates between.
+///
+/// Each venue carries its own [composePrompt] (the task description handed to
+/// the agent loop to write an in-character reminder) and [fallback] (the
+/// hardcoded line used when agent composition is unavailable), so the venue
+/// copy and the parity logic can't drift apart.
+enum EventVenue {
+  /// Online week — hosted inside TechWorld at world.imagineering.cc.
+  online(
+    composePrompt:
+        'The weekly Imagineering session starts in 5 minutes (at 3pm) and '
+        "it's ONLINE this week, inside TechWorld. Write ONE short, funny, "
+        'in-character message for the group telling everyone it starts in '
+        '5 minutes and to head to world.imagineering.cc and join in the '
+        'room called "The Imagination Center". 1-2 sentences, playful, a '
+        'stray emoji is fine. Output only the message.',
+    fallback:
+        "Imagineering starts in 5 minutes — and we're online this week! "
+        'Hop into TechWorld at world.imagineering.cc and find us in '
+        'The Imagination Center. ✨',
+  ),
+
+  /// In-person week — 318 Russell St, Level 55.
+  inPerson(
+    composePrompt:
+        'The weekly Imagineering session starts in 5 minutes (at 3pm) and '
+        "it's IN-PERSON this week at 318 Russell St, Level 55, for 3 hours "
+        'of bringing dreams alive with AI. Write ONE short, funny, '
+        'in-character message for the group telling everyone it starts in '
+        '5 minutes and where to go (318 Russell St, Level 55), with a '
+        'playful wizard/wand vibe. 1-2 sentences, a stray emoji is fine. '
+        'Output only the message.',
+    fallback:
+        'Imagineering starts in 5 minutes — in person this week at '
+        '318 Russell St, Level 55. Wands out, dreamers, for 3 hours of '
+        'bringing ideas alive with AI. 🪄',
+  );
+
+  const EventVenue({required this.composePrompt, required this.fallback});
+
+  /// Task description handed to the agent loop to compose the reminder.
+  final String composePrompt;
+
+  /// Hardcoded reminder used when agent composition is unavailable.
+  final String fallback;
 }
