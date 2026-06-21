@@ -724,8 +724,7 @@ enum EventVenue {
         '5 minutes and to head to world.imagineering.cc and join in the '
         'room called "The Imagination Center". 1-2 sentences, playful, a '
         'stray emoji is fine. Output only the message.',
-    fallback:
-        "Imagineering starts in 5 minutes — and we're online this week! "
+    fallback: "Imagineering starts in 5 minutes — and we're online this week! "
         'Hop into TechWorld at world.imagineering.cc and find us in '
         'The Imagination Center. ✨',
   ),
@@ -740,8 +739,7 @@ enum EventVenue {
         '5 minutes and where to go (318 Russell St, Level 55), with a '
         'playful wizard/wand vibe. 1-2 sentences, a stray emoji is fine. '
         'Output only the message.',
-    fallback:
-        'Imagineering starts in 5 minutes — in person this week at '
+    fallback: 'Imagineering starts in 5 minutes — in person this week at '
         '318 Russell St, Level 55. Wands out, dreamers, for 3 hours of '
         'bringing ideas alive with AI. 🪄',
   );
