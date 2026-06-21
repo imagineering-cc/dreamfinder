@@ -147,16 +147,25 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
 - Branch naming: `feat/description`, `fix/description`, `chore/description`.
 - **Always work on a feature branch** — never commit directly to `main`. Create a
   new branch before starting work, even for small changes.
-- **Git identity**: Commit under the operator's own git/GitHub identity (whatever
-  `gh auth status` / ssh resolves to). Do **not** set a cosmetic `Dreamfinder` git
-  author, and do **not** use `$DREAMFINDER_GITHUB_TOKEN` — that variable is **unset**
-  and silently falls back to the operator's admin `gh` keyring login, disguising who
-  actually pushed/merged. (`dreamfindercc` is a real but unused account — 0 repos, not
-  an org member — not the actor behind any commit.)
-- **Never merge to `main` from a session** (Nick, 2026-06-20): branch, push, open the
-  PR, then hand the merge to a human or a real `/cage-match`. Do not `--admin`-merge or
-  self-approve your own PR — a same-instance approval through any second identity is
-  self-review theater, not review.
+- **Git identity** — match the *commit author* to the real operator, not just the push
+  auth. `gh`/ssh decides who can push; `git config user.name/user.email` decides who the
+  commit says authored it, and a stale repo-local `user.name = "Dreamfinder"` left by a
+  prior session will keep mislabelling commits even when the auth is honest. Before
+  committing, clear any cosmetic override and verify:
+  `git config --local --unset user.name; git config --local --unset user.email` (ignore
+  "not set" errors), then `git config user.name && git config user.email` to confirm it
+  resolves to you. Do **not** set a `Dreamfinder` author or use `$DREAMFINDER_GITHUB_TOKEN`
+  (it is unset and silently falls back to the operator's admin `gh` keyring, disguising who
+  acted). There is no real bot actor behind these commits unless a genuine org-authorized
+  automation account + scoped token is provisioned.
+- **Merge gate — two adversarial approvals, enforced** (Nick, 2026-06-21): branch, push,
+  open the PR as yourself, then run `/cage-match`. Merging `main` requires **2 approving
+  reviews from different model families** — `kelvin-bit-brawler[bot]` (Gemini) and
+  `carnotcodecarver[bot]` (GPT) — and `main` branch protection enforces it
+  (`required_approving_review_count: 2`, `require_last_push_approval: true`). The session
+  may merge once the gate is satisfied; it must **never** `--admin`-bypass or lean on a
+  same-instance approval, because the gate's whole value is the different-inductive-bias
+  adversary (which is why the count is 2 and the reviewers are non-Claude).
 
 ## Signal → Matrix Migration (complete)
 
