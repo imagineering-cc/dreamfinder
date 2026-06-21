@@ -564,6 +564,7 @@ Future<void> main() async {
     backfill: embeddingBackfill,
     consolidator: memoryConsolidator,
     triggerDream: dreamCycle.trigger,
+    eventReminderRoomId: env.eventReminderRoomId,
     composeViaAgent: (groupId, taskDescription) async {
       final input = AgentInput(
         text: taskDescription,

@@ -71,6 +71,7 @@ class Scheduler {
     this.triggerDream,
     this.backfill,
     this.consolidator,
+    this.eventReminderRoomId,
     Random? random,
   }) : _random = random ?? Random();
 
@@ -100,6 +101,12 @@ class Scheduler {
   /// Optional memory consolidator. When provided, runs during the daily
   /// cleanup window to summarize old conversation embeddings.
   final MemoryConsolidator? consolidator;
+
+  /// Matrix room ID (a mautrix-telegram portal room) for the weekly
+  /// Imagineering "session starts in 5 minutes" reminder. When null, the
+  /// reminder is disabled. See [_maybeSendEventReminder].
+  final String? eventReminderRoomId;
+
   Timer? _timer;
 
   /// Tracks the last date (YYYY-MM-DD) that data cleanup ran, to ensure
@@ -194,6 +201,10 @@ class Scheduler {
         await _maybeRunRadar(config.groupId, now, localNow);
       }
     }
+
+    // Weekly Imagineering event reminder — independent of standup configs
+    // (it fires on a weekend, which the standup loop skips).
+    await _maybeSendEventReminder(now);
 
     // Run data cleanup once per day after 3 AM UTC. Uses a date guard instead
     // of exact minute matching so timer drift or restarts can't skip a day.
@@ -559,6 +570,107 @@ class Scheduler {
           level: 900,
         );
       }
+    }
+  }
+
+  // ── Weekly Imagineering event reminder ──────────────────────────────────
+
+  /// IANA timezone the Imagineering session runs in. The reminder fires at
+  /// [_eventReminderHour]:[_eventReminderMinute] local on Saturdays.
+  static const _eventTimezone = 'Australia/Melbourne';
+
+  /// Saturday 14:55 local — five minutes before the 15:00 session start.
+  static const _eventReminderHour = 14;
+  static const _eventReminderMinute = 55;
+
+  /// Anchor for venue alternation: 2026-06-20 was an ONLINE week. Every even
+  /// number of whole weeks after this anchor is online; odd weeks are
+  /// in-person. (Consistent with the 2026-06-13 = in-person anchor recorded
+  /// for the Friday WhatsApp reminder.)
+  static final _eventAnchorDate = DateTime.utc(2026, 6, 20);
+
+  /// Hardcoded fallbacks used when agent composition is unavailable.
+  static const _onlineFallback =
+      "Imagineering starts in 5 minutes — and we're online this week! "
+      'Hop into TechWorld at world.imagineering.cc and find us in '
+      'The Imagination Center. ✨';
+  static const _inPersonFallback =
+      'Imagineering starts in 5 minutes — in person this week at '
+      '318 Russell St, Level 55. Wands out, dreamers, for 3 hours of '
+      'bringing ideas alive with AI. 🪄';
+
+  /// Whether the Saturday containing [localNow] is an ONLINE week (vs
+  /// in-person), by week parity from [_eventAnchorDate]. Public for tests.
+  bool isOnlineEventWeek(DateTime localNow) {
+    final localDate = DateTime.utc(localNow.year, localNow.month, localNow.day);
+    final weeks = (localDate.difference(_eventAnchorDate).inDays / 7).floor();
+    return weeks % 2 == 0;
+  }
+
+  /// Sends the weekly Imagineering "starts in 5 minutes" reminder when it's
+  /// Saturday in the 14:55–15:00 local window and it hasn't fired today.
+  ///
+  /// Picks the venue by week parity, composes an in-character message via the
+  /// agent loop (falling back to a hardcoded line on empty/exception), and
+  /// posts to [eventReminderRoomId] — a mautrix-telegram portal room, so the
+  /// message lands in the bridged Imagineering Telegram group. Idempotent per
+  /// day via a `bot_metadata` date guard so a duplicate tick within the same
+  /// minute can't double-send.
+  Future<void> _maybeSendEventReminder(DateTime now) async {
+    final roomId = eventReminderRoomId;
+    if (roomId == null || roomId.isEmpty) return;
+
+    final localNow = _toLocalTime(now, _eventTimezone);
+    if (localNow.weekday != DateTime.saturday) return;
+    if (localNow.hour != _eventReminderHour) return;
+    if (localNow.minute < _eventReminderMinute) return;
+
+    // Fire at most once per Saturday.
+    final guardKey = 'event_reminder::${_dateString(localNow)}';
+    if (queries.getMetadata(guardKey) != null) return;
+
+    final online = isOnlineEventWeek(localNow);
+    final task = online
+        ? 'The weekly Imagineering session starts in 5 minutes (at 3pm) and '
+            "it's ONLINE this week, inside TechWorld. Write ONE short, funny, "
+            'in-character message for the group telling everyone it starts in '
+            '5 minutes and to head to world.imagineering.cc and join in the '
+            'room called "The Imagination Center". 1-2 sentences, playful, a '
+            'stray emoji is fine. Output only the message.'
+        : 'The weekly Imagineering session starts in 5 minutes (at 3pm) and '
+            "it's IN-PERSON this week at 318 Russell St, Level 55, for 3 "
+            'hours of bringing dreams alive with AI. Write ONE short, funny, '
+            'in-character message for the group telling everyone it starts in '
+            '5 minutes and where to go (318 Russell St, Level 55), with a '
+            'playful wizard/wand vibe. 1-2 sentences, a stray emoji is fine. '
+            'Output only the message.';
+
+    var message = online ? _onlineFallback : _inPersonFallback;
+    final compose = composeViaAgent;
+    if (compose != null) {
+      try {
+        final composed = await compose(roomId, task);
+        if (composed.isNotEmpty) message = composed;
+      } on Exception catch (e) {
+        developer.log(
+          'Event reminder composition failed, using fallback: $e',
+          name: 'Scheduler',
+          level: 900,
+        );
+      }
+    }
+
+    try {
+      await sendMessage(roomId, message);
+      // Mark only after a successful send so a transient failure retries on the
+      // next tick (still within the 14:55–15:00 window).
+      queries.setMetadata(guardKey, DateTime.now().toUtc().toIso8601String());
+    } on Exception catch (e) {
+      developer.log(
+        'Event reminder send failed for $roomId: $e',
+        name: 'Scheduler',
+        level: 900,
+      );
     }
   }
 
