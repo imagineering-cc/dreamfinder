@@ -9,6 +9,21 @@ on:
       - main
 
 jobs:
+  vendored-cli-drift:
+    name: Vendored CLI drift guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify vendored CLIs match committed manifest
+        # Catches accidental in-repo edits to cli-tools/*.mjs and forces the
+        # manifest to be regenerated deliberately when re-vendoring. It does NOT
+        # check freshness vs the canonical CLIs (~/.claude/cli-tools/), which are
+        # only on the dev machine — see scripts/check-vendored-clis.sh.
+        run: ./scripts/check-vendored-clis.sh
+
   analyze-and-test:
     name: Dart analyze & test
     runs-on: ubuntu-latest
