@@ -669,7 +669,7 @@ class Scheduler {
   /// may add around its composed message, so they aren't broadcast verbatim.
   static String _stripWrappingQuotes(String s) {
     if (s.length < 2) return s;
-    const closers = {'"': '"', '“': '”', "'": "'"};
+    const closers = {'"': '"', '“': '”', "'": "'", '‘': '’'};
     final closer = closers[s[0]];
     if (closer != null && s.endsWith(closer)) {
       return s.substring(1, s.length - 1).trim();
