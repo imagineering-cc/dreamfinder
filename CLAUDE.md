@@ -147,12 +147,25 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
 - Branch naming: `feat/description`, `fix/description`, `chore/description`.
 - **Always work on a feature branch** — never commit directly to `main`. Create a
   new branch before starting work, even for small changes.
-- **Dreamfinder git identity**: When committing as Dreamfinder (e.g. during a session),
-  use `git config user.name "Dreamfinder"` and
-  `git config user.email "dreamfinder@imagineering.cc"` (repo-level only — don't
-  touch global config). Restore with `git config --unset user.name` and
-  `git config --unset user.email` when done. Use `$DREAMFINDER_GITHUB_TOKEN` env var
-  for authenticated git operations (push, PR creation via `gh`).
+- **Git identity** — match the *commit author* to the real operator, not just the push
+  auth. `gh`/ssh decides who can push; `git config user.name/user.email` decides who the
+  commit says authored it, and a stale repo-local `user.name = "Dreamfinder"` left by a
+  prior session will keep mislabelling commits even when the auth is honest. Before
+  committing, clear any cosmetic override and verify:
+  `git config --local --unset user.name; git config --local --unset user.email` (ignore
+  "not set" errors), then `git config user.name && git config user.email` to confirm it
+  resolves to you. Do **not** set a `Dreamfinder` author or use `$DREAMFINDER_GITHUB_TOKEN`
+  (it is unset and silently falls back to the operator's admin `gh` keyring, disguising who
+  acted). There is no real bot actor behind these commits unless a genuine org-authorized
+  automation account + scoped token is provisioned.
+- **Merge gate — two adversarial approvals, enforced** (Nick, 2026-06-21): branch, push,
+  open the PR as yourself, then run `/cage-match`. Merging `main` requires **2 approving
+  reviews from different model families** — `kelvin-bit-brawler[bot]` (Gemini) and
+  `carnotcodecarver[bot]` (GPT) — and `main` branch protection enforces it
+  (`required_approving_review_count: 2`, `require_last_push_approval: true`). The session
+  may merge once the gate is satisfied; it must **never** `--admin`-bypass or lean on a
+  same-instance approval, because the gate's whole value is the different-inductive-bias
+  adversary (which is why the count is 2 and the reviewers are non-Claude).
 
 ## Signal → Matrix Migration (complete)
 
