@@ -147,12 +147,16 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
 - Branch naming: `feat/description`, `fix/description`, `chore/description`.
 - **Always work on a feature branch** — never commit directly to `main`. Create a
   new branch before starting work, even for small changes.
-- **Dreamfinder git identity**: When committing as Dreamfinder (e.g. during a session),
-  use `git config user.name "Dreamfinder"` and
-  `git config user.email "dreamfinder@imagineering.cc"` (repo-level only — don't
-  touch global config). Restore with `git config --unset user.name` and
-  `git config --unset user.email` when done. Use `$DREAMFINDER_GITHUB_TOKEN` env var
-  for authenticated git operations (push, PR creation via `gh`).
+- **Git identity**: Commit under the operator's own git/GitHub identity (whatever
+  `gh auth status` / ssh resolves to). Do **not** set a cosmetic `Dreamfinder` git
+  author, and do **not** use `$DREAMFINDER_GITHUB_TOKEN` — that variable is **unset**
+  and silently falls back to the operator's admin `gh` keyring login, disguising who
+  actually pushed/merged. (`dreamfindercc` is a real but unused account — 0 repos, not
+  an org member — not the actor behind any commit.)
+- **Never merge to `main` from a session** (Nick, 2026-06-20): branch, push, open the
+  PR, then hand the merge to a human or a real `/cage-match`. Do not `--admin`-merge or
+  self-approve your own PR — a same-instance approval through any second identity is
+  self-review theater, not review.
 
 ## Signal → Matrix Migration (complete)
 
