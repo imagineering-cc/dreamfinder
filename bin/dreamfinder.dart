@@ -49,6 +49,7 @@ import 'package:dreamfinder/src/tools/chat_config_tools.dart';
 import 'package:dreamfinder/src/tools/cli_tools.dart';
 import 'package:dreamfinder/src/tools/github_tools.dart';
 import 'package:dreamfinder/src/tools/kickstart_tools.dart';
+import 'package:dreamfinder/src/tools/lore_tools.dart';
 import 'package:dreamfinder/src/tools/memory_tools.dart';
 import 'package:dreamfinder/src/tools/messaging_tools.dart';
 import 'package:dreamfinder/src/tools/radar_tools.dart';
@@ -178,6 +179,15 @@ Future<void> main() async {
     toolRegistry,
     kanApiKey: env.kanApiKey,
     kanBaseUrl: env.kanBaseUrl,
+    outlineApiKey: env.outlineApiKey,
+    outlineBaseUrl: env.outlineBaseUrl,
+  );
+  // Proactive lore capture — quietly append durable community stories to the
+  // Outline Lore Inbox (dedup'd), so River builds the community's memory
+  // without having to reply in chat.
+  registerLoreTools(
+    toolRegistry,
+    queries,
     outlineApiKey: env.outlineApiKey,
     outlineBaseUrl: env.outlineBaseUrl,
   );

@@ -252,22 +252,86 @@ Future<String> _runCli(
     env['OUTLINE_API_URL'] = outlineBaseUrl;
   }
 
+  final result = await execVendoredCli(tool: tool, args: cliArgs, env: env);
+
+  // -1 launch failure / -2 timeout-kill carry their message in stderr.
+  if (result.exitCode == _cliLaunchFailed || result.exitCode == _cliTimedOut) {
+    return _err(result.stderr);
+  }
+
+  final out = result.stdout;
+  final errOut = result.stderr;
+
+  if (result.exitCode != 0) {
+    return jsonEncode(<String, dynamic>{
+      'error': 'CLI exited with code ${result.exitCode}',
+      'tool': tool,
+      'subcommand': subcommand,
+      if (errOut.isNotEmpty) 'stderr': errOut,
+      if (out.isNotEmpty) 'stdout': out,
+    });
+  }
+
+  if (out.isEmpty) {
+    return jsonEncode(<String, dynamic>{
+      'ok': true,
+      if (errOut.isNotEmpty) 'note': errOut,
+    });
+  }
+  return out;
+}
+
+/// Sentinel exit codes from [execVendoredCli] for failures that never produced
+/// a real process exit code. Negative so they can't collide with a CLI's own
+/// codes.
+const int _cliLaunchFailed = -1;
+const int _cliTimedOut = -2;
+
+/// Outcome of a vendored-CLI subprocess: the child's exit code plus drained
+/// stdout/stderr (both trimmed).
+typedef CliResult = ({int exitCode, String stdout, String stderr});
+
+/// Launches a vendored CLI (`<CLI_TOOLS_DIR>/<tool>.mjs`) with [args] and a
+/// minimal [env], returning its exit code and drained output. This is the ONE
+/// hardened launch path shared by every caller (`run_cli`, `capture_lore`):
+///
+///   * `includeParentEnvironment: false` — the child sees ONLY [env]; no
+///     inherited DF secrets (Anthropic key, Matrix token, …). Callers must
+///     supply `PATH` plus exactly the one service's creds.
+///   * `runInShell: false` — argv is passed verbatim, so no shell metacharacter
+///     interpretation and thus no command injection from crafted content.
+///   * 30s timeout that actually KILLS the child (`Process.start` + `kill`),
+///     so a hung `node` can't orphan a process holding a socket open.
+///
+/// Failures that never yield a real exit code are surfaced as sentinels:
+/// [_cliLaunchFailed] (node couldn't be spawned) and [_cliTimedOut] (killed
+/// after 30s), each with an explanatory message in `stderr`. Callers decide how
+/// to present the outcome.
+Future<CliResult> execVendoredCli({
+  required String tool,
+  required List<String> args,
+  required Map<String, String> env,
+}) async {
   final cliPath = '$_cliDir/$tool.mjs';
 
   // Process.start (not Process.run) so we hold a handle and can actually KILL
   // a hung child on timeout — Future.timeout alone would orphan the node
-  // process. runInShell:false → argv verbatim, no shell parsing.
+  // process.
   final Process proc;
   try {
     proc = await Process.start(
       'node',
-      <String>[cliPath, ...cliArgs],
+      <String>[cliPath, ...args],
       environment: env,
       includeParentEnvironment: false,
       runInShell: false,
     );
   } on ProcessException catch (e) {
-    return _err('Failed to launch CLI: ${e.message}');
+    return (
+      exitCode: _cliLaunchFailed,
+      stdout: '',
+      stderr: 'Failed to launch CLI: ${e.message}',
+    );
   }
 
   // Drain stdout/stderr concurrently with the exit wait to avoid pipe-buffer
@@ -283,29 +347,18 @@ Future<String> _runCli(
     // Let the streams close out so we don't leak subscriptions.
     unawaited(stdoutFuture.catchError((_) => ''));
     unawaited(stderrFuture.catchError((_) => ''));
-    return _err('CLI timed out after 30s and was killed.');
+    return (
+      exitCode: _cliTimedOut,
+      stdout: '',
+      stderr: 'CLI timed out after 30s and was killed.',
+    );
   }
 
-  final out = (await stdoutFuture).trim();
-  final errOut = (await stderrFuture).trim();
-
-  if (exitCode != 0) {
-    return jsonEncode(<String, dynamic>{
-      'error': 'CLI exited with code $exitCode',
-      'tool': tool,
-      'subcommand': subcommand,
-      if (errOut.isNotEmpty) 'stderr': errOut,
-      if (out.isNotEmpty) 'stdout': out,
-    });
-  }
-
-  if (out.isEmpty) {
-    return jsonEncode(<String, dynamic>{
-      'ok': true,
-      if (errOut.isNotEmpty) 'note': errOut,
-    });
-  }
-  return out;
+  return (
+    exitCode: exitCode,
+    stdout: (await stdoutFuture).trim(),
+    stderr: (await stderrFuture).trim(),
+  );
 }
 
 String _err(String message) => jsonEncode(<String, dynamic>{'error': message});
