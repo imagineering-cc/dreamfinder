@@ -252,22 +252,104 @@ Future<String> _runCli(
     env['OUTLINE_API_URL'] = outlineBaseUrl;
   }
 
+  final outcome = await execVendoredCli(tool: tool, args: cliArgs, env: env);
+
+  switch (outcome) {
+    case CliLaunchFailure(:final message):
+      return _err(message);
+    case CliTimeout():
+      return _err('CLI timed out after 30s and was killed.');
+    case CliCompleted(:final exitCode, :final stdout, :final stderr):
+      if (exitCode != 0) {
+        return jsonEncode(<String, dynamic>{
+          'error': 'CLI exited with code $exitCode',
+          'tool': tool,
+          'subcommand': subcommand,
+          if (stderr.isNotEmpty) 'stderr': stderr,
+          if (stdout.isNotEmpty) 'stdout': stdout,
+        });
+      }
+      if (stdout.isEmpty) {
+        return jsonEncode(<String, dynamic>{
+          'ok': true,
+          if (stderr.isNotEmpty) 'note': stderr,
+        });
+      }
+      return stdout;
+  }
+}
+
+/// Outcome of a vendored-CLI subprocess. A sealed hierarchy rather than an
+/// `(int exitCode, …)` record so the two failures that never produce a real
+/// exit code — launch failure and timeout-kill — are *distinct types*, not
+/// magic negative codes that could collide with a signal-killed child's own
+/// negative exit code (e.g. SIGHUP→-1, SIGINT→-2).
+sealed class CliOutcome {
+  const CliOutcome();
+}
+
+/// The CLI ran to completion (possibly with a non-zero [exitCode]). [stdout]
+/// and [stderr] are drained and trimmed.
+class CliCompleted extends CliOutcome {
+  const CliCompleted({
+    required this.exitCode,
+    required this.stdout,
+    required this.stderr,
+  });
+
+  final int exitCode;
+  final String stdout;
+  final String stderr;
+}
+
+/// `node` could not be spawned (e.g. not on PATH). [message] explains why.
+class CliLaunchFailure extends CliOutcome {
+  const CliLaunchFailure(this.message);
+
+  final String message;
+}
+
+/// The CLI exceeded the 30s budget and was killed.
+class CliTimeout extends CliOutcome {
+  const CliTimeout();
+}
+
+/// Launches a vendored CLI (`<CLI_TOOLS_DIR>/<tool>.mjs`) with [args] and a
+/// minimal [env], returning a [CliOutcome]. This is the ONE hardened launch
+/// path shared by every caller (`run_cli`, `capture_lore`):
+///
+///   * `includeParentEnvironment: false` — the child sees ONLY [env]; no
+///     inherited DF secrets (Anthropic key, Matrix token, …). Callers must
+///     supply `PATH` plus exactly the one service's creds.
+///   * `runInShell: false` — argv is passed verbatim, so no shell metacharacter
+///     interpretation and thus no command injection from crafted content.
+///   * 30s timeout that actually KILLS the child (`Process.start` + `kill`),
+///     so a hung `node` can't orphan a process holding a socket open.
+///
+/// Returns [CliCompleted] when the process ran (inspect its `exitCode`),
+/// [CliLaunchFailure] when `node` couldn't be spawned, or [CliTimeout] on the
+/// timeout-kill. Callers `switch` on the result and decide how to present it.
+Future<CliOutcome> execVendoredCli({
+  required String tool,
+  required List<String> args,
+  required Map<String, String> env,
+}) async {
   final cliPath = '$_cliDir/$tool.mjs';
 
   // Process.start (not Process.run) so we hold a handle and can actually KILL
   // a hung child on timeout — Future.timeout alone would orphan the node
-  // process. runInShell:false → argv verbatim, no shell parsing.
+  // process.
   final Process proc;
   try {
     proc = await Process.start(
       'node',
-      <String>[cliPath, ...cliArgs],
+      <String>[cliPath, ...args],
       environment: env,
       includeParentEnvironment: false,
       runInShell: false,
     );
   } on ProcessException catch (e) {
-    return _err('Failed to launch CLI: ${e.message}');
+    return CliLaunchFailure('Failed to launch CLI: ${e.message}');
   }
 
   // Drain stdout/stderr concurrently with the exit wait to avoid pipe-buffer
@@ -283,29 +365,14 @@ Future<String> _runCli(
     // Let the streams close out so we don't leak subscriptions.
     unawaited(stdoutFuture.catchError((_) => ''));
     unawaited(stderrFuture.catchError((_) => ''));
-    return _err('CLI timed out after 30s and was killed.');
+    return const CliTimeout();
   }
 
-  final out = (await stdoutFuture).trim();
-  final errOut = (await stderrFuture).trim();
-
-  if (exitCode != 0) {
-    return jsonEncode(<String, dynamic>{
-      'error': 'CLI exited with code $exitCode',
-      'tool': tool,
-      'subcommand': subcommand,
-      if (errOut.isNotEmpty) 'stderr': errOut,
-      if (out.isNotEmpty) 'stdout': out,
-    });
-  }
-
-  if (out.isEmpty) {
-    return jsonEncode(<String, dynamic>{
-      'ok': true,
-      if (errOut.isNotEmpty) 'note': errOut,
-    });
-  }
-  return out;
+  return CliCompleted(
+    exitCode: exitCode,
+    stdout: (await stdoutFuture).trim(),
+    stderr: (await stderrFuture).trim(),
+  );
 }
 
 String _err(String message) => jsonEncode(<String, dynamic>{'error': message});
