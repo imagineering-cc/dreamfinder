@@ -98,6 +98,28 @@ void main() {
       expect(result['key'], 'cray-stories');
     });
 
+    test('key is normalized to canonical kebab so casing/spacing dedups',
+        () async {
+      // A prior capture stored under the canonical key.
+      queries.setMetadata(
+          'lore::room1::cray-stories', '2026-06-22T00:00:00.000Z');
+
+      // These all normalize to "cray-stories" — every one must hit the skip
+      // gate (before any subprocess), proving they dedup to the same identity.
+      for (final variant in [
+        'Cray Stories',
+        'cray_stories',
+        '  CRAY--STORIES  '
+      ]) {
+        final result = await run(makeRegistry(chatId: 'room1'), {
+          'summary': 'The Cray supercomputer stories, retold.',
+          'key': variant,
+        });
+        expect(result['skipped'], 'already captured',
+            reason: '"$variant" should normalize to the captured key');
+      }
+    });
+
     test('dedup marker is namespaced per chat', () {
       // Capturing in room1 writes a room1-scoped marker; the SAME key in room2
       // resolves to a different marker, so it is not pre-deduped. Asserted at

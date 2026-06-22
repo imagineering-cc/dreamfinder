@@ -33,7 +33,8 @@ import 'dart:io';
 
 import '../agent/tool_registry.dart';
 import '../db/queries.dart';
-import 'cli_tools.dart' show execVendoredCli;
+import 'cli_tools.dart'
+    show CliCompleted, CliLaunchFailure, CliTimeout, execVendoredCli;
 
 /// Outline document id of the **Lore Inbox** — the append target for raw lore
 /// captures (curated later into topic docs in the `Lore` collection).
@@ -115,16 +116,25 @@ Future<String> _captureLore(
   String? outlineApiKey,
   String? outlineBaseUrl,
 }) async {
-  final summary = (args['summary'] as String?)?.trim() ?? '';
+  // Defensive extraction: a malformed (non-string) arg must return structured
+  // JSON, not throw a CastError up through the agent loop. (Schema-constrained
+  // calls make this unlikely, but `run_cli` validates the same way.)
+  final summary = _asString(args['summary']).trim();
   if (summary.isEmpty) {
     return _err('`summary` is empty — nothing to capture.');
   }
-  final key = (args['key'] as String?)?.trim() ?? '';
+
+  // Normalize the dedup key to canonical lowercase-kebab BEFORE it becomes a
+  // `bot_metadata` key. Without this, "Cray Stories", "cray-stories", and
+  // "cray_stories" mint three different markers and the same story is captured
+  // three times — the dedup invariant must key on a STABLE EXACT identifier,
+  // not the model's verbatim (and inconsistently-cased) input.
+  final key = _normalizeKey(_asString(args['key']));
   if (key.isEmpty) {
-    return _err(
-        '`key` is required — a short stable kebab-case slug for dedup.');
+    return _err('`key` is required — a short slug for dedup (letters, digits, '
+        'and dashes; e.g. "cray-supercomputer-stories").');
   }
-  final title = (args['title'] as String?)?.trim();
+  final title = _asString(args['title']).trim();
 
   if (outlineApiKey == null || outlineBaseUrl == null) {
     return _err(
@@ -144,7 +154,7 @@ Future<String> _captureLore(
   }
 
   // --- Build the append block ---
-  final heading = (title != null && title.isNotEmpty) ? title : key;
+  final heading = title.isNotEmpty ? title : key;
   final capturedAt = DateTime.now().toUtc().toIso8601String();
   final block = StringBuffer()
     ..writeln()
@@ -163,7 +173,7 @@ Future<String> _captureLore(
     'OUTLINE_API_URL': outlineBaseUrl,
   };
 
-  final result = await execVendoredCli(
+  final outcome = await execVendoredCli(
     tool: 'outline',
     args: <String>[
       'documents.update',
@@ -176,25 +186,44 @@ Future<String> _captureLore(
     env: env,
   );
 
-  if (result.exitCode != 0) {
-    return jsonEncode(<String, dynamic>{
-      'error': 'Failed to append lore to the Lore Inbox.',
-      if (result.stderr.isNotEmpty) 'stderr': result.stderr,
-      if (result.stdout.isNotEmpty) 'stdout': result.stdout,
-    });
+  // Any non-success outcome returns early WITHOUT setting the dedup marker, so
+  // the lore stays retryable rather than being silently deduped away.
+  switch (outcome) {
+    case CliLaunchFailure(:final message):
+      return _err('Failed to append lore: $message');
+    case CliTimeout():
+      return _err('Failed to append lore: the Outline CLI timed out.');
+    case CliCompleted(:final exitCode, :final stdout, :final stderr)
+        when exitCode != 0:
+      return jsonEncode(<String, dynamic>{
+        'error': 'Failed to append lore to the Lore Inbox.',
+        if (stderr.isNotEmpty) 'stderr': stderr,
+        if (stdout.isNotEmpty) 'stdout': stdout,
+      });
+    case CliCompleted():
+      // --- Mark captured ONLY after the append succeeded ---
+      queries.setMetadata(dedupKey, capturedAt);
+      return jsonEncode(<String, dynamic>{
+        'captured': true,
+        'key': key,
+        'doc_id': _loreInboxDocId,
+      });
   }
-
-  // --- Mark captured ONLY after the append succeeded ---
-  // A failed append above returns early WITHOUT setting this marker, so the
-  // lore stays retryable rather than being silently deduped away.
-  queries.setMetadata(dedupKey, capturedAt);
-
-  return jsonEncode(<String, dynamic>{
-    'captured': true,
-    'key': key,
-    'doc_id': _loreInboxDocId,
-  });
 }
+
+/// Coerces a tool-arg value to a String, returning `''` for null or any
+/// non-string type — so a malformed arg yields a structured validation error
+/// downstream instead of throwing a CastError through the agent loop.
+String _asString(Object? value) => value is String ? value : '';
+
+/// Canonicalizes a dedup [key] to lowercase kebab-case: lowercased, every run
+/// of non-alphanumeric characters collapsed to a single dash, and leading/
+/// trailing dashes trimmed. So "Cray Stories", "cray_stories", and
+/// " cray  stories " all map to "cray-stories" — one stable dedup identity.
+String _normalizeKey(String key) => key
+    .toLowerCase()
+    .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+    .replaceAll(RegExp(r'^-+|-+$'), '');
 
 String _err(String message) => jsonEncode(<String, dynamic>{'error': message});
 
