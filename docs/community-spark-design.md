@@ -18,7 +18,7 @@ fix folded in.** Concretely, v2 adds:
 - **Success metric + kill criteria** (§2) — the panel's deepest gap: the original never
   said how we'd know it worked or when to stop.
 - **A real draft state machine** (§5.3) replacing the underspecified "reply `send`" flow —
-  stable `draft_id`, threaded-reply matching, `pending → published` as the idempotency key.
+  a stable `draft_id` plus the single-pending invariant (a partial unique index), with `pending → published` as the idempotency key.
   (Safety BLOCKER.)
 - **Atomic cross-process dedup** (§5.4) — compare-and-swap, not read-then-write. (Safety HIGH.)
 - **Engagement circuit-breaker** (§5.6) — auto-pause + notify on N consecutive zero-response
@@ -239,7 +239,7 @@ be too invested to do so in time. So the feature kills itself:
 | F8 | Double-send (same OR cross process) | In-flight latch **+ atomic CAS** (§5.4) |
 | F9 | **Public crickets / dying-community signal** | **Engagement circuit-breaker auto-pause + notify (§5.6)** + §2 kill criteria |
 | F10 | Cost / loop | One `composeWithTools` ≤ weekly — negligible |
-| F11 | **Which-draft race / stale approval** | **Draft state machine: stable id, threaded-reply match, 24h expiry, CAS publish (§5.3)** |
+| F11 | **Which-draft race / stale approval** | **Draft state machine: single-pending invariant makes "the draft" unambiguous, 24h expiry, CAS publish (§5.3)** |
 | F12 | **Prompt injection via chat** | Structured-only grounding; chat theme-only; no chat-sourced URLs/@mentions; post-hoc notify in autonomous |
 | F13 | **Collision with a human's nascent plan** | No net-new events in Phase 1; surface-the-hook so reviewer spots clash |
 
@@ -251,8 +251,8 @@ be too invested to do so in time. So the feature kills itself:
 - **skip-if-empty / weak-hook posts nothing but records the consideration**
 - in-flight latch + **CAS prevents cross-process double-publish** (simulate two claims)
 - gated mode posts the draft to the **review room**, never the hub
-- **approval: `send` threaded-reply to draft A publishes A, not the newer draft B**
-- **stale (>24h) draft cannot be approved; bare `send` with no thread is a no-op (no recompose)**
+- **approval: an admin `send` publishes the one pending draft; a second pending draft cannot exist (single-pending invariant)**
+- **stale (>24h) draft cannot be approved; a bare `send` with no pending draft is a no-op (no recompose)**; a non-admin or wrong-room `send` falls through to the agent
 - period guard written **only on publish**; ignored draft does **not** burn the period
 - recent-K window passed into compose; **window + guard written atomically** (crash between → no desync)
 - **circuit-breaker: 3 zero-reply published sparks → paused + notify**
