@@ -23,7 +23,12 @@ void main() {
 
   group('draft creation + retrieval', () {
     test('a created draft is retrievable as the pending draft', () {
-      q.createSparkDraft(draftId: 'd1', text: 'spark one', now: now, hook: 'repo X');
+      q.createSparkDraft(
+        draftId: 'd1',
+        text: 'spark one',
+        now: now,
+        hook: 'repo X',
+      );
       final d = q.getPendingSparkDraft(now);
       expect(d, isNotNull);
       expect(d!.draftId, 'd1');
@@ -54,13 +59,16 @@ void main() {
       expect(q.getPendingSparkDraft(now)!.draftId, 'd2');
     });
 
-    test('the pending slot frees once the first draft is dropped (expired)', () {
-      final old = now.subtract(const Duration(hours: 48));
-      q.createSparkDraft(draftId: 'd1', text: 'one', now: old);
-      expect(q.expireStaleDrafts(now), 1);
-      q.createSparkDraft(draftId: 'd2', text: 'two', now: now);
-      expect(q.getPendingSparkDraft(now)!.draftId, 'd2');
-    });
+    test(
+      'the pending slot frees once the first draft is dropped (expired)',
+      () {
+        final old = now.subtract(const Duration(hours: 48));
+        q.createSparkDraft(draftId: 'd1', text: 'one', now: old);
+        expect(q.expireStaleDrafts(now), 1);
+        q.createSparkDraft(draftId: 'd2', text: 'two', now: now);
+        expect(q.getPendingSparkDraft(now)!.draftId, 'd2');
+      },
+    );
   });
 
   group('publish CAS', () {
@@ -71,12 +79,15 @@ void main() {
       expect(q.getPendingSparkDraft(now), isNull);
     });
 
-    test('a repeat publish of the same draft returns false (idempotent CAS)', () {
-      q.createSparkDraft(draftId: 'd1', text: 'one', now: now);
-      expect(q.publishSparkDraft('d1', now), isTrue);
-      // Second call — already published, CAS loses.
-      expect(q.publishSparkDraft('d1', now), isFalse);
-    });
+    test(
+      'a repeat publish of the same draft returns false (idempotent CAS)',
+      () {
+        q.createSparkDraft(draftId: 'd1', text: 'one', now: now);
+        expect(q.publishSparkDraft('d1', now), isTrue);
+        // Second call — already published, CAS loses.
+        expect(q.publishSparkDraft('d1', now), isFalse);
+      },
+    );
 
     test('publishing a non-existent draft returns false', () {
       expect(q.publishSparkDraft('nope', now), isFalse);

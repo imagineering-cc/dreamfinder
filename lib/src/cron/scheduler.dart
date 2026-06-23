@@ -40,26 +40,23 @@ typedef SendMessageFn = Future<void> Function(String groupId, String message);
 /// composes the message in-character and it lands in conversation history.
 ///
 /// System-initiated: tools are disabled for fast single-round responses.
-typedef ComposeViaAgentFn = Future<String> Function(
-  String groupId,
-  String taskDescription,
-);
+typedef ComposeViaAgentFn =
+    Future<String> Function(String groupId, String taskDescription);
 
 /// Like [ComposeViaAgentFn] but with full tool access and rich context
 /// (memories, events, repos). Used by the task radar for cross-source synthesis.
-typedef ComposeWithToolsFn = Future<String> Function(
-  String groupId,
-  String taskDescription,
-);
+typedef ComposeWithToolsFn =
+    Future<String> Function(String groupId, String taskDescription);
 
 /// Callback to trigger a dream cycle for a group.
 ///
 /// Returns `true` if the dream was successfully triggered.
-typedef TriggerDreamFn = bool Function({
-  required String groupId,
-  required String triggeredByUuid,
-  required String date,
-});
+typedef TriggerDreamFn =
+    bool Function({
+      required String groupId,
+      required String triggeredByUuid,
+      required String date,
+    });
 
 /// Periodic scheduler for standup prompts and data cleanup.
 class Scheduler {
@@ -196,8 +193,10 @@ class Scheduler {
 
       // Check if it's prompt hour in the local timezone.
       if (localNow.hour == config.promptHour) {
-        final existingSession =
-            queries.getActiveStandupSession(config.groupId, today);
+        final existingSession = queries.getActiveStandupSession(
+          config.groupId,
+          today,
+        );
         if (existingSession == null) {
           await _sendStandupPrompt(config, today);
         }
@@ -293,10 +292,7 @@ class Scheduler {
 
     await sendMessage(config.groupId, message);
 
-    queries.createStandupSession(
-      groupId: config.groupId,
-      date: date,
-    );
+    queries.createStandupSession(groupId: config.groupId, date: date);
   }
 
   /// Builds a hardcoded standup summary from the collected responses.
@@ -351,8 +347,9 @@ class Scheduler {
           'Summarize the updates, highlight any blockers, and note '
           'common themes. Keep it concise and useful.',
         );
-        message =
-            composed.isNotEmpty ? composed : _buildHardcodedSummary(responses);
+        message = composed.isNotEmpty
+            ? composed
+            : _buildHardcodedSummary(responses);
       } on Exception catch (e) {
         developer.log(
           'Agent composition failed for standup summary in '
@@ -467,7 +464,8 @@ class Scheduler {
   /// Returns a jittered duration between [_radarMinIntervalHours] and
   /// [_radarMaxIntervalHours].
   Duration _randomRadarInterval() {
-    final hours = _radarMinIntervalHours +
+    final hours =
+        _radarMinIntervalHours +
         _random.nextDouble() *
             (_radarMaxIntervalHours - _radarMinIntervalHours);
     return Duration(minutes: (hours * 60).round());
@@ -582,11 +580,7 @@ class Scheduler {
 
     for (final groupId in groupIds) {
       try {
-        trigger(
-          groupId: groupId,
-          triggeredByUuid: 'scheduler',
-          date: date,
-        );
+        trigger(groupId: groupId, triggeredByUuid: 'scheduler', date: date);
       } on Exception catch (e) {
         developer.log(
           'Dream trigger failed for $groupId: $e',
@@ -721,7 +715,8 @@ class Scheduler {
   int _sparkDraftSeq = 0;
 
   Duration _randomSparkInterval() {
-    final days = _sparkMinIntervalDays +
+    final days =
+        _sparkMinIntervalDays +
         _random.nextDouble() * (_sparkMaxIntervalDays - _sparkMinIntervalDays);
     return Duration(minutes: (days * 24 * 60).round());
   }
@@ -774,20 +769,24 @@ class Scheduler {
     queries.expireStaleDrafts(now, staleAfter: _sparkDraftStale);
 
     // Suppression: never stack drafts — at most one pending at a time.
-    if (queries.getPendingSparkDraft(now, staleAfter: _sparkDraftStale) != null) {
+    if (queries.getPendingSparkDraft(now, staleAfter: _sparkDraftStale) !=
+        null) {
       return;
     }
 
     // Persistent min-gap since the last *published* spark.
     final lastPublished = queries.lastPublishedSparkAt();
     if (lastPublished != null &&
-        now.toUtc().difference(lastPublished).inDays < _sparkMinPublishGapDays) {
+        now.toUtc().difference(lastPublished).inDays <
+            _sparkMinPublishGapDays) {
       return;
     }
 
     // Jittered "consider" timer (in-memory). Stagger 30–90 min out on first tick.
     if (_nextCommunitySpark == null) {
-      _nextCommunitySpark = now.add(Duration(minutes: 30 + _random.nextInt(60)));
+      _nextCommunitySpark = now.add(
+        Duration(minutes: 30 + _random.nextInt(60)),
+      );
       return;
     }
     if (now.isBefore(_nextCommunitySpark!)) return;
@@ -803,11 +802,15 @@ class Scheduler {
     _communitySparkInFlight = true;
     try {
       final hubRoom = communitySparkHubRoomId?.trim();
-      final composeContext =
-          (hubRoom != null && hubRoom.isNotEmpty) ? hubRoom : reviewRoom;
+      final composeContext = (hubRoom != null && hubRoom.isNotEmpty)
+          ? hubRoom
+          : reviewRoom;
       final recent = queries.recentPublishedSparks(limit: 4);
 
-      final composed = await compose(composeContext, _sparkComposePrompt(recent));
+      final composed = await compose(
+        composeContext,
+        _sparkComposePrompt(recent),
+      );
       final spark = _stripWrappingQuotes(composed.trim());
       if (spark.isEmpty) return; // weak/absent hook → stay silent
 
@@ -875,8 +878,10 @@ class Scheduler {
 
     // Expire stale drafts, then require exactly one fresh pending draft.
     queries.expireStaleDrafts(now, staleAfter: _sparkDraftStale);
-    final draft =
-        queries.getPendingSparkDraft(now, staleAfter: _sparkDraftStale);
+    final draft = queries.getPendingSparkDraft(
+      now,
+      staleAfter: _sparkDraftStale,
+    );
     if (draft == null) {
       await sendMessage(
         reviewRoom,
@@ -927,7 +932,7 @@ class Scheduler {
     final recentBlock = recent.isEmpty
         ? ''
         : "\n\nYou've recently posted these sparks — propose something "
-            'different:\n- ${recent.join("\n- ")}';
+              'different:\n- ${recent.join("\n- ")}';
     return 'You have a moment to consider sparking something in the Imagineering '
         'community. Look at structured signals you can verify — the calendar '
         '(recent/upcoming events), the repos you track, the board. You may '
@@ -1004,7 +1009,8 @@ enum EventVenue {
         '5 minutes and to head to world.imagineering.cc and join in the '
         'room called "The Imagination Center". 1-2 sentences, playful, a '
         'stray emoji is fine. Output only the message.',
-    fallback: "Imagineering starts in 5 minutes — and we're online this week! "
+    fallback:
+        "Imagineering starts in 5 minutes — and we're online this week! "
         'Hop into TechWorld at world.imagineering.cc and find us in '
         'The Imagination Center. ✨',
   ),
@@ -1019,7 +1025,8 @@ enum EventVenue {
         '5 minutes and where to go (318 Russell St, Level 55), with a '
         'playful wizard/wand vibe. 1-2 sentences, a stray emoji is fine. '
         'Output only the message.',
-    fallback: 'Imagineering starts in 5 minutes — in person this week at '
+    fallback:
+        'Imagineering starts in 5 minutes — in person this week at '
         '318 Russell St, Level 55. Wands out, dreamers, for 3 hours of '
         'bringing ideas alive with AI. 🪄',
   );

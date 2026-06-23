@@ -41,16 +41,15 @@ void main() {
     String? hub = hubRoom,
     String mode = 'gated',
     Future<String> Function(String, String)? compose,
-  }) =>
-      Scheduler(
-        queries: queries,
-        sendMessage: (g, m) async => sink.add(MapEntry(g, m)),
-        composeWithTools: compose ?? (g, t) async => 'Sparkly idea ✨',
-        communitySparkReviewRoomId: review,
-        communitySparkHubRoomId: hub,
-        communitySparkMode: mode,
-        random: Random(42),
-      );
+  }) => Scheduler(
+    queries: queries,
+    sendMessage: (g, m) async => sink.add(MapEntry(g, m)),
+    composeWithTools: compose ?? (g, t) async => 'Sparkly idea ✨',
+    communitySparkReviewRoomId: review,
+    communitySparkHubRoomId: hub,
+    communitySparkMode: mode,
+    random: Random(42),
+  );
 
   group('disabled / guards', () {
     test('does nothing when the review room is not configured', () async {
@@ -132,10 +131,13 @@ void main() {
 
       String? seenPrompt;
       final sent = <MapEntry<String, String>>[];
-      final s = buildSpark(sent, compose: (g, t) async {
-        seenPrompt = t;
-        return 'fresh idea';
-      });
+      final s = buildSpark(
+        sent,
+        compose: (g, t) async {
+          seenPrompt = t;
+          return 'fresh idea';
+        },
+      );
       // Publish-gap is 5 days; advance past it so drafting is allowed.
       final later = t0.add(const Duration(days: 6));
       await s.tick(later);
@@ -148,7 +150,11 @@ void main() {
 
   group('suppression + cadence guards', () {
     test('does not stack a second draft while one is pending', () async {
-      queries.createSparkDraft(draftId: 'existing', text: 'pending one', now: t0);
+      queries.createSparkDraft(
+        draftId: 'existing',
+        text: 'pending one',
+        now: t0,
+      );
       final sent = <MapEntry<String, String>>[];
       final s = buildSpark(sent);
       await s.tick(t0);
@@ -157,15 +163,17 @@ void main() {
       expect(queries.getPendingSparkDraft(t2h)!.draftId, 'existing');
     });
 
-    test('does not draft within the publish-gap of the last published spark',
-        () async {
-      queries.setSparkPeriod(t0.subtract(const Duration(days: 2))); // 2d ago
-      final sent = <MapEntry<String, String>>[];
-      final s = buildSpark(sent);
-      await s.tick(t0);
-      await s.tick(t2h);
-      expect(sent, isEmpty); // within 5-day gap
-    });
+    test(
+      'does not draft within the publish-gap of the last published spark',
+      () async {
+        queries.setSparkPeriod(t0.subtract(const Duration(days: 2))); // 2d ago
+        final sent = <MapEntry<String, String>>[];
+        final s = buildSpark(sent);
+        await s.tick(t0);
+        await s.tick(t2h);
+        expect(sent, isEmpty); // within 5-day gap
+      },
+    );
 
     test('overlapping ticks do not produce two drafts', () async {
       final sent = <MapEntry<String, String>>[];
@@ -202,8 +210,10 @@ void main() {
       expect(hubPosts, hasLength(1));
       expect(hubPosts.single.value, 'who wants in? ✨');
       // Draft is no longer pending → the slot is free.
-      expect(queries.getPendingSparkDraft(t0.add(const Duration(minutes: 5))),
-          isNull);
+      expect(
+        queries.getPendingSparkDraft(t0.add(const Duration(minutes: 5))),
+        isNull,
+      );
     });
 
     test('a bare "send" with no pending draft publishes nothing', () async {
@@ -218,7 +228,10 @@ void main() {
       );
 
       expect(handled, isTrue); // consumed
-      expect(sent.where((e) => e.key == hubRoom), isEmpty); // but nothing posted
+      expect(
+        sent.where((e) => e.key == hubRoom),
+        isEmpty,
+      ); // but nothing posted
     });
 
     test('a stale pending draft cannot be approved', () async {
@@ -271,21 +284,24 @@ void main() {
       expect(sent, isEmpty);
     });
 
-    test('ordinary chat in the review room is not treated as approval', () async {
-      queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
-      final sent = <MapEntry<String, String>>[];
-      final s = buildSpark(sent);
+    test(
+      'ordinary chat in the review room is not treated as approval',
+      () async {
+        queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
+        final sent = <MapEntry<String, String>>[];
+        final s = buildSpark(sent);
 
-      final handled = await s.maybeHandleSparkApproval(
-        roomId: reviewRoom,
-        isAdmin: true,
-        text: 'looks good, maybe later',
-        now: t0,
-      );
+        final handled = await s.maybeHandleSparkApproval(
+          roomId: reviewRoom,
+          isAdmin: true,
+          text: 'looks good, maybe later',
+          now: t0,
+        );
 
-      expect(handled, isFalse); // not an exact approval command
-      expect(queries.getPendingSparkDraft(t0), isNotNull);
-    });
+        expect(handled, isFalse); // not an exact approval command
+        expect(queries.getPendingSparkDraft(t0), isNotNull);
+      },
+    );
 
     test('a second approval does not double-publish (CAS)', () async {
       queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
@@ -294,30 +310,43 @@ void main() {
       final at = t0.add(const Duration(minutes: 1));
 
       await s.maybeHandleSparkApproval(
-          roomId: reviewRoom, isAdmin: true, text: 'send', now: at);
+        roomId: reviewRoom,
+        isAdmin: true,
+        text: 'send',
+        now: at,
+      );
       await s.maybeHandleSparkApproval(
-          roomId: reviewRoom, isAdmin: true, text: 'send', now: at);
+        roomId: reviewRoom,
+        isAdmin: true,
+        text: 'send',
+        now: at,
+      );
 
       expect(sent.where((e) => e.key == hubRoom), hasLength(1));
     });
 
-    test('an approval with no hub room configured is consumed, not published',
-        () async {
-      queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
-      final sent = <MapEntry<String, String>>[];
-      final s = buildSpark(sent, hub: null); // misconfigured: review set, hub not
+    test(
+      'an approval with no hub room configured is consumed, not published',
+      () async {
+        queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
+        final sent = <MapEntry<String, String>>[];
+        final s = buildSpark(
+          sent,
+          hub: null,
+        ); // misconfigured: review set, hub not
 
-      final handled = await s.maybeHandleSparkApproval(
-        roomId: reviewRoom,
-        isAdmin: true,
-        text: 'send',
-        now: t0,
-      );
+        final handled = await s.maybeHandleSparkApproval(
+          roomId: reviewRoom,
+          isAdmin: true,
+          text: 'send',
+          now: t0,
+        );
 
-      expect(handled, isTrue); // consumed — never falls through to the agent
-      expect(sent.where((e) => e.key == hubRoom), isEmpty);
-      expect(sent.single.value, contains('no hub room is configured'));
-    });
+        expect(handled, isTrue); // consumed — never falls through to the agent
+        expect(sent.where((e) => e.key == hubRoom), isEmpty);
+        expect(sent.single.value, contains('no hub room is configured'));
+      },
+    );
   });
 
   group('mode gate (fail closed)', () {
@@ -330,17 +359,19 @@ void main() {
       expect(queries.getPendingSparkDraft(t2h), isNull);
     });
 
-    test('autonomous mode falls back to gated (still drafts for approval)',
-        () async {
-      final sent = <MapEntry<String, String>>[];
-      final s = buildSpark(sent, mode: 'autonomous');
-      await s.tick(t0);
-      await s.tick(t2h);
-      // Drafts (gated fallback) — posts to the review room, NOT the hub.
-      expect(sent, hasLength(1));
-      expect(sent.single.key, reviewRoom);
-      expect(sent.where((e) => e.key == hubRoom), isEmpty);
-    });
+    test(
+      'autonomous mode falls back to gated (still drafts for approval)',
+      () async {
+        final sent = <MapEntry<String, String>>[];
+        final s = buildSpark(sent, mode: 'autonomous');
+        await s.tick(t0);
+        await s.tick(t2h);
+        // Drafts (gated fallback) — posts to the review room, NOT the hub.
+        expect(sent, hasLength(1));
+        expect(sent.single.key, reviewRoom);
+        expect(sent.where((e) => e.key == hubRoom), isEmpty);
+      },
+    );
 
     test('an unknown mode also falls back to gated', () async {
       final sent = <MapEntry<String, String>>[];
