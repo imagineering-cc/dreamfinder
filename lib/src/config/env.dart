@@ -45,6 +45,9 @@ class Env {
     this.apiKey,
     this.deployAnnounceGroupId,
     this.eventReminderRoomId,
+    this.communitySparkRoomId,
+    this.communitySparkReviewRoomId,
+    this.communitySparkMode = 'gated',
     this.voyageApiKey,
     this.githubToken,
     this.githubRepo,
@@ -118,6 +121,9 @@ class Env {
       apiKey: dotEnv['API_KEY'],
       deployAnnounceGroupId: dotEnv['DEPLOY_ANNOUNCE_GROUP_ID'],
       eventReminderRoomId: dotEnv['EVENT_REMINDER_ROOM_ID'],
+      communitySparkRoomId: dotEnv['COMMUNITY_SPARK_ROOM_ID'],
+      communitySparkReviewRoomId: dotEnv['COMMUNITY_SPARK_REVIEW_ROOM_ID'],
+      communitySparkMode: dotEnv['COMMUNITY_SPARK_MODE'] ?? 'gated',
       voyageApiKey: dotEnv['VOYAGE_API_KEY'],
       githubToken: dotEnv['GITHUB_TOKEN'],
       githubRepo: dotEnv['GITHUB_REPO'],
@@ -176,6 +182,9 @@ class Env {
     String? apiKey,
     String? deployAnnounceGroupId,
     String? eventReminderRoomId,
+    String? communitySparkRoomId,
+    String? communitySparkReviewRoomId,
+    String communitySparkMode = 'gated',
     String? voyageApiKey,
     String? githubToken,
     String? githubRepo,
@@ -220,6 +229,9 @@ class Env {
         apiKey: apiKey,
         deployAnnounceGroupId: deployAnnounceGroupId,
         eventReminderRoomId: eventReminderRoomId,
+        communitySparkRoomId: communitySparkRoomId,
+        communitySparkReviewRoomId: communitySparkReviewRoomId,
+        communitySparkMode: communitySparkMode,
         voyageApiKey: voyageApiKey,
         githubToken: githubToken,
         githubRepo: githubRepo,
@@ -346,6 +358,20 @@ class Env {
   /// to send the weekly "session starts in 5 minutes" reminder to.
   /// If null, the event reminder is disabled. See [Scheduler].
   final String? eventReminderRoomId;
+
+  /// Public hub room (a bridged portal) Community Spark publishes to once a
+  /// draft is approved, and the context River composes the spark in. If null,
+  /// the spark has nowhere to publish. From `COMMUNITY_SPARK_ROOM_ID`.
+  final String? communitySparkRoomId;
+
+  /// Private review room (River + admins, NOT bridged) where Community Spark
+  /// drafts await human approval. If null, Community Spark is disabled. From
+  /// `COMMUNITY_SPARK_REVIEW_ROOM_ID`.
+  final String? communitySparkReviewRoomId;
+
+  /// Community Spark mode: `gated` (draft → approval → publish) or `autonomous`.
+  /// Defaults to `gated`. From `COMMUNITY_SPARK_MODE`.
+  final String communitySparkMode;
 
   /// Voyage AI API key for generating text embeddings.
   /// If null, the RAG memory system is disabled.

@@ -9,6 +9,7 @@ import '../memory/embedding_pipeline.dart';
 import 'database.dart';
 import 'queries/board_config_queries.dart';
 import 'queries/calendar_queries.dart';
+import 'queries/community_spark_queries.dart';
 import 'queries/dream_queries.dart';
 import 'queries/identity_queries.dart';
 import 'queries/memory_queries.dart';
@@ -23,6 +24,7 @@ import 'queries/workspace_queries.dart';
 
 export 'queries/board_config_queries.dart';
 export 'queries/calendar_queries.dart';
+export 'queries/community_spark_queries.dart';
 export 'queries/dream_queries.dart';
 export 'queries/identity_queries.dart';
 export 'queries/memory_queries.dart';
@@ -52,6 +54,7 @@ class Queries
         MetadataQueries,
         StandupQueries,
         CalendarQueries,
+        CommunitySparkQueries,
         DreamQueries,
         RadarQueries
     implements MemoryQueryAccessor {

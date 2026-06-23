@@ -575,6 +575,9 @@ Future<void> main() async {
     consolidator: memoryConsolidator,
     triggerDream: dreamCycle.trigger,
     eventReminderRoomId: env.eventReminderRoomId,
+    communitySparkReviewRoomId: env.communitySparkReviewRoomId,
+    communitySparkHubRoomId: env.communitySparkRoomId,
+    communitySparkMode: env.communitySparkMode,
     composeViaAgent: (groupId, taskDescription) async {
       final input = AgentInput(
         text: taskDescription,
@@ -847,6 +850,21 @@ Future<void> main() async {
         final text = event.body!;
         final isDm = matrixClient.isDm(event.roomId);
         final isGroup = !isDm;
+
+        // Community Spark approval — deterministic and LLM-free. Checked BEFORE
+        // the group mention-filter and rate limiter: the private review room is
+        // an ordinary Matrix group, so an admin's bare "send" (no @mention)
+        // would otherwise be dropped as "not_mentioned" and the gated path
+        // would never fire. Publishing the one pending draft is the whole point
+        // of the gate, so it must sit ahead of any filter that could drop it.
+        if (await scheduler.maybeHandleSparkApproval(
+          roomId: event.roomId,
+          isAdmin: env.isAdmin(event.sender),
+          text: text,
+          now: DateTime.now(),
+        )) {
+          continue;
+        }
 
         // In group chats, respond when:
         // 1. The room is in the always-respond list, OR
