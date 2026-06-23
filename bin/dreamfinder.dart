@@ -324,11 +324,18 @@ Future<void> main() async {
   // even when RAG is disabled.
   health.apiKey = env.apiKey;
 
+  // deep_search fans out to Outline + Kan via the vendored CLIs (same path as
+  // run_cli), not MCP — the Outline/Kan MCP servers were retired in the run_cli
+  // migration. Outline arm needs its creds; Kan arm also needs a workspace id.
   registerMemoryTools(
     toolRegistry,
     embeddingPipeline,
     memoryRetriever,
-    mcpManager,
+    outlineApiKey: env.outlineApiKey,
+    outlineBaseUrl: env.outlineBaseUrl,
+    kanApiKey: env.kanApiKey,
+    kanBaseUrl: env.kanBaseUrl,
+    kanWorkspaceId: env.kanWorkspaceId,
   );
 
   // Set up Anthropic client. Auth precedence (most→least robust):

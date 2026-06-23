@@ -30,6 +30,7 @@ class Env {
     this.discordManagementRoom,
     this.kanBaseUrl,
     this.kanApiKey,
+    this.kanWorkspaceId,
     this.outlineBaseUrl,
     this.outlineApiKey,
     this.radicaleBaseUrl,
@@ -107,6 +108,7 @@ class Env {
       discordManagementRoom: dotEnv['DISCORD_MANAGEMENT_ROOM'],
       kanBaseUrl: dotEnv['KAN_BASE_URL'],
       kanApiKey: dotEnv['KAN_API_KEY'],
+      kanWorkspaceId: dotEnv['KAN_WORKSPACE_ID'],
       outlineBaseUrl: dotEnv['OUTLINE_BASE_URL'],
       outlineApiKey: dotEnv['OUTLINE_API_KEY'],
       radicaleBaseUrl: dotEnv['RADICALE_BASE_URL'],
@@ -169,6 +171,7 @@ class Env {
     String? discordManagementRoom,
     String? kanBaseUrl,
     String? kanApiKey,
+    String? kanWorkspaceId,
     String? outlineBaseUrl,
     String? outlineApiKey,
     String? radicaleBaseUrl,
@@ -217,6 +220,7 @@ class Env {
         discordManagementRoom: discordManagementRoom,
         kanBaseUrl: kanBaseUrl,
         kanApiKey: kanApiKey,
+        kanWorkspaceId: kanWorkspaceId,
         outlineBaseUrl: outlineBaseUrl,
         outlineApiKey: outlineApiKey,
         radicaleBaseUrl: radicaleBaseUrl,
@@ -324,6 +328,11 @@ class Env {
 
   final String? kanBaseUrl;
   final String? kanApiKey;
+
+  /// Kan workspace public id, required for the `deep_search` Kan arm (the
+  /// `kan search` CLI verb needs a workspace). When unset, Kan is reported as
+  /// an unavailable deep_search source rather than searched.
+  final String? kanWorkspaceId;
   final String? outlineBaseUrl;
   final String? outlineApiKey;
   final String? radicaleBaseUrl;
