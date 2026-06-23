@@ -169,7 +169,8 @@ void main() {
         '@_relay_signal_8b12f8cf:imagineering.cc',
         '@telegram_8927028624:imagineering.cc',
       ]);
-      expect(env.isSelf('@_relay_signal_8b12f8cf:imagineering.cc', bot), isTrue);
+      expect(
+          env.isSelf('@_relay_signal_8b12f8cf:imagineering.cc', bot), isTrue);
       expect(env.isSelf('@telegram_8927028624:imagineering.cc', bot), isTrue);
     });
 

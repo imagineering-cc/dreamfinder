@@ -417,8 +417,7 @@ class Env {
   /// Used to drop self-echoes the superbridge relays back into the hub, which
   /// would otherwise create a response feedback loop.
   bool isSelf(String? userId, String botUserId) =>
-      userId == botUserId ||
-      (userId != null && selfPuppetIds.contains(userId));
+      userId == botUserId || (userId != null && selfPuppetIds.contains(userId));
 
   bool get kanEnabled => kanApiKey != null && kanApiKey!.isNotEmpty;
   bool get outlineEnabled => outlineApiKey != null && outlineApiKey!.isNotEmpty;
