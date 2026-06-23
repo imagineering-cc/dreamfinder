@@ -29,7 +29,7 @@ void main() {
       expect(d!.draftId, 'd1');
       expect(d.text, 'spark one');
       expect(d.hook, 'repo X');
-      expect(d.status, 'pending');
+      expect(d.status, SparkDraftStatus.pending);
     });
 
     test('no pending draft returns null', () {

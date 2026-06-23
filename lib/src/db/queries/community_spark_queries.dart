@@ -10,6 +10,49 @@ library;
 
 import '../database.dart';
 
+/// Community Spark posting mode — a closed set. Parsed at the boundary so an
+/// unknown value fails closed rather than silently behaving like `gated`.
+enum CommunitySparkMode {
+  /// Draft → human approval → publish. The only mode that publishes in PR1.
+  gated,
+
+  /// Autonomous publishing (PR2). Not implemented in PR1 — treated as `gated`
+  /// (approval still required) with a startup warning, so it never posts to the
+  /// public hub without a human.
+  autonomous,
+
+  /// Temporarily suspended — River drafts nothing.
+  paused;
+
+  /// Parses [raw] case-insensitively. Unknown/empty → null so the caller can
+  /// choose the fail-closed default.
+  static CommunitySparkMode? tryParse(String? raw) {
+    switch (raw?.trim().toLowerCase()) {
+      case 'gated':
+        return CommunitySparkMode.gated;
+      case 'autonomous':
+        return CommunitySparkMode.autonomous;
+      case 'paused':
+        return CommunitySparkMode.paused;
+      default:
+        return null;
+    }
+  }
+}
+
+/// A spark draft's lifecycle status. Mirrors the DB CHECK constraint as a typed
+/// closed set on the Dart side.
+enum SparkDraftStatus {
+  pending,
+  published,
+  dropped;
+
+  /// Maps a DB status string to the enum. Throws on an unknown value (the DB
+  /// CHECK constraint should make that impossible).
+  static SparkDraftStatus fromDb(String raw) =>
+      SparkDraftStatus.values.firstWhere((s) => s.name == raw);
+}
+
 /// A persisted community-spark draft and its lifecycle status.
 class CommunitySparkDraft {
   const CommunitySparkDraft({
@@ -23,7 +66,7 @@ class CommunitySparkDraft {
   final String draftId;
   final String text;
   final String? hook;
-  final String status;
+  final SparkDraftStatus status;
   final DateTime composedAt;
 }
 
@@ -79,7 +122,7 @@ mixin CommunitySparkQueries {
       draftId: r['draft_id'] as String,
       text: r['text'] as String,
       hook: r['hook'] as String?,
-      status: r['status'] as String,
+      status: SparkDraftStatus.fromDb(r['status'] as String),
       composedAt: composedAt,
     );
   }
@@ -112,15 +155,32 @@ mixin CommunitySparkQueries {
     DateTime now, {
     String? publishedEventId,
   }) {
-    db.handle.execute(
-      'UPDATE community_spark_drafts '
-      "SET status = 'published', published_at = ?, published_event_id = ? "
-      "WHERE draft_id = ? AND status = 'pending'",
-      [now.toUtc().toIso8601String(), publishedEventId, draftId],
-    );
-    final won = db.handle.updatedRows == 1;
-    if (won) setSparkPeriod(now);
-    return won;
+    final nowIso = now.toUtc().toIso8601String();
+    // The CAS transition and the period-guard stamp commit in ONE transaction,
+    // so a crash between them can't leave a draft `published` with the period
+    // guard unset (which would let River re-draft immediately after restart).
+    db.handle.execute('BEGIN IMMEDIATE');
+    try {
+      db.handle.execute(
+        'UPDATE community_spark_drafts '
+        "SET status = 'published', published_at = ?, published_event_id = ? "
+        "WHERE draft_id = ? AND status = 'pending'",
+        [nowIso, publishedEventId, draftId],
+      );
+      final won = db.handle.updatedRows == 1;
+      if (won) {
+        db.handle.execute(
+          'INSERT INTO bot_metadata (key, value) VALUES (?, ?) '
+          'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+          [periodKey, nowIso],
+        );
+      }
+      db.handle.execute('COMMIT');
+      return won;
+    } on Object {
+      db.handle.execute('ROLLBACK');
+      rethrow;
+    }
   }
 
   /// Transitions a pending draft to `dropped` — e.g. when posting it to the

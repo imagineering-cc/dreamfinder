@@ -151,12 +151,20 @@ The v1 design had a *producer* (post a draft) and no *consumer* (how does "send"
   **reply to this message** with `send` to publish to the hub, or ignore to drop. Riffing
   on: `<hook>`."*
 - **Approve (inbound side — the new consumer):** in the message loop, when a review-room
-  message is a **threaded reply** (`m.relates_to` → a stored draft's `matrix_event_id`)
-  containing `send`/`approve`, look up that exact draft by event id (NOT by recency),
-  verify `status == pending` and `now − composed_at < 24h` (else `dropped`, stale), then
-  **transition `pending → published` via CAS (§5.4) and only then post to the hub.** A bare
-  `send` with no resolvable threaded draft reference publishes **nothing** and says so —
+  message from an **admin** contains an exact approval command (`send`/`approve`/`publish`),
+  publish the **single pending draft**. The single-pending invariant (§5.3 partial unique
+  index) means there is at most one pending draft, so "the draft" is unambiguous **without**
+  event-id correlation — this is the implemented approach, and it dissolves the original
+  draft-identity-binding requirement rather than satisfying it. Verify `status == pending`
+  and `now − composed_at < 24h` (else stale/`dropped`), then **transition `pending →
+  published` via CAS (§5.4) and only then post to the hub.** A bare `send` with no pending
+  draft is **consumed** (so it never reaches the tool-capable agent) but publishes nothing —
   the agent must never recompose a spark to satisfy an approval.
+  - *Implementation note:* the approval check runs **before** the inbound mention-filter and
+    rate limiter (the review room is an ordinary Matrix group, so a bare `send` without an
+    @mention would otherwise be dropped as `not_mentioned`). Threaded-reply (`m.relates_to`)
+    matching is deferred defense-in-depth, only worthwhile if the single-pending invariant is
+    ever relaxed.
 - **Expiry:** a `pending` draft older than 24h → `dropped` (does not consume the period, see
   §5.4). A `pending` draft **suppresses re-drafting** so the scheduler can't pile up
   competing drafts in the review room.

@@ -713,6 +713,9 @@ class Scheduler {
   /// Overlapping-tick latch (same process). The publish CAS guards cross-process.
   bool _communitySparkInFlight = false;
 
+  /// Latches the one-time warning when an unimplemented mode is configured.
+  bool _sparkModeWarned = false;
+
   /// Monotonic sequence so each draft id is unique even when the clock is
   /// controlled (tests) or two drafts share a millisecond.
   int _sparkDraftSeq = 0;
@@ -745,6 +748,22 @@ class Scheduler {
     final compose = composeWithTools;
     if (compose == null) return;
 
+    // Mode gate (fail closed). `paused` drafts nothing. `autonomous` isn't
+    // implemented in PR1, so it (and any unknown value) falls back to gated —
+    // drafts still require human approval, never an unattended hub post — with
+    // a one-time warning so the operator knows the knob isn't live yet.
+    final mode = CommunitySparkMode.tryParse(communitySparkMode);
+    if (mode == CommunitySparkMode.paused) return;
+    if (mode != CommunitySparkMode.gated && !_sparkModeWarned) {
+      _sparkModeWarned = true;
+      developer.log(
+        'COMMUNITY_SPARK_MODE="$communitySparkMode" is not implemented in PR1; '
+        'falling back to gated (drafts require manual approval).',
+        name: 'Scheduler',
+        level: 900,
+      );
+    }
+
     final localNow = _toLocalTime(now, _sparkTimezone);
     if (localNow.hour < _sparkWakingStartHour ||
         localNow.hour >= _sparkWakingEndHour) {
@@ -772,6 +791,12 @@ class Scheduler {
       return;
     }
     if (now.isBefore(_nextCommunitySpark!)) return;
+    // Reschedule BEFORE composing — this both (a) provides same-process
+    // overlapping-tick dedup (a concurrent tick sees the pushed-out time and
+    // bails) and (b) intentionally backs off the full ~weekly interval even on
+    // a weak/empty hook, so River reconsiders ~weekly rather than re-hitting the
+    // LLM every tick. A transient empty compose therefore waits a week; that's
+    // accepted — the feature is non-critical and weekly cadence is the design.
     _nextCommunitySpark = now.add(_randomSparkInterval());
 
     if (_communitySparkInFlight) return;
@@ -835,8 +860,18 @@ class Scheduler {
     if (!isAdmin) return false;
     if (!_isSparkApproval(text)) return false;
 
+    // From here this IS an admin approval command in the review room. Consume it
+    // deterministically (return true) on every exit so it can never fall through
+    // to the tool-capable agent — even on misconfiguration.
     final hubRoom = communitySparkHubRoomId?.trim();
-    if (hubRoom == null || hubRoom.isEmpty) return false; // nowhere to publish
+    if (hubRoom == null || hubRoom.isEmpty) {
+      await sendMessage(
+        reviewRoom,
+        '⚠️ Approval received, but no hub room is configured '
+        '(COMMUNITY_SPARK_ROOM_ID) — nothing to publish to.',
+      );
+      return true;
+    }
 
     // Expire stale drafts, then require exactly one fresh pending draft.
     queries.expireStaleDrafts(now, staleAfter: _sparkDraftStale);
@@ -860,27 +895,31 @@ class Scheduler {
     }
     try {
       await sendMessage(hubRoom, draft.text);
-      await sendMessage(reviewRoom, '✅ Published to the hub.');
     } on Exception catch (e) {
       await sendMessage(
         reviewRoom,
         '⚠️ Approved but the hub post failed: $e. The draft is marked '
         'published; re-draft if needed.',
       );
+      return true;
     }
+    // Confirmation only after the hub post genuinely succeeded.
+    await sendMessage(reviewRoom, '✅ Published to the hub.');
     return true;
   }
 
   /// Exact approval commands (trimmed, lowercased). Exact-match — not contains —
   /// so ordinary chat in the review room never accidentally publishes.
-  static bool _isSparkApproval(String text) {
-    final t = text.trim().toLowerCase();
-    return t == 'send' ||
-        t == 'send it' ||
-        t == 'approve' ||
-        t == 'publish' ||
-        t == '👍';
-  }
+  static const _sparkApprovalCommands = {
+    'send',
+    'send it',
+    'approve',
+    'publish',
+    '👍',
+  };
+
+  static bool _isSparkApproval(String text) =>
+      _sparkApprovalCommands.contains(text.trim().toLowerCase());
 
   /// Builds the community-ideation compose prompt, injecting [recent] published
   /// sparks for anti-repetition.

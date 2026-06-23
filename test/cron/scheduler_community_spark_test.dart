@@ -39,6 +39,7 @@ void main() {
     List<MapEntry<String, String>> sink, {
     String? review = reviewRoom,
     String? hub = hubRoom,
+    String mode = 'gated',
     Future<String> Function(String, String)? compose,
   }) =>
       Scheduler(
@@ -47,6 +48,7 @@ void main() {
         composeWithTools: compose ?? (g, t) async => 'Sparkly idea ✨',
         communitySparkReviewRoomId: review,
         communitySparkHubRoomId: hub,
+        communitySparkMode: mode,
         random: Random(42),
       );
 
@@ -297,6 +299,56 @@ void main() {
           roomId: reviewRoom, isAdmin: true, text: 'send', now: at);
 
       expect(sent.where((e) => e.key == hubRoom), hasLength(1));
+    });
+
+    test('an approval with no hub room configured is consumed, not published',
+        () async {
+      queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent, hub: null); // misconfigured: review set, hub not
+
+      final handled = await s.maybeHandleSparkApproval(
+        roomId: reviewRoom,
+        isAdmin: true,
+        text: 'send',
+        now: t0,
+      );
+
+      expect(handled, isTrue); // consumed — never falls through to the agent
+      expect(sent.where((e) => e.key == hubRoom), isEmpty);
+      expect(sent.single.value, contains('no hub room is configured'));
+    });
+  });
+
+  group('mode gate (fail closed)', () {
+    test('paused mode drafts nothing', () async {
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent, mode: 'paused');
+      await s.tick(t0);
+      await s.tick(t2h);
+      expect(sent, isEmpty);
+      expect(queries.getPendingSparkDraft(t2h), isNull);
+    });
+
+    test('autonomous mode falls back to gated (still drafts for approval)',
+        () async {
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent, mode: 'autonomous');
+      await s.tick(t0);
+      await s.tick(t2h);
+      // Drafts (gated fallback) — posts to the review room, NOT the hub.
+      expect(sent, hasLength(1));
+      expect(sent.single.key, reviewRoom);
+      expect(sent.where((e) => e.key == hubRoom), isEmpty);
+    });
+
+    test('an unknown mode also falls back to gated', () async {
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent, mode: 'banana');
+      await s.tick(t0);
+      await s.tick(t2h);
+      expect(sent, hasLength(1));
+      expect(sent.single.key, reviewRoom);
     });
   });
 }

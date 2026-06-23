@@ -851,6 +851,21 @@ Future<void> main() async {
         final isDm = matrixClient.isDm(event.roomId);
         final isGroup = !isDm;
 
+        // Community Spark approval — deterministic and LLM-free. Checked BEFORE
+        // the group mention-filter and rate limiter: the private review room is
+        // an ordinary Matrix group, so an admin's bare "send" (no @mention)
+        // would otherwise be dropped as "not_mentioned" and the gated path
+        // would never fire. Publishing the one pending draft is the whole point
+        // of the gate, so it must sit ahead of any filter that could drop it.
+        if (await scheduler.maybeHandleSparkApproval(
+          roomId: event.roomId,
+          isAdmin: env.isAdmin(event.sender),
+          text: text,
+          now: DateTime.now(),
+        )) {
+          continue;
+        }
+
         // In group chats, respond when:
         // 1. The room is in the always-respond list, OR
         // 2. The bot is mentioned (pill or name), OR
@@ -892,20 +907,6 @@ Future<void> main() async {
 
         try {
           final senderIsAdmin = env.isAdmin(event.sender);
-
-          // Community Spark approval — deterministic and LLM-free. An admin
-          // "send" in the private review room publishes the one pending draft
-          // to the hub; we then skip the agent loop so the command is never
-          // fed to a tool-capable agent (which could recompose/publish).
-          if (await scheduler.maybeHandleSparkApproval(
-            roomId: event.roomId,
-            isAdmin: senderIsAdmin,
-            text: text,
-            now: DateTime.now(),
-          )) {
-            continue;
-          }
-
           toolRegistry.setContext(ToolContext(
             senderId: event.sender,
             isAdmin: senderIsAdmin,
