@@ -802,7 +802,11 @@ Future<void> main() async {
 
       // Process timeline events.
       for (final event in sync.events) {
-        if (event.sender == botUserId) {
+        // Drop River's own messages — including echoes the superbridge relays
+        // back into the hub as relay/bridge puppets (whose MXIDs differ from
+        // the native bot MXID). Without the puppet check, River's continuation
+        // logic would respond to its own echo, creating a feedback loop.
+        if (env.isSelf(event.sender, botUserId)) {
           health.recordMessageDropped('own_message');
           continue;
         }
