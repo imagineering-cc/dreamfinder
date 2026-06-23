@@ -2,7 +2,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 /// Current schema version. Bump this and add a migration block in
 /// [_runMigrations] whenever the schema changes.
-const schemaVersion = 9;
+const schemaVersion = 10;
 
 /// SQLite database wrapper for Dreamfinder.
 ///
@@ -94,6 +94,7 @@ class BotDatabase {
     if (fromVersion < 7) _migrateToV7();
     if (fromVersion < 8) _migrateToV8();
     if (fromVersion < 9) _migrateToV9();
+    if (fromVersion < 10) _migrateToV10();
 
     _setVersion(schemaVersion);
   }
@@ -508,6 +509,39 @@ class BotDatabase {
         trait_value INTEGER NOT NULL CHECK (trait_value BETWEEN 0 AND 100),
         UNIQUE(identity_id, trait_name)
       )
+    ''');
+  }
+
+  /// Version 10: Community Spark — River's proactive community-ideation drafts.
+  ///
+  /// Each spark River composes is persisted as a draft with a stable
+  /// `draft_id` and a status lifecycle (`pending → published | dropped`). The
+  /// partial unique index enforces the **single-pending-draft invariant**
+  /// structurally: at most one draft can be `pending` at a time, so a human's
+  /// approval reply in the private review room is unambiguous (it can only
+  /// refer to the one pending draft) — no event-id correlation needed.
+  void _migrateToV10() {
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS community_spark_drafts (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        draft_id           TEXT    NOT NULL UNIQUE,
+        text               TEXT    NOT NULL,
+        hook               TEXT,
+        status             TEXT    NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending', 'published', 'dropped')),
+        review_event_id    TEXT,
+        published_event_id TEXT,
+        engagement_count   INTEGER NOT NULL DEFAULT 0,
+        composed_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+        published_at       TEXT
+      )
+    ''');
+
+    // At most one pending draft at any time — the structural form of the
+    // single-pending invariant. A published/dropped draft frees the slot.
+    _db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_community_spark_one_pending
+      ON community_spark_drafts(status) WHERE status = 'pending'
     ''');
   }
 }
