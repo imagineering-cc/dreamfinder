@@ -123,6 +123,17 @@ mixin CommunitySparkQueries {
     return won;
   }
 
+  /// Transitions a pending draft to `dropped` — e.g. when posting it to the
+  /// review room failed, so it shouldn't block new drafts for the full stale
+  /// window. No-op if the draft isn't pending.
+  void dropSparkDraft(String draftId) {
+    db.handle.execute(
+      "UPDATE community_spark_drafts SET status = 'dropped' "
+      "WHERE draft_id = ? AND status = 'pending'",
+      [draftId],
+    );
+  }
+
   /// Stamps the publish-period guard to [now] (ISO8601 UTC).
   void setSparkPeriod(DateTime now) {
     db.handle.execute(
