@@ -38,6 +38,7 @@ class Env {
     this.calendarUrl,
     this.eventTimeZone,
     this.adminIds = const [],
+    this.selfPuppetIds = const [],
     this.botName = 'Dreamfinder',
     this.databasePath = './data/bot.db',
     this.logLevel = 'info',
@@ -114,6 +115,7 @@ class Env {
       calendarUrl: dotEnv['CALENDAR_URL'],
       eventTimeZone: dotEnv['EVENT_TIMEZONE'],
       adminIds: _parseList(dotEnv['ADMIN_IDS'] ?? dotEnv['ADMIN_UUIDS']),
+      selfPuppetIds: _parseList(dotEnv['SELF_PUPPET_IDS']),
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
       databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
@@ -175,6 +177,7 @@ class Env {
     String? calendarUrl,
     String? eventTimeZone,
     List<String> adminIds = const [],
+    List<String> selfPuppetIds = const [],
     String botName = 'Dreamfinder',
     String databasePath = './data/bot.db',
     String logLevel = 'info',
@@ -222,6 +225,7 @@ class Env {
         calendarUrl: calendarUrl,
         eventTimeZone: eventTimeZone,
         adminIds: adminIds,
+        selfPuppetIds: selfPuppetIds,
         botName: botName,
         databasePath: databasePath,
         logLevel: logLevel,
@@ -339,6 +343,15 @@ class Env {
   /// falls back to `ADMIN_UUIDS` for backward compatibility).
   final List<String> adminIds;
 
+  /// Matrix user IDs that are River's OWN bridged/relayed identities (from
+  /// `SELF_PUPPET_IDS`). When River posts to the hub, the superbridge relays
+  /// the message back in as a relay/bridge puppet (e.g. `@_relay_signal_…`,
+  /// `@telegram_…`) whose MXID differs from the native bot MXID — so the
+  /// `event.sender == botUserId` self-check misses it and River would respond
+  /// to its own echo (a feedback loop). These IDs are treated as "self" and
+  /// dropped. See [isSelf].
+  final List<String> selfPuppetIds;
+
   final String botName;
   final String databasePath;
   final String logLevel;
@@ -424,6 +437,13 @@ class Env {
 
   /// Returns `true` if [userId] is in the configured admin list.
   bool isAdmin(String? userId) => userId != null && adminIds.contains(userId);
+
+  /// Whether [userId] is one of River's own identities — either the native bot
+  /// MXID ([botUserId]) or one of its relayed/bridged puppets ([selfPuppetIds]).
+  /// Used to drop self-echoes the superbridge relays back into the hub, which
+  /// would otherwise create a response feedback loop.
+  bool isSelf(String? userId, String botUserId) =>
+      userId == botUserId || (userId != null && selfPuppetIds.contains(userId));
 
   bool get kanEnabled => kanApiKey != null && kanApiKey!.isNotEmpty;
   bool get outlineEnabled => outlineApiKey != null && outlineApiKey!.isNotEmpty;

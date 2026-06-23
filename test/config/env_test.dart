@@ -155,4 +155,39 @@ void main() {
       expect(env.useOAuth, isTrue);
     });
   });
+
+  group('isSelf (self-echo guard)', () {
+    const bot = '@dreamfinder-bot:imagineering.cc';
+
+    test('native bot MXID is always self', () {
+      final env = Env.forTesting();
+      expect(env.isSelf(bot, bot), isTrue);
+    });
+
+    test('relayed/bridged puppet MXIDs are self when configured', () {
+      final env = Env.forTesting(selfPuppetIds: const [
+        '@_relay_signal_8b12f8cf:imagineering.cc',
+        '@telegram_8927028624:imagineering.cc',
+      ]);
+      expect(
+          env.isSelf('@_relay_signal_8b12f8cf:imagineering.cc', bot), isTrue);
+      expect(env.isSelf('@telegram_8927028624:imagineering.cc', bot), isTrue);
+    });
+
+    test('a different puppet (a real person) is not self', () {
+      final env = Env.forTesting(selfPuppetIds: const [
+        '@_relay_signal_8b12f8cf:imagineering.cc',
+      ]);
+      // A human's relay puppet must NOT be dropped, even if they're on the
+      // same platform as one of River's puppets.
+      expect(
+          env.isSelf('@_relay_signal_9c2dfb33:imagineering.cc', bot), isFalse);
+      expect(env.isSelf('@nick:imagineering.cc', bot), isFalse);
+    });
+
+    test('null sender is not self', () {
+      final env = Env.forTesting();
+      expect(env.isSelf(null, bot), isFalse);
+    });
+  });
 }
