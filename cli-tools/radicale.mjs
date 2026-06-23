@@ -251,7 +251,7 @@ function xmlHref(block) {
 
 // ── verbs ──────────────────────────────────────────────────────────────────
 async function listCalendars(auth, opts) {
-  const user = opts.user || auth.username;
+  const user = encodeURIComponent(opts.user || auth.username);
   const url = `${auth.base}/${user}/`;
   const body =
     '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">' +
@@ -297,8 +297,11 @@ async function listEvents(auth, opts) {
 }
 
 function buildVEvent(opts) {
-  const uid = opts.uid || `radicale-cli-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-  const tz = opts.tz;
+  // uid + tz are interpolated into property keys/values, not escapable bodies —
+  // sanitize to single-line tokens so a crafted --uid/--tz can't inject extra
+  // ICS lines (Carnot, cage-match PR #115; same family as the CR/LF fix).
+  const uid = sanitizeLine(opts.uid || `radicale-cli-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+  const tz = opts.tz ? sanitizeLine(opts.tz) : undefined;
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -393,7 +396,7 @@ function parseVCards(vcf) {
 }
 
 function buildVCard(opts) {
-  const uid = opts.uid || `radicale-cli-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const uid = sanitizeLine(opts.uid || `radicale-cli-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
   if (!opts.fn) fail('--fn (full name) is required');
   const lines = ['BEGIN:VCARD', 'VERSION:3.0', `UID:${uid}`, `FN:${escapeIcs(opts.fn)}`];
   lines.push(`N:${escapeIcs(opts.n || opts.fn)};;;;`);
@@ -412,7 +415,7 @@ function bookUrl(base, book) {
 }
 
 async function listAddressBooks(auth, opts) {
-  const user = opts.user || auth.username;
+  const user = encodeURIComponent(opts.user || auth.username);
   const url = `${auth.base}/${user}/`;
   const body =
     '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">' +
