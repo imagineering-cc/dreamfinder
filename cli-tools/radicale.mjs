@@ -291,6 +291,121 @@ async function mkcalendar(auth, opts) {
   return { calendar: url, name, status: 'created' };
 }
 
+// ── CardDAV (contacts) ───────────────────────────────────────────────────────
+// vCard property parse (FN/EMAIL/TEL/ORG/TITLE/NOTE/UID), param-tolerant.
+function parseVCards(vcf) {
+  const text = unfold(vcf);
+  const cards = [];
+  const re = /BEGIN:VCARD([\s\S]*?)END:VCARD/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const c = {};
+    for (const line of m[1].split(/\r?\n/)) {
+      const idx = line.indexOf(':');
+      if (idx === -1) continue;
+      const key = line.slice(0, idx).split(';')[0].toUpperCase();
+      const val = unescapeIcs(line.slice(idx + 1).trim());
+      if (!val) continue;
+      switch (key) {
+        case 'UID': c.uid = val; break;
+        case 'FN': c.fn = val; break;
+        case 'EMAIL': c.email = val; break;
+        case 'TEL': c.tel = val; break;
+        case 'ORG': c.org = val; break;
+        case 'TITLE': c.title = val; break;
+        case 'NOTE': c.note = val; break;
+      }
+    }
+    if (c.uid || c.fn) cards.push(c);
+  }
+  cards.sort((a, b) => String(a.fn || '').localeCompare(String(b.fn || '')));
+  return cards;
+}
+
+function buildVCard(opts) {
+  const uid = opts.uid || `radicale-cli-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  if (!opts.fn) fail('--fn (full name) is required');
+  const lines = ['BEGIN:VCARD', 'VERSION:3.0', `UID:${uid}`, `FN:${escapeIcs(opts.fn)}`];
+  lines.push(`N:${escapeIcs(opts.n || opts.fn)};;;;`);
+  if (opts.email) lines.push(`EMAIL:${escapeIcs(opts.email)}`);
+  if (opts.tel) lines.push(`TEL:${escapeIcs(opts.tel)}`);
+  if (opts.org) lines.push(`ORG:${escapeIcs(opts.org)}`);
+  if (opts.title) lines.push(`TITLE:${escapeIcs(opts.title)}`);
+  if (opts.note) lines.push(`NOTE:${escapeIcs(opts.note)}`);
+  lines.push('END:VCARD');
+  return { uid, vcf: lines.join('\r\n') };
+}
+
+// addressbook URL: full URL, or "<user>/<book>" path under the site base.
+function bookUrl(base, book) {
+  if (!book) return null;
+  if (/^https?:\/\//.test(book)) return book.replace(/\/?$/, '/');
+  return `${base}/${book.replace(/^\/|\/$/g, '')}/`;
+}
+
+async function listAddressBooks(auth, opts) {
+  const user = opts.user || auth.username;
+  const url = `${auth.base}/${user}/`;
+  const body =
+    '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">' +
+    '<d:prop><d:resourcetype/><d:displayname/></d:prop></d:propfind>';
+  const { text } = await dav('PROPFIND', url, auth, { body, depth: 1, contentType: 'application/xml' });
+  const books = [];
+  for (const r of xmlResponses(text)) {
+    if (!/<[^:>]*:?addressbook\b/i.test(r)) continue; // carddav addressbook resourcetype
+    const href = xmlHref(r);
+    if (href) books.push({ url: href, name: xmlTag(r, 'displayname') || '' });
+  }
+  return books;
+}
+
+async function mkaddressbook(auth, opts) {
+  const url = bookUrl(auth.base, opts.addressbook);
+  if (!url) fail('--addressbook <url|path> is required');
+  const name = opts.name || 'Address Book';
+  const body =
+    '<?xml version="1.0"?><d:mkcol xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">' +
+    '<d:set><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>' +
+    `<d:displayname>${escapeIcs(name)}</d:displayname></d:prop></d:set></d:mkcol>`;
+  await dav('MKCOL', url, auth, { body, contentType: 'application/xml' });
+  return { addressbook: url, name, status: 'created' };
+}
+
+async function listContacts(auth, opts) {
+  const url = bookUrl(auth.base, opts.addressbook);
+  if (!url) fail('--addressbook is required');
+  const body =
+    '<?xml version="1.0"?><card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">' +
+    '<d:prop><card:address-data/></d:prop></card:addressbook-query>';
+  const { text } = await dav('REPORT', url, auth, { body, depth: 1, contentType: 'application/xml' });
+  return parseVCards(text);
+}
+
+async function addContact(auth, opts) {
+  const url = bookUrl(auth.base, opts.addressbook);
+  if (!url) fail('--addressbook is required');
+  const { uid, vcf } = buildVCard(opts);
+  await dav('PUT', `${url}${encodeURIComponent(uid)}.vcf`, auth, {
+    body: vcf,
+    contentType: 'text/vcard; charset=utf-8',
+  });
+  return { uid, addressbook: url, status: 'saved' };
+}
+
+async function getContact(auth, opts) {
+  const url = bookUrl(auth.base, opts.addressbook);
+  if (!url || !opts.uid) fail('--addressbook and --uid are required');
+  const { text } = await dav('GET', `${url}${encodeURIComponent(opts.uid)}.vcf`, auth, {});
+  return parseVCards(text)[0] || null;
+}
+
+async function deleteContact(auth, opts) {
+  const url = bookUrl(auth.base, opts.addressbook);
+  if (!url || !opts.uid) fail('--addressbook and --uid are required');
+  await dav('DELETE', `${url}${encodeURIComponent(opts.uid)}.vcf`, auth, {});
+  return { uid: opts.uid, status: 'deleted' };
+}
+
 // ── CLI plumbing ─────────────────────────────────────────────────────────────
 function fail(msg) {
   process.stderr.write(`radicale: ${msg}\n`);
@@ -311,6 +426,15 @@ COMMANDS
   delete-event    --calendar <url|path> --uid <id>
   get-event       --calendar <url|path> --uid <id>
   mkcalendar      --calendar <url|path> [--name <name>]
+
+  list-address-books [--user <name>]
+  mkaddressbook   --addressbook <url|path> [--name <name>]
+  list-contacts   --addressbook <url|path>
+  add-contact     --addressbook <url|path> --fn <full name> [--email <e>]
+                  [--tel <t>] [--org <o>] [--title <t>] [--note <n>] [--uid <id>]
+  update-contact  (same flags as add-contact; --uid identifies the card)
+  get-contact     --addressbook <url|path> --uid <id>
+  delete-contact  --addressbook <url|path> --uid <id>
 
 NOTES
   * list-events expands recurrence + timezones SERVER-SIDE (RFC 4791 expand);
@@ -356,6 +480,14 @@ async function main() {
       rrule: { type: 'string' },
       uid: { type: 'string' },
       name: { type: 'string' },
+      addressbook: { type: 'string' },
+      fn: { type: 'string' },
+      n: { type: 'string' },
+      email: { type: 'string' },
+      tel: { type: 'string' },
+      org: { type: 'string' },
+      title: { type: 'string' },
+      note: { type: 'string' },
     },
     allowPositionals: true,
   });
@@ -367,6 +499,14 @@ async function main() {
     'delete-event': deleteEvent,
     'get-event': getEvent,
     mkcalendar,
+    // CardDAV (contacts) — add-contact handles create AND update (PUT by uid).
+    'list-address-books': listAddressBooks,
+    mkaddressbook,
+    'list-contacts': listContacts,
+    'add-contact': addContact,
+    'update-contact': addContact,
+    'get-contact': getContact,
+    'delete-contact': deleteContact,
   };
   const fn = verbs[cmd];
   if (!fn) fail(`unknown command: ${cmd} (try --help)`);

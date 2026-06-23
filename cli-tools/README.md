@@ -8,7 +8,7 @@ kan + outline MCP servers.
 |------|-------|--------------|
 | `kan.mjs` | Kan.bn REST API (`/api/v1`) | `KAN_API_KEY`, `KAN_BASE_URL` |
 | `outline.mjs` | Outline RPC API | `OUTLINE_API_KEY`, `OUTLINE_API_URL` |
-| `radicale.mjs` | Radicale CalDAV events (RFC 4791 expand) | `RADICALE_BASE_URL`, `RADICALE_USERNAME`, `RADICALE_PASSWORD` |
+| `radicale.mjs` | Radicale CalDAV events (RFC 4791 expand) + CardDAV contacts | `RADICALE_BASE_URL`, `RADICALE_USERNAME`, `RADICALE_PASSWORD` |
 
 **Why CLIs instead of MCP servers?** The MCP servers were a hand-maintained
 *subset* of these CLIs and drifted behind — they lacked onboarding tools

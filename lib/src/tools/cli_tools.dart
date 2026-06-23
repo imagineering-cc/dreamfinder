@@ -84,14 +84,22 @@ const _outlineAdminSubcommands = <String>{
   'raw',
 };
 
-/// Radicale subcommands that WRITE to the shared calendar. Reads
-/// (list-calendars, list-events, get-event) stay open to any member; mutating
-/// the team calendar (creating/deleting events, creating calendars) is
-/// admin-gated to match the "everyone reads, admins restructure" posture.
+/// Radicale subcommands that WRITE to the shared calendar / address book.
+/// Reads (list-calendars, list-events, get-event, list-address-books,
+/// list-contacts, get-contact) stay open to any member; mutating the team
+/// calendar or contacts (creating/deleting events & contacts, creating
+/// calendars & address books) is admin-gated to match the "everyone reads,
+/// admins restructure" posture.
 const _radicaleAdminSubcommands = <String>{
+  // Calendar (CalDAV) writes.
   'add-event',
   'delete-event',
   'mkcalendar',
+  // Contacts (CardDAV) writes.
+  'mkaddressbook',
+  'add-contact',
+  'update-contact',
+  'delete-contact',
 };
 
 /// True if [args] sets an elevated invite role (`--role admin`). Onboarding a
@@ -418,9 +426,10 @@ String _err(String message) => jsonEncode(<String, dynamic>{'error': message});
 /// for a subcommand's exact flags.
 const _description = '''
 Run the Kan.bn (project boards/cards), Outline (wiki docs), or Radicale
-(CalDAV calendar events) CLI. This is the single tool for all Kan, Outline, and
-calendar work — onboarding people, creating/reading/editing/deleting cards and
-documents, and reading/managing calendar events.
+(CalDAV calendar events + CardDAV contacts) CLI. This is the single tool for
+all Kan, Outline, calendar, and contacts work — onboarding people,
+creating/reading/editing/deleting cards and documents, and reading/managing
+calendar events and contacts.
 
 Pass `tool` ("kan", "outline", or "radicale") and `args` (the subcommand +
 flags as an argv array of strings). Output is JSON on stdout. Run
@@ -452,11 +461,17 @@ documents.move, documents.archive, documents.unarchive, documents.delete
 (add --permanent to bypass trash*), documents.drafts, documents.export,
 users.list, users.invite (--role admin requires admin*).
 
-RADICALE subcommands (calendar events): list-calendars, list-events
+RADICALE subcommands — calendar events (CalDAV): list-calendars, list-events
 (e.g. ["list-events","--calendar","nick/imagineering-events","--from","<ISO>",
 "--to","<ISO>"] — recurrence + timezones are expanded server-side, output is
 JSON in UTC), get-event, add-event*, delete-event*, mkcalendar*. --calendar
 accepts a full URL or a "<user>/<calendar>" path.
+
+RADICALE subcommands — contacts (CardDAV): list-address-books, list-contacts
+(["list-contacts","--addressbook","<path>"]), get-contact, mkaddressbook*,
+add-contact* (--fn <full name> [--email --tel --org --title --note --uid]),
+update-contact* (same flags; --uid identifies the card), delete-contact*.
+--addressbook accepts a full URL or a "<user>/<addressbook>" path.
 
 Subcommands marked * require the requester to be an admin; everyone else may
 read, create, edit, comment, and delete cards/documents, and onboard members.

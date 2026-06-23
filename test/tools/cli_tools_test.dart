@@ -184,7 +184,7 @@ void main() {
       expect(result['error'], contains('admin'));
     });
 
-    test('blocks radicale write subcommands for non-admin', () async {
+    test('blocks radicale calendar write subcommands for non-admin', () async {
       for (final sub in ['add-event', 'delete-event', 'mkcalendar']) {
         final result = await run(makeRegistry(isAdmin: false), {
           'tool': 'radicale',
@@ -196,29 +196,87 @@ void main() {
       }
     });
 
-    test('allows radicale list-events for non-admin (read is open)', () async {
+    test('blocks radicale contact write subcommands for non-admin', () async {
+      for (final sub in [
+        'mkaddressbook',
+        'add-contact',
+        'update-contact',
+        'delete-contact'
+      ]) {
+        final result = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': [sub, '--addressbook', 'dreamfinder/team-profiles'],
+        });
+        expect(result['error'], contains('admin'),
+            reason: '$sub writes the shared address book — admin only');
+        expect(result['subcommand'], sub);
+      }
+    });
+
+    test('allows radicale calendar reads for non-admin (read is open)',
+        () async {
       // Passes the admin gate, then fails when the node CLI runs against fake
       // creds — but the error must NOT be the admin refusal, proving the gate
       // let the read through.
-      final result = await run(makeRegistry(isAdmin: false), {
-        'tool': 'radicale',
-        'args': ['list-events', '--calendar', 'nick/imagineering-events'],
-      });
-      final err = (result['error'] ?? '').toString();
-      expect(err.contains('admin privileges'), isFalse,
-          reason: 'reading the calendar is open to all members');
+      for (final args in [
+        ['list-calendars'],
+        ['list-events', '--calendar', 'nick/imagineering-events'],
+        ['get-event', '--calendar', 'nick/imagineering-events', '--uid', 'x'],
+      ]) {
+        final result = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': args,
+        });
+        final err = (result['error'] ?? '').toString();
+        expect(err.contains('admin privileges'), isFalse,
+            reason: '${args.first} is open to all members');
+      }
+    });
+
+    test('allows radicale contact reads for non-admin (read is open)',
+        () async {
+      for (final args in [
+        ['list-address-books'],
+        ['list-contacts', '--addressbook', 'dreamfinder/team-profiles'],
+        [
+          'get-contact',
+          '--addressbook',
+          'dreamfinder/team-profiles',
+          '--uid',
+          'x'
+        ],
+      ]) {
+        final result = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': args,
+        });
+        final err = (result['error'] ?? '').toString();
+        expect(err.contains('admin privileges'), isFalse,
+            reason: '${args.first} is open to all members');
+      }
     });
 
     test('allows radicale write subcommands for admin', () async {
       // Admin clears the gate; the call then fails at the node CLI (fake creds),
       // but the error must NOT be the admin refusal.
-      final result = await run(makeRegistry(isAdmin: true), {
-        'tool': 'radicale',
-        'args': ['mkcalendar', '--calendar', 'nick/new-cal'],
-      });
-      final err = (result['error'] ?? '').toString();
-      expect(err.contains('admin privileges'), isFalse,
-          reason: 'admins may write the shared calendar');
+      for (final args in [
+        ['mkcalendar', '--calendar', 'nick/new-cal'],
+        [
+          'add-contact',
+          '--addressbook',
+          'dreamfinder/team-profiles',
+          '--fn',
+          'Ada'
+        ],
+      ]) {
+        final result = await run(makeRegistry(isAdmin: true), {
+          'tool': 'radicale',
+          'args': args,
+        });
+        final err = (result['error'] ?? '').toString();
+        expect(err.contains('admin privileges'), isFalse,
+            reason: 'admins may write the shared calendar / contacts');
+      }
     });
 
     test('gates permanent document delete but not trash delete', () async {
