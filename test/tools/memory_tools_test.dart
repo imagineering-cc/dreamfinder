@@ -10,23 +10,34 @@ import 'package:test/test.dart';
 import '../helpers/fake_pipeline.dart';
 import '../helpers/fake_retriever.dart';
 
+/// One recorded invocation of the fake [CliRunner].
+class CliCall {
+  CliCall(this.tool, this.args, this.env);
+  final String tool;
+  final List<String> args;
+  final Map<String, String> env;
+}
+
 /// A fake [CliRunner] for deep_search tests: returns canned stdout per tool
-/// (no `node` subprocess), or a launch failure for tools in [failTools].
+/// (no `node` subprocess), or a launch failure for tools in [failTools]. When
+/// [calls] is supplied, each invocation is recorded so a test can assert the
+/// exact argv/env the production code built (locking the real CLI contract).
 CliRunner fakeCliRunner({
   String? outline,
   String? kan,
   Set<String> failTools = const {},
+  List<CliCall>? calls,
 }) {
   return ({
     required String tool,
     required List<String> args,
     required Map<String, String> env,
   }) async {
+    calls?.add(CliCall(tool, args, env));
     if (failTools.contains(tool)) {
       return const CliLaunchFailure('simulated CLI failure');
     }
-    final out =
-        tool == 'outline' ? (outline ?? '{"data":[]}') : (kan ?? '{"data":[]}');
+    final out = tool == 'outline' ? (outline ?? '{"data":[]}') : (kan ?? '[]');
     return CliCompleted(exitCode: 0, stdout: out, stderr: '');
   };
 }
@@ -279,11 +290,16 @@ void main() {
     late ToolRegistry deepRegistry;
     late FakeRetriever retriever;
 
+    // Shapes verified against the live CLIs: Outline documents.search returns
+    // {data:[{context, document:{...}}]} with a populated document.text; the
+    // Kan `search` CLI returns a BARE ARRAY of cards (publicId/listName/...).
     const outlineJson =
-        '{"data":[{"document":{"id":"doc-1","title":"Sprint Retro Notes",'
+        '{"data":[{"context":"...retros...","document":{"id":"doc-1",'
+        '"title":"Sprint Retro Notes",'
         '"text":"We decided to adopt weekly retros."}}]}';
-    const kanJson = '{"data":[{"id":"card-1","title":"Fix auth middleware",'
-        '"description":"Rewrite for compliance.","list":{"name":"In Progress"}}]}';
+    const kanJson = '[{"publicId":"card-1","title":"Fix auth middleware",'
+        '"description":"Rewrite for compliance.","boardName":"Engineering",'
+        '"listName":"In Progress"}]';
 
     /// Builds a registry with all three sources available: a memory retriever,
     /// plus Outline + Kan creds (incl. a Kan workspace id) wired to a fake CLI
@@ -593,6 +609,60 @@ void main() {
       expect(kanResult['title'], equals('Fix auth middleware'));
       expect(kanResult['text'], contains('compliance'));
       expect(kanResult['card_id'], equals('card-1'));
+      expect(kanResult['list'], equals('In Progress'));
+    });
+
+    test('builds the expected CLI argv + env for each source', () async {
+      final calls = <CliCall>[];
+      final reg = ToolRegistry();
+      reg.setContext(const ToolContext(
+        senderId: 'user-1',
+        isAdmin: false,
+        chatId: 'chat-1',
+        isGroup: true,
+      ));
+      registerMemoryTools(
+        reg,
+        FakePipeline(),
+        null,
+        outlineApiKey: 'o-key',
+        outlineBaseUrl: 'https://outline.example/api',
+        kanApiKey: 'k-key',
+        kanBaseUrl: 'https://kan.example/api/v1',
+        kanWorkspaceId: 'ws-1',
+        cliRunner:
+            fakeCliRunner(outline: outlineJson, kan: kanJson, calls: calls),
+      );
+
+      await reg
+          .executeTool('deep_search', {'query': 'hackerspace', 'limit': 4});
+
+      final outlineCall = calls.firstWhere((c) => c.tool == 'outline');
+      expect(
+        outlineCall.args,
+        equals(['documents.search', '--query', 'hackerspace', '--limit', '4']),
+      );
+      // The outline CLI reads OUTLINE_API_URL (not OUTLINE_BASE_URL); creds are
+      // present and no unrelated secrets leak into the child env.
+      expect(outlineCall.env['OUTLINE_API_KEY'], equals('o-key'));
+      expect(outlineCall.env['OUTLINE_API_URL'],
+          equals('https://outline.example/api'));
+      expect(outlineCall.env.containsKey('PATH'), isTrue);
+
+      final kanCall = calls.firstWhere((c) => c.tool == 'kan');
+      expect(
+        kanCall.args,
+        equals([
+          'search',
+          '--workspace-id',
+          'ws-1',
+          '--query',
+          'hackerspace',
+          '--limit',
+          '4',
+        ]),
+      );
+      expect(kanCall.env['KAN_API_KEY'], equals('k-key'));
     });
   });
 }

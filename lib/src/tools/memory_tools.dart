@@ -275,7 +275,7 @@ CustomToolDef _deepSearchTool(
       // A source is available when its backing creds are configured. Outline
       // and Kan are searched via the vendored CLIs (not MCP); Kan's `search`
       // also requires a workspace id, so the Kan arm needs [kanWorkspaceId].
-      bool present(String? v) => v != null && v.isNotEmpty;
+      bool present(String? v) => v != null && v.trim().isNotEmpty;
       final hasMemory = retriever != null;
       final hasOutline = present(outlineApiKey) && present(outlineBaseUrl);
       final hasKan =
@@ -406,7 +406,9 @@ String _cliStdoutOrThrow(String source, CliOutcome outcome) {
       throw Exception('$source CLI timed out');
     case CliCompleted(:final exitCode, :final stdout, :final stderr):
       if (exitCode != 0) {
-        throw Exception('$source CLI exited $exitCode: $stderr');
+        // Include stdout — CLIs often put the useful API error JSON there.
+        throw Exception('$source CLI exited $exitCode: '
+            '${stderr.isNotEmpty ? stderr : stdout}');
       }
       return stdout;
   }
@@ -506,11 +508,13 @@ Future<List<Map<String, dynamic>>> _searchKan(
   );
   final raw = _cliStdoutOrThrow('kan', outcome);
 
-  final parsed = jsonDecode(raw) as Map<String, dynamic>;
-  final data = parsed['data'] as List<dynamic>?;
-  if (data == null) {
+  // The `kan search` CLI prints the raw API response, which is a BARE ARRAY of
+  // card hits (verified live) — not a {data: [...]} envelope. Each card carries
+  // `publicId`, `title`, `description`, `boardName`, and `listName`.
+  final decoded = jsonDecode(raw);
+  if (decoded is! List) {
     developer.log(
-      'Kan search returned unexpected format (no "data" key): '
+      'Kan search returned unexpected format (expected a JSON array): '
       '${raw.substring(0, raw.length.clamp(0, 200))}',
       name: 'MemoryTools',
       level: 900,
@@ -519,14 +523,15 @@ Future<List<Map<String, dynamic>>> _searchKan(
   }
 
   return [
-    for (final item in data)
+    for (final item in decoded)
       if (item is Map<String, dynamic>)
         <String, dynamic>{
           'source': 'kan',
           'title': item['title'] ?? '',
           'text': item['description'] ?? '',
-          'card_id': item['id'] ?? '',
-          'list': (item['list'] as Map<String, dynamic>?)?['name'] ?? '',
+          'card_id': item['publicId'] ?? '',
+          'list': item['listName'] ?? '',
+          'board': item['boardName'] ?? '',
         },
   ];
 }
