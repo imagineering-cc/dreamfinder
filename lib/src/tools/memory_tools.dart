@@ -406,9 +406,14 @@ String _cliStdoutOrThrow(String source, CliOutcome outcome) {
       throw Exception('$source CLI timed out');
     case CliCompleted(:final exitCode, :final stdout, :final stderr):
       if (exitCode != 0) {
-        // Include stdout — CLIs often put the useful API error JSON there.
-        throw Exception('$source CLI exited $exitCode: '
-            '${stderr.isNotEmpty ? stderr : stdout}');
+        // Surface BOTH streams — CLIs split diagnostics unpredictably (useful
+        // API error JSON often lands on stdout even when stderr has noise).
+        final detail = [
+          if (stderr.isNotEmpty) 'stderr: $stderr',
+          if (stdout.isNotEmpty) 'stdout: $stdout',
+        ].join(' | ');
+        throw Exception('$source CLI exited $exitCode'
+            '${detail.isNotEmpty ? ' ($detail)' : ''}');
       }
       return stdout;
   }
