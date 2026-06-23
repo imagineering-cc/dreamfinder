@@ -8,12 +8,28 @@ library;
 
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import '../agent/tool_registry.dart';
-import '../mcp/mcp_manager.dart';
 import '../memory/embedding_pipeline.dart';
 import '../memory/memory_record.dart';
 import '../memory/memory_retriever.dart';
+import 'cli_tools.dart'
+    show
+        CliCompleted,
+        CliLaunchFailure,
+        CliOutcome,
+        CliTimeout,
+        execVendoredCli;
+
+/// Runs a vendored CLI and returns its [CliOutcome]. Defaults to the real
+/// [execVendoredCli]; injectable so `deep_search` tests can supply canned
+/// output without spawning a `node` subprocess.
+typedef CliRunner = Future<CliOutcome> Function({
+  required String tool,
+  required List<String> args,
+  required Map<String, String> env,
+});
 
 /// Registers memory tools with the [ToolRegistry].
 ///
@@ -21,18 +37,36 @@ import '../memory/memory_retriever.dart';
 /// registered but returns an error when invoked — this lets the agent explain
 /// the limitation to the user. Same pattern for [retriever] and search.
 ///
-/// When [mcpManager] is provided, `deep_search` can fan out to Outline and Kan
-/// MCP servers in parallel alongside local memory retrieval.
+/// `deep_search` fans out to Outline and Kan via the vendored CLIs (the same
+/// `run_cli` path), not MCP — the Outline/Kan MCP servers were retired in the
+/// run_cli migration, which silently left `deep_search` searching nothing. The
+/// Outline arm is available whenever [outlineApiKey]/[outlineBaseUrl] are set;
+/// the Kan arm additionally needs [kanWorkspaceId] (the CLI's `search` requires
+/// a workspace). [cliRunner] is injectable for tests.
 void registerMemoryTools(
   ToolRegistry registry,
   EmbeddingPipeline? pipeline,
-  MemoryRetriever? retriever, [
-  McpManager? mcpManager,
-]) {
+  MemoryRetriever? retriever, {
+  String? outlineApiKey,
+  String? outlineBaseUrl,
+  String? kanApiKey,
+  String? kanBaseUrl,
+  String? kanWorkspaceId,
+  CliRunner cliRunner = execVendoredCli,
+}) {
   registry.registerCustomTool(_saveMemoryTool(registry, pipeline));
   registry.registerCustomTool(_searchMemoryTool(registry, retriever));
   registry.registerCustomTool(
-    _deepSearchTool(registry, retriever, mcpManager),
+    _deepSearchTool(
+      registry,
+      retriever,
+      outlineApiKey: outlineApiKey,
+      outlineBaseUrl: outlineBaseUrl,
+      kanApiKey: kanApiKey,
+      kanBaseUrl: kanBaseUrl,
+      kanWorkspaceId: kanWorkspaceId,
+      cliRunner: cliRunner,
+    ),
   );
 }
 
@@ -183,15 +217,22 @@ const _deepSearchMaxLimit = 5;
 
 CustomToolDef _deepSearchTool(
   ToolRegistry registry,
-  MemoryRetriever? retriever,
-  McpManager? mcpManager,
-) {
+  MemoryRetriever? retriever, {
+  String? outlineApiKey,
+  String? outlineBaseUrl,
+  String? kanApiKey,
+  String? kanBaseUrl,
+  String? kanWorkspaceId,
+  required CliRunner cliRunner,
+}) {
   return CustomToolDef(
     name: 'deep_search',
     description: 'Search across all knowledge sources in parallel — long-term '
         'memory, Outline wiki, and Kan task board. Use this for cross-cutting '
         'questions that span multiple domains, or when you are unsure where '
-        'the answer lives. Returns unified results with source attribution.',
+        'the answer lives — including questions about community lore, history, '
+        'people, and projects (which live in the Outline wiki). Returns unified '
+        'results with source attribution.',
     inputSchema: const <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -231,13 +272,14 @@ CustomToolDef _deepSearchTool(
           ? (args['sources'] as List<dynamic>).cast<String>()
           : List<String>.from(_allSources);
 
-      // Detect which MCP tools are actually available.
-      final mcpToolNames =
-          mcpManager?.getAllTools().map((t) => t.name).toSet() ?? <String>{};
-
+      // A source is available when its backing creds are configured. Outline
+      // and Kan are searched via the vendored CLIs (not MCP); Kan's `search`
+      // also requires a workspace id, so the Kan arm needs [kanWorkspaceId].
+      bool present(String? v) => v != null && v.isNotEmpty;
       final hasMemory = retriever != null;
-      final hasOutline = mcpToolNames.contains('outline_search');
-      final hasKan = mcpToolNames.contains('kan_search');
+      final hasOutline = present(outlineApiKey) && present(outlineBaseUrl);
+      final hasKan =
+          present(kanApiKey) && present(kanBaseUrl) && present(kanWorkspaceId);
 
       final availability = <String, bool>{
         'memory': hasMemory,
@@ -271,7 +313,12 @@ CustomToolDef _deepSearchTool(
           limit: limit,
           chatId: chatId,
           retriever: retriever,
-          mcpManager: mcpManager,
+          cliRunner: cliRunner,
+          outlineApiKey: outlineApiKey,
+          outlineBaseUrl: outlineBaseUrl,
+          kanApiKey: kanApiKey,
+          kanBaseUrl: kanBaseUrl,
+          kanWorkspaceId: kanWorkspaceId,
         ).then((results) {
           sourcesSearched.add(source);
           allResults.addAll(results);
@@ -300,27 +347,68 @@ CustomToolDef _deepSearchTool(
 
 /// Searches a single source and returns normalized results.
 ///
-/// The `!` operators on [retriever] and [mcpManager] are safe because the
-/// caller in `_deepSearchTool` only invokes this for sources that passed the
-/// availability check (retriever != null for memory, mcpManager has the
-/// required tool for outline/kan).
+/// The `!` operators are safe because `_deepSearchTool` only invokes this for
+/// sources that passed the availability check (retriever != null for memory;
+/// the relevant creds present for outline/kan).
 Future<List<Map<String, dynamic>>> _searchSource({
   required String source,
   required String query,
   required int limit,
   required String chatId,
+  required CliRunner cliRunner,
   MemoryRetriever? retriever,
-  McpManager? mcpManager,
+  String? outlineApiKey,
+  String? outlineBaseUrl,
+  String? kanApiKey,
+  String? kanBaseUrl,
+  String? kanWorkspaceId,
 }) async {
   switch (source) {
     case 'memory':
       return _searchMemory(retriever!, query, chatId, limit);
     case 'outline':
-      return _searchOutline(mcpManager!, query, limit);
+      return _searchOutline(
+        cliRunner,
+        query,
+        limit,
+        outlineApiKey!,
+        outlineBaseUrl!,
+      );
     case 'kan':
-      return _searchKan(mcpManager!, query, limit);
+      return _searchKan(
+        cliRunner,
+        query,
+        limit,
+        kanApiKey!,
+        kanBaseUrl!,
+        kanWorkspaceId!,
+      );
     default:
       return [];
+  }
+}
+
+/// Minimal child environment for a vendored-CLI subprocess: `PATH` so `node`
+/// resolves, plus the one service's creds. Never leaks DF's other secrets
+/// (matches the `run_cli` executor's hardening).
+Map<String, String> _cliEnv(Map<String, String> creds) => <String, String>{
+      'PATH': Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin',
+      ...creds,
+    };
+
+/// Decodes a vendored-CLI [outcome] to its stdout JSON, throwing on any
+/// non-success so `deep_search`'s per-source `catchError` records the failure.
+String _cliStdoutOrThrow(String source, CliOutcome outcome) {
+  switch (outcome) {
+    case CliLaunchFailure(:final message):
+      throw Exception('$source CLI launch failed: $message');
+    case CliTimeout():
+      throw Exception('$source CLI timed out');
+    case CliCompleted(:final exitCode, :final stdout, :final stderr):
+      if (exitCode != 0) {
+        throw Exception('$source CLI exited $exitCode: $stderr');
+      }
+      return stdout;
   }
 }
 
@@ -343,17 +431,29 @@ Future<List<Map<String, dynamic>>> _searchMemory(
   ];
 }
 
-/// Searches Outline wiki via MCP and normalizes results.
+/// Searches the Outline wiki via the vendored `outline` CLI
+/// (`documents.search`) and normalizes results. This is where community lore,
+/// history, people, and project docs live.
 Future<List<Map<String, dynamic>>> _searchOutline(
-  McpManager mcpManager,
+  CliRunner cliRunner,
   String query,
   int limit,
+  String apiKey,
+  String baseUrl,
 ) async {
-  final raw = await mcpManager.callTool('outline_search', <String, dynamic>{
-    'query': query,
-    'limit': limit,
-  });
+  final outcome = await cliRunner(
+    tool: 'outline',
+    args: <String>['documents.search', '--query', query, '--limit', '$limit'],
+    // The outline CLI reads OUTLINE_API_URL, not OUTLINE_BASE_URL.
+    env: _cliEnv(<String, String>{
+      'OUTLINE_API_KEY': apiKey,
+      'OUTLINE_API_URL': baseUrl,
+    }),
+  );
+  final raw = _cliStdoutOrThrow('outline', outcome);
+
   final parsed = jsonDecode(raw) as Map<String, dynamic>;
+  // documents.search returns {data: [{context, document: {...}}]}.
   final data = parsed['data'] as List<dynamic>?;
   if (data == null) {
     developer.log(
@@ -378,16 +478,34 @@ Future<List<Map<String, dynamic>>> _searchOutline(
   ];
 }
 
-/// Searches Kan task board via MCP and normalizes results.
+/// Searches the Kan task board via the vendored `kan` CLI (`search`, which
+/// requires a workspace id) and normalizes results.
 Future<List<Map<String, dynamic>>> _searchKan(
-  McpManager mcpManager,
+  CliRunner cliRunner,
   String query,
   int limit,
+  String apiKey,
+  String baseUrl,
+  String workspaceId,
 ) async {
-  final raw = await mcpManager.callTool('kan_search', <String, dynamic>{
-    'query': query,
-    'limit': limit,
-  });
+  final outcome = await cliRunner(
+    tool: 'kan',
+    args: <String>[
+      'search',
+      '--workspace-id',
+      workspaceId,
+      '--query',
+      query,
+      '--limit',
+      '$limit',
+    ],
+    env: _cliEnv(<String, String>{
+      'KAN_API_KEY': apiKey,
+      'KAN_BASE_URL': baseUrl,
+    }),
+  );
+  final raw = _cliStdoutOrThrow('kan', outcome);
+
   final parsed = jsonDecode(raw) as Map<String, dynamic>;
   final data = parsed['data'] as List<dynamic>?;
   if (data == null) {

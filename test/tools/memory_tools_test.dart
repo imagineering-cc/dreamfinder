@@ -1,13 +1,35 @@
 import 'dart:convert';
 
 import 'package:dreamfinder/src/agent/tool_registry.dart';
-import 'package:dreamfinder/src/mcp/mcp_manager.dart';
 import 'package:dreamfinder/src/memory/memory_record.dart';
+import 'package:dreamfinder/src/tools/cli_tools.dart'
+    show CliCompleted, CliLaunchFailure;
 import 'package:dreamfinder/src/tools/memory_tools.dart';
 import 'package:test/test.dart';
 
 import '../helpers/fake_pipeline.dart';
 import '../helpers/fake_retriever.dart';
+
+/// A fake [CliRunner] for deep_search tests: returns canned stdout per tool
+/// (no `node` subprocess), or a launch failure for tools in [failTools].
+CliRunner fakeCliRunner({
+  String? outline,
+  String? kan,
+  Set<String> failTools = const {},
+}) {
+  return ({
+    required String tool,
+    required List<String> args,
+    required Map<String, String> env,
+  }) async {
+    if (failTools.contains(tool)) {
+      return const CliLaunchFailure('simulated CLI failure');
+    }
+    final out =
+        tool == 'outline' ? (outline ?? '{"data":[]}') : (kan ?? '{"data":[]}');
+    return CliCompleted(exitCode: 0, stdout: out, stderr: '');
+  };
+}
 
 void main() {
   late ToolRegistry registry;
@@ -256,9 +278,16 @@ void main() {
   group('deep_search tool', () {
     late ToolRegistry deepRegistry;
     late FakeRetriever retriever;
-    late McpManager mcpManager;
 
-    /// Helper to build a registry with all sources available.
+    const outlineJson =
+        '{"data":[{"document":{"id":"doc-1","title":"Sprint Retro Notes",'
+        '"text":"We decided to adopt weekly retros."}}]}';
+    const kanJson = '{"data":[{"id":"card-1","title":"Fix auth middleware",'
+        '"description":"Rewrite for compliance.","list":{"name":"In Progress"}}]}';
+
+    /// Builds a registry with all three sources available: a memory retriever,
+    /// plus Outline + Kan creds (incl. a Kan workspace id) wired to a fake CLI
+    /// runner returning canned search JSON.
     void setUpAllSources() {
       deepRegistry = ToolRegistry();
       retriever = FakeRetriever(results: [
@@ -275,42 +304,6 @@ void main() {
           score: 0.95,
         ),
       ]);
-      mcpManager = McpManager();
-      mcpManager.addServerForTesting(
-        'outline',
-        McpToolInfo(
-          name: 'outline_search',
-          description: 'Search Outline docs',
-          handler: (args) async => jsonEncode({
-            'data': [
-              {
-                'document': {
-                  'id': 'doc-1',
-                  'title': 'Sprint Retro Notes',
-                  'text': 'We decided to adopt weekly retros.',
-                },
-              },
-            ],
-          }),
-        ),
-      );
-      mcpManager.addServerForTesting(
-        'kan',
-        McpToolInfo(
-          name: 'kan_search',
-          description: 'Search Kan cards',
-          handler: (args) async => jsonEncode({
-            'data': [
-              {
-                'id': 'card-1',
-                'title': 'Fix auth middleware',
-                'description': 'Rewrite for compliance.',
-                'list': {'name': 'In Progress'},
-              },
-            ],
-          }),
-        ),
-      );
       deepRegistry.setContext(const ToolContext(
         senderId: 'user-1',
         isAdmin: false,
@@ -321,7 +314,12 @@ void main() {
         deepRegistry,
         FakePipeline(),
         retriever,
-        mcpManager,
+        outlineApiKey: 'o',
+        outlineBaseUrl: 'https://outline.example/api',
+        kanApiKey: 'k',
+        kanBaseUrl: 'https://kan.example/api/v1',
+        kanWorkspaceId: 'ws-1',
+        cliRunner: fakeCliRunner(outline: outlineJson, kan: kanJson),
       );
     }
 
@@ -380,7 +378,7 @@ void main() {
       }
     });
 
-    test('gracefully degrades when MCP servers unavailable', () async {
+    test('degrades to memory-only when Outline/Kan creds absent', () async {
       final reg = ToolRegistry();
       final ret = FakeRetriever(results: [
         const MemorySearchResult(
@@ -402,8 +400,8 @@ void main() {
         chatId: 'chat-1',
         isGroup: false,
       ));
-      // No MCP manager — only memory available.
-      registerMemoryTools(reg, FakePipeline(), ret, null);
+      // No Outline/Kan creds — only memory available.
+      registerMemoryTools(reg, FakePipeline(), ret);
 
       final result = await reg.executeTool('deep_search', {
         'query': 'anything',
@@ -415,27 +413,39 @@ void main() {
       expect(unavailable, containsAll(['outline', 'kan']));
     });
 
+    test('Kan is unavailable without a workspace id (Outline still works)',
+        () async {
+      final reg = ToolRegistry();
+      reg.setContext(const ToolContext(
+        senderId: 'user-1',
+        isAdmin: false,
+        chatId: 'chat-1',
+        isGroup: false,
+      ));
+      // Outline creds present, Kan creds present, but NO kanWorkspaceId.
+      registerMemoryTools(
+        reg,
+        FakePipeline(),
+        null,
+        outlineApiKey: 'o',
+        outlineBaseUrl: 'https://outline.example/api',
+        kanApiKey: 'k',
+        kanBaseUrl: 'https://kan.example/api/v1',
+        cliRunner: fakeCliRunner(outline: outlineJson),
+      );
+
+      final result = await reg.executeTool('deep_search', {
+        'query': 'anything',
+      });
+      final data = jsonDecode(result) as Map<String, dynamic>;
+
+      expect(data['sources_searched'], contains('outline'));
+      final unavailable = data['sources_unavailable'] as List<dynamic>;
+      expect(unavailable, containsAll(['memory', 'kan']));
+    });
+
     test('gracefully degrades when retriever is null', () async {
       final reg = ToolRegistry();
-      final mcp = McpManager();
-      mcp.addServerForTesting(
-        'outline',
-        McpToolInfo(
-          name: 'outline_search',
-          description: 'Search Outline',
-          handler: (args) async => jsonEncode({
-            'data': [
-              {
-                'document': {
-                  'id': 'doc-1',
-                  'title': 'Test',
-                  'text': 'Content',
-                },
-              },
-            ],
-          }),
-        ),
-      );
       reg.setContext(const ToolContext(
         senderId: 'user-1',
         isAdmin: false,
@@ -443,7 +453,14 @@ void main() {
         isGroup: false,
       ));
       // No retriever — only Outline available.
-      registerMemoryTools(reg, FakePipeline(), null, mcp);
+      registerMemoryTools(
+        reg,
+        FakePipeline(),
+        null,
+        outlineApiKey: 'o',
+        outlineBaseUrl: 'https://outline.example/api',
+        cliRunner: fakeCliRunner(outline: outlineJson),
+      );
 
       final result = await reg.executeTool('deep_search', {
         'query': 'anything',
@@ -454,8 +471,7 @@ void main() {
       expect(data['sources_unavailable'], contains('memory'));
     });
 
-    test('handles MCP tool failure for one source', () async {
-      // Set up with a broken Outline handler from the start.
+    test('records a source in sources_failed when its CLI fails', () async {
       final reg = ToolRegistry();
       final ret = FakeRetriever(results: [
         const MemorySearchResult(
@@ -471,39 +487,24 @@ void main() {
           score: 0.8,
         ),
       ]);
-      final mcp = McpManager();
-      mcp.addServerForTesting(
-        'outline',
-        McpToolInfo(
-          name: 'outline_search',
-          description: 'Broken Outline',
-          handler: (args) async => throw Exception('Connection refused'),
-        ),
-      );
-      mcp.addServerForTesting(
-        'kan',
-        McpToolInfo(
-          name: 'kan_search',
-          description: 'Search Kan',
-          handler: (args) async => jsonEncode({
-            'data': [
-              {
-                'id': 'card-1',
-                'title': 'A card',
-                'description': 'Details',
-                'list': {'name': 'Backlog'},
-              },
-            ],
-          }),
-        ),
-      );
       reg.setContext(const ToolContext(
         senderId: 'user-1',
         isAdmin: false,
         chatId: 'chat-1',
         isGroup: true,
       ));
-      registerMemoryTools(reg, FakePipeline(), ret, mcp);
+      // Outline CLI fails; Kan succeeds; memory succeeds.
+      registerMemoryTools(
+        reg,
+        FakePipeline(),
+        ret,
+        outlineApiKey: 'o',
+        outlineBaseUrl: 'https://outline.example/api',
+        kanApiKey: 'k',
+        kanBaseUrl: 'https://kan.example/api/v1',
+        kanWorkspaceId: 'ws-1',
+        cliRunner: fakeCliRunner(kan: kanJson, failTools: {'outline'}),
+      );
 
       final result = await reg.executeTool('deep_search', {
         'query': 'test',
