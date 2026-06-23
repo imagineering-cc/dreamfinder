@@ -61,16 +61,26 @@ function sameOrigin(u, base) {
 }
 function resolveCollection(base, value, flag) {
   if (!value) return null;
-  if (/^https?:\/\//.test(value)) {
-    if (!sameOrigin(value, base)) {
-      fail(
-        `refusing cross-origin ${flag} URL (${value}); it must be on the ` +
-          `configured Radicale host (${base}). Pass a "<user>/<name>" path.`,
-      );
-    }
-    return value.replace(/\/?$/, '/');
+  // Canonicalize through the URL parser so `..`/`.` segments are normalized
+  // BEFORE the origin check (a raw string compare could be fooled by traversal
+  // that a downstream consumer later collapses) — Carnot, cage-match PR #115.
+  let u;
+  try {
+    u = /^https?:\/\//.test(value)
+        ? new URL(value)
+        : new URL(value.replace(/^\//, ''), base.replace(/\/?$/, '/'));
+  } catch {
+    fail(`invalid ${flag} value: ${value}`);
   }
-  return `${base}/${value.replace(/^\/|\/$/g, '')}/`;
+  if (!sameOrigin(u.href, base)) {
+    fail(
+      `refusing cross-origin ${flag} URL (${value}); it must be on the ` +
+        `configured Radicale host (${base}). Pass a "<user>/<name>" path.`,
+    );
+  }
+  // Server-side rights (Radicale is owner-only) remain the authz backstop for
+  // which principal/collection the authed user may actually touch.
+  return u.href.replace(/\/?$/, '/');
 }
 
 // Absolute URL (same-origin only) as-is; otherwise resolve a path against base.
@@ -171,8 +181,43 @@ function parseVEvents(ics) {
 function unescapeIcs(s) {
   return s.replace(/\\n/g, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
 }
+// Escape a value for an iCalendar/vCard property. CR and LF are BOTH folded to
+// the literal `\n` escape and stray C0 control chars are stripped — otherwise a
+// crafted --summary/--note/--location containing a raw CR (or LF) could inject
+// additional ICS/vCard property lines (Carnot, cage-match PR #115).
+function stripCtl(s) {
+  let o = "";
+  for (const ch of String(s)) {
+    const c = ch.codePointAt(0);
+    if (c >= 32 || c === 9 || c === 10 || c === 13) o += ch;
+  }
+  return o;
+}
 function escapeIcs(s) {
-  return String(s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+  return stripCtl(s)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r\n|\r|\n/g, '\\n');
+}
+// XML text escaper — used for DAV request bodies (displaynames etc.). Distinct
+// from escapeIcs: the grammar boundary is XML, not iCalendar.
+function escapeXml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+// Strip CR/LF/control chars from a single-line property value (e.g. RRULE).
+function sanitizeLine(s) {
+  let o = "";
+  for (const ch of String(s)) {
+    const c = ch.codePointAt(0);
+    if (c >= 32 || c === 9) o += ch;
+  }
+  return o;
 }
 
 // ISO/Date → "YYYYMMDDTHHMMSSZ" (UTC basic, for filters & UTC events).
@@ -272,7 +317,9 @@ function buildVEvent(opts) {
   lines.push(`SUMMARY:${escapeIcs(opts.summary)}`);
   if (opts.location) lines.push(`LOCATION:${escapeIcs(opts.location)}`);
   if (opts.description) lines.push(`DESCRIPTION:${escapeIcs(opts.description)}`);
-  if (opts.rrule) lines.push(`RRULE:${opts.rrule.replace(/^RRULE:/i, '')}`);
+  if (opts.rrule) {
+    lines.push(`RRULE:${sanitizeLine(opts.rrule.replace(/^RRULE:/i, ''))}`);
+  }
   lines.push('END:VEVENT', 'END:VCALENDAR');
   return { uid, ics: lines.join('\r\n') };
 }
@@ -309,7 +356,7 @@ async function mkcalendar(auth, opts) {
   const name = opts.name || 'Calendar';
   const body =
     '<?xml version="1.0"?><c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">' +
-    `<d:set><d:prop><d:displayname>${escapeIcs(name)}</d:displayname></d:prop></d:set></c:mkcalendar>`;
+    `<d:set><d:prop><d:displayname>${escapeXml(name)}</d:displayname></d:prop></d:set></c:mkcalendar>`;
   await dav('MKCALENDAR', url, auth, { body, contentType: 'application/xml' });
   return { calendar: url, name, status: 'created' };
 }
@@ -387,7 +434,7 @@ async function mkaddressbook(auth, opts) {
   const body =
     '<?xml version="1.0"?><d:mkcol xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">' +
     '<d:set><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>' +
-    `<d:displayname>${escapeIcs(name)}</d:displayname></d:prop></d:set></d:mkcol>`;
+    `<d:displayname>${escapeXml(name)}</d:displayname></d:prop></d:set></d:mkcol>`;
   await dav('MKCOL', url, auth, { body, contentType: 'application/xml' });
   return { addressbook: url, name, status: 'created' };
 }
