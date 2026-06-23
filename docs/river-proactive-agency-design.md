@@ -1,0 +1,118 @@
+# River's Proactive Agency — Design Direction
+
+> **Status:** design direction, NOT a spec. Captures a 2026-06-23 architectural
+> redirect (Nick): River's proactive behaviours should *emerge from its agent
+> loop on a heartbeat*, over a shared safety substrate — not accrete as bespoke
+> scheduler crons. And River's *config + deploy* should be dreamfinder-owned (via
+> cd-bus self-deploy), not infra-coupled.
+>
+> Related: this repo's `community-spark-design.md` (the first proactive behaviour,
+> shipped gated in #110); claude-tasks #21 (cd-bus self-deploy), #28 (Community
+> Spark PR2 — reframed below).
+
+## 1. The smell
+
+River has three proactive behaviours, each a hardcoded method in
+`lib/src/cron/scheduler.dart`:
+
+- `_maybeSendEventReminder` — Saturday 14:55 "starts in 5 minutes"
+- `_sendTaskRadar` — jittered task suggestions to workspace groups
+- `_maybeSparkCommunity` — community ideation to the hub (#110)
+
+Each carries its own copy of the same scaffolding: a jitter/interval timer, an
+in-flight latch, `bot_metadata` dedup, an agent-compose call, skip-if-empty.
+**Every new "River does something unprompted" = another `_maybeX` method + another
+copy of the boilerplate.** That's accretion, and it's the wrong abstraction for
+what River is.
+
+(How we got here: Community Spark was built by pattern-matching to its two cron
+siblings — the path was already carved, so the third copy felt natural. The
+third copy is exactly when the abstraction should have been questioned.)
+
+## 2. What River is
+
+River is a **familiar** (companion, not tool) in service of producing egregores.
+Its proactive behaviour should be an expression of *agency* — judgement about what
+a moment calls for — not a set of pre-written triggers firing on the clock. A cron
+knows *when*; it cannot know *whether this is the right moment*, or choose among
+"remind / spark / nudge / stay quiet" based on what's actually happening in the
+community right now.
+
+## 3. The reframe: agent-loop-on-a-heartbeat
+
+Replace N bespoke crons with **one proactive heartbeat**:
+
+1. The scheduler fires a periodic **heartbeat** — the only scheduled thing — "River,
+   you have a moment."
+2. River's **agent loop** runs with full context: memory, calendar/events, tracked
+   repos, recent community activity, time-since-last-action, what it has recently
+   done.
+3. River **decides**, using tools, whether to act and how — post an event reminder,
+   spark an idea, nudge a stale card, or stay quiet. The behaviour is a *choice*,
+   not a *branch*.
+4. The **safety rails** (§4) gate any outward action regardless of what River chose.
+
+The scheduler shrinks to *heartbeat + rails*. Behaviours become prompts / tools /
+policies, not methods. The bias must be toward **restraint** — Community Spark's
+hardest-won lesson is that publicly-visible "crickets" is worse than silence, so
+"stay quiet" must be the easy default, not a fallthrough.
+
+## 4. The safety substrate is already built (and survives)
+
+#110's hard part was never the timer — it was posting to an **irreversible
+cross-platform bus** (hub → Telegram/Signal/WhatsApp/Discord, no unsend) *safely*.
+Those mechanisms are reusable rails, independent of *who* decided to act:
+
+- **single-pending invariant** — at most one pending draft, structurally enforced
+  (partial unique index)
+- **gated approval** — draft → human `send` → publish, deterministic + LLM-free
+- **publish CAS** — no double-fan to the bus
+- **engagement circuit-breaker** — auto-pause on dead air (#28)
+
+In the agentic model these become **the policy layer every outward action passes
+through**: River's agency decides *what*; the rails decide *whether it's allowed
+out*. So #110 is **not throwaway** — it's the guardrail River's agency stands on.
+What gets deleted is the cron *driver*, not the safety.
+
+## 5. Design tensions (the real work)
+
+- **Emergence vs predictability.** A cron is predictable (you know exactly
+  when/what); agency is alive but harder to reason about. The human gate (Phase 1)
+  is what makes emergence safe to *experiment* with.
+- **Time-critical floor.** Some behaviours have hard timing (the "starts in 5
+  minutes" reminder). A heartbeat + agent judgement could miss a deadline. Likely
+  answer: a thin **deterministic floor** for time-critical sends, agency for
+  everything discretionary.
+- **How does River decide?** The decision prompt, the context it's handed, and how
+  it weighs act-vs-stay-quiet (restraint-biased). This is the crux, not the plumbing.
+- **Cost.** A full agent-loop heartbeat is heavier than a cron check — cadence +
+  cheap pre-filters matter (don't wake the full brain every minute).
+- **Convergence path.** Do event-reminder/radar migrate into the heartbeat, or
+  coexist? Probably incremental: build the heartbeat for *discretionary* behaviours
+  (spark) first; leave time-critical crons until the floor is designed.
+
+## 6. Config + deploy ownership (#1 of the redirect)
+
+River's config (incl. `COMMUNITY_SPARK_*`) is currently generated by infra's
+`deploy-to.sh` into a `dreamfinder/.env`. **Wrong owner.** This folds into the
+cd-bus self-deploy migration (claude-tasks #21): when dreamfinder builds its own
+image and owns its `deploy/oci` (the `nickmeinhold/downstream` #291 precedent), it
+owns its secrets/env too; infra keeps only the Caddy route. **Config ownership and
+deploy ownership move together** — they're one migration, not two.
+
+## 7. Relationship to shipped / tracked work
+
+- **#110 (Community Spark, gated, merged, inert):** keep. It's the rails + a working
+  gated behaviour. Its `_maybeSparkCommunity` cron is the *first candidate to
+  migrate onto the heartbeat* once that exists.
+- **#28 (PR2 autonomous + circuit-breaker):** reframe. The circuit-breaker belongs
+  to the rails (keep). "Autonomous mode" stops being a `mode` flag and becomes
+  "River's agency decides" — gated by the same rails.
+- **#21 (cd-bus self-deploy):** carries config ownership (§6) too.
+
+## 8. Not now
+
+This is a direction, not a spec. The next step is designing the **heartbeat + the
+decision prompt + how the rails become a policy layer** — with Nick's vision of
+River's agency in the room. The interesting question underneath all of this is
+simply: *what is River's agency, and how does a familiar choose to speak?*
