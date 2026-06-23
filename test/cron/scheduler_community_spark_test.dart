@@ -180,4 +180,123 @@ void main() {
       expect(sent, hasLength(1));
     });
   });
+
+  group('approval handler', () {
+    test('admin "send" publishes the one pending draft to the hub', () async {
+      queries.createSparkDraft(draftId: 'd1', text: 'who wants in? ✨', now: t0);
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent);
+
+      final handled = await s.maybeHandleSparkApproval(
+        roomId: reviewRoom,
+        isAdmin: true,
+        text: 'send',
+        now: t0.add(const Duration(minutes: 5)),
+      );
+
+      expect(handled, isTrue);
+      // Posted to the hub (and a confirmation to the review room).
+      final hubPosts = sent.where((e) => e.key == hubRoom).toList();
+      expect(hubPosts, hasLength(1));
+      expect(hubPosts.single.value, 'who wants in? ✨');
+      // Draft is no longer pending → the slot is free.
+      expect(queries.getPendingSparkDraft(t0.add(const Duration(minutes: 5))),
+          isNull);
+    });
+
+    test('a bare "send" with no pending draft publishes nothing', () async {
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent);
+
+      final handled = await s.maybeHandleSparkApproval(
+        roomId: reviewRoom,
+        isAdmin: true,
+        text: 'send',
+        now: t0,
+      );
+
+      expect(handled, isTrue); // consumed
+      expect(sent.where((e) => e.key == hubRoom), isEmpty); // but nothing posted
+    });
+
+    test('a stale pending draft cannot be approved', () async {
+      queries.createSparkDraft(draftId: 'old', text: 'stale spark', now: t0);
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent);
+
+      // 25h later — past the 24h stale window.
+      final handled = await s.maybeHandleSparkApproval(
+        roomId: reviewRoom,
+        isAdmin: true,
+        text: 'send',
+        now: t0.add(const Duration(hours: 25)),
+      );
+
+      expect(handled, isTrue); // consumed
+      expect(sent.where((e) => e.key == hubRoom), isEmpty); // nothing published
+    });
+
+    test('non-admin "send" is not handled and publishes nothing', () async {
+      queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent);
+
+      final handled = await s.maybeHandleSparkApproval(
+        roomId: reviewRoom,
+        isAdmin: false,
+        text: 'send',
+        now: t0,
+      );
+
+      expect(handled, isFalse); // falls through to the agent loop
+      expect(sent, isEmpty);
+      expect(queries.getPendingSparkDraft(t0), isNotNull); // still pending
+    });
+
+    test('"send" outside the review room is not handled', () async {
+      queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent);
+
+      final handled = await s.maybeHandleSparkApproval(
+        roomId: '!some-other-room:imagineering.cc',
+        isAdmin: true,
+        text: 'send',
+        now: t0,
+      );
+
+      expect(handled, isFalse);
+      expect(sent, isEmpty);
+    });
+
+    test('ordinary chat in the review room is not treated as approval', () async {
+      queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent);
+
+      final handled = await s.maybeHandleSparkApproval(
+        roomId: reviewRoom,
+        isAdmin: true,
+        text: 'looks good, maybe later',
+        now: t0,
+      );
+
+      expect(handled, isFalse); // not an exact approval command
+      expect(queries.getPendingSparkDraft(t0), isNotNull);
+    });
+
+    test('a second approval does not double-publish (CAS)', () async {
+      queries.createSparkDraft(draftId: 'd1', text: 'spark', now: t0);
+      final sent = <MapEntry<String, String>>[];
+      final s = buildSpark(sent);
+      final at = t0.add(const Duration(minutes: 1));
+
+      await s.maybeHandleSparkApproval(
+          roomId: reviewRoom, isAdmin: true, text: 'send', now: at);
+      await s.maybeHandleSparkApproval(
+          roomId: reviewRoom, isAdmin: true, text: 'send', now: at);
+
+      expect(sent.where((e) => e.key == hubRoom), hasLength(1));
+    });
+  });
 }

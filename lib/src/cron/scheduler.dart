@@ -811,6 +811,77 @@ class Scheduler {
     }
   }
 
+  /// Handles a potential Community Spark approval in the private review room.
+  ///
+  /// Deterministic and **LLM-free** (the safety property: a tool-capable agent
+  /// fed "send" must never recompose or publish). Returns true iff this call
+  /// *consumed* the message — the caller should then skip the agent loop.
+  ///
+  /// It publishes only when: [roomId] is the review room, [isAdmin] is true,
+  /// [text] is an exact approval command, and exactly one non-stale pending
+  /// draft exists. The single-pending invariant makes "the draft" unambiguous,
+  /// so no event-id correlation is needed. The publish CAS gates the
+  /// irreversible hub post — only the winning transition posts. A bare "send"
+  /// with no pending draft is consumed but publishes nothing.
+  Future<bool> maybeHandleSparkApproval({
+    required String roomId,
+    required bool isAdmin,
+    required String text,
+    required DateTime now,
+  }) async {
+    final reviewRoom = communitySparkReviewRoomId?.trim();
+    if (reviewRoom == null || reviewRoom.isEmpty) return false;
+    if (roomId != reviewRoom) return false;
+    if (!isAdmin) return false;
+    if (!_isSparkApproval(text)) return false;
+
+    final hubRoom = communitySparkHubRoomId?.trim();
+    if (hubRoom == null || hubRoom.isEmpty) return false; // nowhere to publish
+
+    // Expire stale drafts, then require exactly one fresh pending draft.
+    queries.expireStaleDrafts(now, staleAfter: _sparkDraftStale);
+    final draft =
+        queries.getPendingSparkDraft(now, staleAfter: _sparkDraftStale);
+    if (draft == null) {
+      await sendMessage(
+        reviewRoom,
+        "No pending spark to publish — it may have expired. I'll draft a new "
+        'one when something sparks.',
+      );
+      return true; // consumed, published nothing — never recompose
+    }
+
+    // CAS publish BEFORE the hub post: prevents a second process/admin from
+    // double-posting to the irreversible bus. A rare post-failure after the CAS
+    // loses one spark (marked published, recoverable) — strictly preferable to
+    // double-fanning to four platforms.
+    if (!queries.publishSparkDraft(draft.draftId, now)) {
+      return true; // a concurrent approval already won
+    }
+    try {
+      await sendMessage(hubRoom, draft.text);
+      await sendMessage(reviewRoom, '✅ Published to the hub.');
+    } on Exception catch (e) {
+      await sendMessage(
+        reviewRoom,
+        '⚠️ Approved but the hub post failed: $e. The draft is marked '
+        'published; re-draft if needed.',
+      );
+    }
+    return true;
+  }
+
+  /// Exact approval commands (trimmed, lowercased). Exact-match — not contains —
+  /// so ordinary chat in the review room never accidentally publishes.
+  static bool _isSparkApproval(String text) {
+    final t = text.trim().toLowerCase();
+    return t == 'send' ||
+        t == 'send it' ||
+        t == 'approve' ||
+        t == 'publish' ||
+        t == '👍';
+  }
+
   /// Builds the community-ideation compose prompt, injecting [recent] published
   /// sparks for anti-repetition.
   static String _sparkComposePrompt(List<String> recent) {

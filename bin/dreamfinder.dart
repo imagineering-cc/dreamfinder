@@ -575,6 +575,9 @@ Future<void> main() async {
     consolidator: memoryConsolidator,
     triggerDream: dreamCycle.trigger,
     eventReminderRoomId: env.eventReminderRoomId,
+    communitySparkReviewRoomId: env.communitySparkReviewRoomId,
+    communitySparkHubRoomId: env.communitySparkRoomId,
+    communitySparkMode: env.communitySparkMode,
     composeViaAgent: (groupId, taskDescription) async {
       final input = AgentInput(
         text: taskDescription,
@@ -889,6 +892,20 @@ Future<void> main() async {
 
         try {
           final senderIsAdmin = env.isAdmin(event.sender);
+
+          // Community Spark approval — deterministic and LLM-free. An admin
+          // "send" in the private review room publishes the one pending draft
+          // to the hub; we then skip the agent loop so the command is never
+          // fed to a tool-capable agent (which could recompose/publish).
+          if (await scheduler.maybeHandleSparkApproval(
+            roomId: event.roomId,
+            isAdmin: senderIsAdmin,
+            text: text,
+            now: DateTime.now(),
+          )) {
+            continue;
+          }
+
           toolRegistry.setContext(ToolContext(
             senderId: event.sender,
             isAdmin: senderIsAdmin,
