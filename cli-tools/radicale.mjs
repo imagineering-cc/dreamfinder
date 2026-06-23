@@ -210,6 +210,20 @@ function escapeXml(s) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 }
+// Validate an IANA timezone. sanitizeLine alone is insufficient here: `;`/`:`
+// are TZID-parameter-significant, so a crafted --tz could alter parameter
+// parsing (Carnot, cage-match PR #115 r3). Intl rejects any non-zone string.
+function validateTz(tz) {
+  const t = sanitizeLine(String(tz));
+  try {
+    // Throws RangeError on an unrecognized zone (incl. anything with ;/: /spaces).
+    new Intl.DateTimeFormat('en-US', { timeZone: t });
+  } catch {
+    fail(`invalid --tz '${tz}': expected an IANA timezone like Australia/Melbourne`);
+  }
+  return t;
+}
+
 // Strip CR/LF/control chars from a single-line property value (e.g. RRULE).
 function sanitizeLine(s) {
   let o = "";
@@ -301,7 +315,7 @@ function buildVEvent(opts) {
   // sanitize to single-line tokens so a crafted --uid/--tz can't inject extra
   // ICS lines (Carnot, cage-match PR #115; same family as the CR/LF fix).
   const uid = sanitizeLine(opts.uid || `radicale-cli-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
-  const tz = opts.tz ? sanitizeLine(opts.tz) : undefined;
+  const tz = opts.tz ? validateTz(opts.tz) : undefined;
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
