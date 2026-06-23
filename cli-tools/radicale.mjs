@@ -1,0 +1,377 @@
+#!/usr/bin/env node
+// radicale.mjs — CalDAV CLI for Radicale (zero-dependency, Node 18+).
+//
+// Wraps Radicale's CalDAV API so calendar ops are first-class instead of
+// hand-curled PROPFIND/REPORT/PUT/MKCALENDAR. Mirrors the kan/outline CLI
+// pattern (single self-contained .mjs, no npm deps, --site routing, --help).
+//
+// Recurrence + timezone expansion is done SERVER-SIDE via RFC 4791
+// `REPORT calendar-query` with `<C:expand>` — Radicale returns concrete UTC
+// instances, so this CLI never reimplements an iCalendar recurrence engine.
+//
+// AUTH (per site, env-driven):
+//   RADICALE_<SITE>_USERNAME / RADICALE_<SITE>_PASSWORD   (site-specific)
+//   RADICALE_USERNAME / RADICALE_PASSWORD                 (generic fallback)
+//   RADICALE_BASE_URL                                     (overrides --site base)
+// River's container already sets the generic trio, so it works unmodified.
+//
+// Radicale rights note: only `nick` + `pm-agent` users exist; pm-agent has
+// RWrw on /nick/ via a shared rule. A path the auth'd user can't read returns
+// a silent 403 — pass the FULL collection URL you have rights to.
+
+import { parseArgs } from 'node:util';
+
+const SITES = {
+  imagineering: 'https://dav.imagineering.cc',
+  xdeca: 'https://dav.xdeca.com',
+};
+
+// ── config / auth ──────────────────────────────────────────────────────────
+function resolveAuth(site) {
+  const S = site.toUpperCase();
+  const base =
+    process.env.RADICALE_BASE_URL || SITES[site] || SITES.imagineering;
+  const username =
+    process.env[`RADICALE_${S}_USERNAME`] || process.env.RADICALE_USERNAME;
+  const password =
+    process.env[`RADICALE_${S}_PASSWORD`] || process.env.RADICALE_PASSWORD;
+  if (!username || !password) {
+    fail(
+      `Missing credentials. Set RADICALE_${S}_USERNAME/PASSWORD or ` +
+        `RADICALE_USERNAME/PASSWORD in the environment.`,
+    );
+  }
+  return { base: base.replace(/\/$/, ''), username, password };
+}
+
+function authHeader({ username, password }) {
+  return 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+}
+
+// Absolute URL as-is; otherwise resolve a /user/calendar/ path against base.
+function calUrl(base, calendar) {
+  if (!calendar) return null;
+  if (/^https?:\/\//.test(calendar)) return calendar.replace(/\/?$/, '/');
+  return `${base}/${calendar.replace(/^\/|\/$/g, '')}/`;
+}
+
+// ── CalDAV transport ───────────────────────────────────────────────────────
+async function dav(method, url, auth, { body, depth, contentType } = {}) {
+  const headers = { Authorization: authHeader(auth) };
+  if (depth != null) headers.Depth = String(depth);
+  if (contentType) headers['Content-Type'] = contentType;
+  let res;
+  try {
+    res = await fetch(url, { method, headers, body });
+  } catch (e) {
+    fail(`network error: ${e.message}`);
+  }
+  const text = await res.text();
+  if (res.status === 403) {
+    fail(
+      `403 Forbidden for ${url} — the authed user lacks rights to this ` +
+        `collection (Radicale is owner-only; pm-agent only reaches its own ` +
+        `+ /nick/). Check the path.`,
+    );
+  }
+  if (res.status >= 400) {
+    fail(`HTTP ${res.status} ${res.statusText} for ${method} ${url}\n${text}`);
+  }
+  return { status: res.status, text };
+}
+
+// ── tiny iCal helpers ──────────────────────────────────────────────────────
+// Unfold RFC 5545 line folding (continuation lines start with space/tab).
+function unfold(ics) {
+  return ics.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+}
+
+// Compute the UTC instant for a wall-clock time in an IANA zone (zero-dep).
+// Two-pass offset trick: format a UTC guess in the zone, measure the skew.
+function wallToUtc(y, mo, d, hh, mm, ss, tz) {
+  const guess = Date.UTC(y, mo - 1, d, hh, mm, ss);
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const p = Object.fromEntries(dtf.formatToParts(new Date(guess)).map((x) => [x.type, x.value]));
+  const asSeenInTz = Date.UTC(+p.year, +p.month - 1, +p.day, +(p.hour % 24), +p.minute, +p.second);
+  return new Date(guess - (asSeenInTz - guess));
+}
+
+// "20260627T050000Z" | "20260627T150000" (+ optional tz) | "20260627" → ISO 8601 UTC.
+function icalToIso(v, tz) {
+  if (!v) return null;
+  const m = v.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
+  if (!m) return v;
+  const [, y, mo, d, hh = '00', mm = '00', ss = '00', z] = m;
+  if (z) return `${y}-${mo}-${d}T${hh}:${mm}:${ss}.000Z`; // already UTC
+  if (tz) return wallToUtc(+y, +mo, +d, +hh, +mm, +ss, tz).toISOString(); // TZID → UTC
+  // Floating (no Z, no TZID) — no zone info exists; surface as UTC.
+  return `${y}-${mo}-${d}T${hh}:${mm}:${ss}.000Z`;
+}
+
+// Parse VEVENT blocks out of an iCalendar payload (handles ;PARAM on keys).
+function parseVEvents(ics) {
+  const text = unfold(ics);
+  const events = [];
+  const re = /BEGIN:VEVENT([\s\S]*?)END:VEVENT/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const ev = {};
+    for (const line of m[1].split(/\r?\n/)) {
+      const idx = line.indexOf(':');
+      if (idx === -1) continue;
+      const rawKey = line.slice(0, idx);
+      const val = line.slice(idx + 1).trim();
+      const key = rawKey.split(';')[0].toUpperCase();
+      const tzm = rawKey.match(/TZID=([^;]+)/i);
+      const tz = tzm ? tzm[1] : undefined;
+      if (!val) continue;
+      switch (key) {
+        case 'UID': ev.uid = val; break;
+        case 'SUMMARY': ev.summary = unescapeIcs(val); break;
+        case 'DESCRIPTION': ev.description = unescapeIcs(val); break;
+        case 'LOCATION': ev.location = unescapeIcs(val); break;
+        case 'DTSTART': ev.start = icalToIso(val, tz); break;
+        case 'DTEND': ev.end = icalToIso(val, tz); break;
+        case 'RRULE': ev.rrule = val; break;
+      }
+    }
+    if (ev.start) events.push(ev);
+  }
+  events.sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  return events;
+}
+
+function unescapeIcs(s) {
+  return s.replace(/\\n/g, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+}
+function escapeIcs(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+
+// ISO/Date → "YYYYMMDDTHHMMSSZ" (UTC basic, for filters & UTC events).
+function toIcalUtc(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) fail(`invalid date: ${iso}`);
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+// ISO/wall → "YYYYMMDDTHHMMSS" (floating, for TZID events — no Z).
+function toIcalFloating(iso) {
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) fail(`invalid local date-time: ${iso} (use YYYY-MM-DDTHH:MM)`);
+  const [, y, mo, d, hh, mm, ss = '00'] = m;
+  return `${y}${mo}${d}T${hh}${mm}${ss}`;
+}
+
+// ── XML helpers (regex-level; Radicale's responses are simple/stable) ────────
+function xmlResponses(xml) {
+  return [...xml.matchAll(/<[^:>]*:?response\b[\s\S]*?<\/[^:>]*:?response>/gi)].map(
+    (r) => r[0],
+  );
+}
+function xmlTag(block, tag) {
+  const m = block.match(new RegExp(`<[^:>]*:?${tag}\\b[^>]*>([\\s\\S]*?)</[^:>]*:?${tag}>`, 'i'));
+  return m ? m[1].trim() : null;
+}
+function xmlHref(block) {
+  const m = block.match(/<[^:>]*:?href\b[^>]*>([\s\S]*?)<\/[^:>]*:?href>/i);
+  return m ? m[1].trim() : null;
+}
+
+// ── verbs ──────────────────────────────────────────────────────────────────
+async function listCalendars(auth, opts) {
+  const user = opts.user || auth.username;
+  const url = `${auth.base}/${user}/`;
+  const body =
+    '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">' +
+    '<d:prop><d:resourcetype/><d:displayname/><c:supported-calendar-component-set/></d:prop></d:propfind>';
+  const { text } = await dav('PROPFIND', url, auth, { body, depth: 1, contentType: 'application/xml' });
+  const cals = [];
+  for (const r of xmlResponses(text)) {
+    const href = xmlHref(r);
+    if (!href || /calendar/i.test(xmlTag(r, 'resourcetype') || '') === false) {
+      // keep only calendar collections
+      if (!/<[^:>]*:?calendar\b/i.test(r)) continue;
+    }
+    cals.push({ url: href, name: xmlTag(r, 'displayname') || '' });
+  }
+  return cals.filter((c) => c.url && !c.url.replace(/\/$/, '').endsWith(`/${user}`));
+}
+
+async function listEvents(auth, opts) {
+  const url = calUrl(auth.base, opts.calendar);
+  if (!url) fail('--calendar <url-or-path> is required for list-events');
+  const from = opts.from ? new Date(opts.from) : new Date();
+  const to = opts.to
+    ? new Date(opts.to)
+    : new Date(Date.now() + (Number(opts.days || 90)) * 864e5);
+  const s = toIcalUtc(from.toISOString());
+  const e = toIcalUtc(to.toISOString());
+  const body =
+    '<?xml version="1.0"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">' +
+    `<d:prop><c:calendar-data><c:expand start="${s}" end="${e}"/></c:calendar-data></d:prop>` +
+    `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+    `<c:time-range start="${s}" end="${e}"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`;
+  const { text } = await dav('REPORT', url, auth, { body, depth: 1, contentType: 'application/xml' });
+  // Each <response> carries an expanded VEVENT instance in its calendar-data.
+  const events = parseVEvents(text);
+  return events.map((e2) => ({
+    uid: e2.uid,
+    summary: e2.summary || '',
+    description: e2.description || '',
+    start: e2.start,
+    end: e2.end || null,
+    location: e2.location || '',
+  }));
+}
+
+function buildVEvent(opts) {
+  const uid = opts.uid || `radicale-cli-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const tz = opts.tz;
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//imagineering//radicale-cli//EN',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${toIcalUtc(new Date().toISOString())}`,
+  ];
+  if (tz) {
+    lines.push(`DTSTART;TZID=${tz}:${toIcalFloating(opts.start)}`);
+    if (opts.end) lines.push(`DTEND;TZID=${tz}:${toIcalFloating(opts.end)}`);
+  } else {
+    lines.push(`DTSTART:${toIcalUtc(opts.start)}`);
+    if (opts.end) lines.push(`DTEND:${toIcalUtc(opts.end)}`);
+  }
+  lines.push(`SUMMARY:${escapeIcs(opts.summary)}`);
+  if (opts.location) lines.push(`LOCATION:${escapeIcs(opts.location)}`);
+  if (opts.description) lines.push(`DESCRIPTION:${escapeIcs(opts.description)}`);
+  if (opts.rrule) lines.push(`RRULE:${opts.rrule.replace(/^RRULE:/i, '')}`);
+  lines.push('END:VEVENT', 'END:VCALENDAR');
+  return { uid, ics: lines.join('\r\n') };
+}
+
+async function addEvent(auth, opts) {
+  const url = calUrl(auth.base, opts.calendar);
+  if (!url) fail('--calendar is required');
+  if (!opts.summary || !opts.start) fail('--summary and --start are required');
+  const { uid, ics } = buildVEvent(opts);
+  await dav('PUT', `${url}${encodeURIComponent(uid)}.ics`, auth, {
+    body: ics,
+    contentType: 'text/calendar; charset=utf-8',
+  });
+  return { uid, calendar: url, status: 'created' };
+}
+
+async function deleteEvent(auth, opts) {
+  const url = calUrl(auth.base, opts.calendar);
+  if (!url || !opts.uid) fail('--calendar and --uid are required');
+  await dav('DELETE', `${url}${encodeURIComponent(opts.uid)}.ics`, auth, {});
+  return { uid: opts.uid, status: 'deleted' };
+}
+
+async function getEvent(auth, opts) {
+  const url = calUrl(auth.base, opts.calendar);
+  if (!url || !opts.uid) fail('--calendar and --uid are required');
+  const { text } = await dav('GET', `${url}${encodeURIComponent(opts.uid)}.ics`, auth, {});
+  return parseVEvents(text)[0] || null;
+}
+
+async function mkcalendar(auth, opts) {
+  const url = calUrl(auth.base, opts.calendar);
+  if (!url) fail('--calendar is required');
+  const name = opts.name || 'Calendar';
+  const body =
+    '<?xml version="1.0"?><c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">' +
+    `<d:set><d:prop><d:displayname>${escapeIcs(name)}</d:displayname></d:prop></d:set></c:mkcalendar>`;
+  await dav('MKCALENDAR', url, auth, { body, contentType: 'application/xml' });
+  return { calendar: url, name, status: 'created' };
+}
+
+// ── CLI plumbing ─────────────────────────────────────────────────────────────
+function fail(msg) {
+  process.stderr.write(`radicale: ${msg}\n`);
+  process.exit(1);
+}
+
+const HELP = `radicale — CalDAV CLI for Radicale
+
+USAGE
+  radicale <command> [--site imagineering|xdeca] [options]
+
+COMMANDS
+  list-calendars  [--user <name>]
+  list-events     --calendar <url|path> [--from <ISO>] [--to <ISO>] [--days N]
+  add-event       --calendar <url|path> --summary <s> --start <ISO|local>
+                  [--end <ISO|local>] [--tz <IANA>] [--location <l>]
+                  [--description <d>] [--rrule <RRULE>] [--uid <id>]
+  delete-event    --calendar <url|path> --uid <id>
+  get-event       --calendar <url|path> --uid <id>
+  mkcalendar      --calendar <url|path> [--name <name>]
+
+NOTES
+  * list-events expands recurrence + timezones SERVER-SIDE (RFC 4791 expand);
+    output is JSON [{uid,summary,description,start,end,location}] in UTC.
+  * --tz makes add-event use a floating wall-clock with TZID (e.g.
+    --start 2026-06-27T15:00 --tz Australia/Melbourne). Without --tz, --start
+    is parsed as an absolute instant and stored as UTC.
+  * --calendar accepts a full URL or a "<user>/<calendar>" path under the site.
+
+AUTH (env)
+  RADICALE_<SITE>_USERNAME/PASSWORD  or  RADICALE_USERNAME/PASSWORD
+  RADICALE_BASE_URL  (overrides the --site base URL)
+
+EXAMPLES
+  radicale list-events --calendar nick/imagineering-events
+  radicale add-event --calendar nick/imagineering-events --summary "Build session" \\
+    --start 2026-07-04T15:00 --end 2026-07-04T18:00 --tz Australia/Melbourne \\
+    --location world.imagineering.cc
+`;
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const cmd = argv[0];
+  if (!cmd || cmd === '--help' || cmd === '-h' || cmd === 'help') {
+    process.stdout.write(HELP);
+    process.exit(cmd ? 0 : 1);
+  }
+  const { values } = parseArgs({
+    args: argv.slice(1),
+    options: {
+      site: { type: 'string', default: 'imagineering' },
+      calendar: { type: 'string' },
+      user: { type: 'string' },
+      from: { type: 'string' },
+      to: { type: 'string' },
+      days: { type: 'string' },
+      summary: { type: 'string' },
+      start: { type: 'string' },
+      end: { type: 'string' },
+      tz: { type: 'string' },
+      location: { type: 'string' },
+      description: { type: 'string' },
+      rrule: { type: 'string' },
+      uid: { type: 'string' },
+      name: { type: 'string' },
+    },
+    allowPositionals: true,
+  });
+  const auth = resolveAuth(values.site);
+  const verbs = {
+    'list-calendars': listCalendars,
+    'list-events': listEvents,
+    'add-event': addEvent,
+    'delete-event': deleteEvent,
+    'get-event': getEvent,
+    mkcalendar,
+  };
+  const fn = verbs[cmd];
+  if (!fn) fail(`unknown command: ${cmd} (try --help)`);
+  const out = await fn(auth, values);
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+}
+
+main().catch((e) => fail(e.stack || e.message));

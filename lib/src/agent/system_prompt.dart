@@ -27,7 +27,8 @@ class CalendarEvent {
     this.description,
   });
 
-  /// Parses a calendar event from the JSON returned by the Radicale MCP server.
+  /// Parses a calendar event from the JSON returned by the radicale CLI's
+  /// `list-events` (`[{uid,summary,description,start,end,location}]`, UTC).
   factory CalendarEvent.fromJson(Map<String, dynamic> json) {
     return CalendarEvent(
       summary: json['summary'] as String? ?? '(untitled)',

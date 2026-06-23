@@ -84,6 +84,16 @@ const _outlineAdminSubcommands = <String>{
   'raw',
 };
 
+/// Radicale subcommands that WRITE to the shared calendar. Reads
+/// (list-calendars, list-events, get-event) stay open to any member; mutating
+/// the team calendar (creating/deleting events, creating calendars) is
+/// admin-gated to match the "everyone reads, admins restructure" posture.
+const _radicaleAdminSubcommands = <String>{
+  'add-event',
+  'delete-event',
+  'mkcalendar',
+};
+
 /// True if [args] sets an elevated invite role (`--role admin`). Onboarding a
 /// plain member is open; minting an admin is not.
 bool _invitesAdminRole(List<String> args) {
@@ -102,6 +112,9 @@ bool _invitesAdminRole(List<String> args) {
 /// Whether [subcommand] of [tool] (with [args]) needs an admin sender.
 bool _requiresAdmin(String tool, String subcommand, List<String> args) {
   if (tool == 'kan' && _kanAdminSubcommands.contains(subcommand)) return true;
+  if (tool == 'radicale' && _radicaleAdminSubcommands.contains(subcommand)) {
+    return true;
+  }
   if (tool == 'outline') {
     if (_outlineAdminSubcommands.contains(subcommand)) return true;
     // Permanent (trash-bypassing) deletion is irreversible — admin only.
@@ -139,6 +152,9 @@ void registerCliTools(
   String? kanBaseUrl,
   String? outlineApiKey,
   String? outlineBaseUrl,
+  String? radicaleBaseUrl,
+  String? radicaleUsername,
+  String? radicalePassword,
 }) {
   registry.registerCustomTool(
     CustomToolDef(
@@ -149,7 +165,7 @@ void registerCliTools(
         'properties': <String, dynamic>{
           'tool': <String, dynamic>{
             'type': 'string',
-            'enum': <String>['kan', 'outline'],
+            'enum': <String>['kan', 'outline', 'radicale'],
             'description': 'Which CLI to run.',
           },
           'args': <String, dynamic>{
@@ -157,10 +173,11 @@ void registerCliTools(
             'items': <String, dynamic>{'type': 'string'},
             'description': 'Subcommand and flags as an argv list, e.g. '
                 '["create-card","--list-id","abc123def456","--title",'
-                '"Plan the offsite"]. Each flag and each value is its own '
-                'array element; values may contain spaces. Pass '
-                '["<subcommand>","--help"] to discover a subcommand\'s '
-                'flags.',
+                '"Plan the offsite"] or '
+                '["list-events","--calendar","nick/imagineering-events"]. '
+                'Each flag and each value is its own array element; values may '
+                'contain spaces. Pass ["<subcommand>","--help"] to discover a '
+                'subcommand\'s flags.',
           },
         },
         'required': <String>['tool', 'args'],
@@ -174,6 +191,9 @@ void registerCliTools(
         kanBaseUrl: kanBaseUrl,
         outlineApiKey: outlineApiKey,
         outlineBaseUrl: outlineBaseUrl,
+        radicaleBaseUrl: radicaleBaseUrl,
+        radicaleUsername: radicaleUsername,
+        radicalePassword: radicalePassword,
       ),
     ),
   );
@@ -186,10 +206,14 @@ Future<String> _runCli(
   String? kanBaseUrl,
   String? outlineApiKey,
   String? outlineBaseUrl,
+  String? radicaleBaseUrl,
+  String? radicaleUsername,
+  String? radicalePassword,
 }) async {
   final tool = args['tool'] as String?;
-  if (tool != 'kan' && tool != 'outline') {
-    return _err('Unknown tool: ${tool ?? "(null)"}. Allowed: kan, outline.');
+  if (tool != 'kan' && tool != 'outline' && tool != 'radicale') {
+    return _err(
+        'Unknown tool: ${tool ?? "(null)"}. Allowed: kan, outline, radicale.');
   }
 
   final rawArgs = args['args'];
@@ -218,8 +242,9 @@ Future<String> _runCli(
   }
 
   // --- Admin gate (per-subcommand) ---
-  // `tool` is guaranteed "kan" or "outline" by the guard above; the `!`
-  // satisfies the analyzer (equality-with-literal doesn't promote nullability).
+  // `tool` is guaranteed "kan", "outline", or "radicale" by the guard above;
+  // the `!` satisfies the analyzer (equality-with-literal doesn't promote
+  // nullability).
   if (_requiresAdmin(tool!, subcommand, cliArgs) &&
       !(registry.context?.isAdmin ?? false)) {
     return jsonEncode(<String, dynamic>{
@@ -242,7 +267,7 @@ Future<String> _runCli(
     }
     env['KAN_API_KEY'] = kanApiKey;
     env['KAN_BASE_URL'] = kanBaseUrl;
-  } else {
+  } else if (tool == 'outline') {
     if (outlineApiKey == null || outlineBaseUrl == null) {
       return _err(
           'Outline is not configured (missing OUTLINE_API_KEY/OUTLINE_BASE_URL).');
@@ -250,6 +275,17 @@ Future<String> _runCli(
     env['OUTLINE_API_KEY'] = outlineApiKey;
     // The outline CLI reads OUTLINE_API_URL, not OUTLINE_BASE_URL.
     env['OUTLINE_API_URL'] = outlineBaseUrl;
+  } else {
+    // tool == 'radicale'
+    if (radicaleBaseUrl == null ||
+        radicaleUsername == null ||
+        radicalePassword == null) {
+      return _err('Radicale is not configured (missing RADICALE_BASE_URL/'
+          'RADICALE_USERNAME/RADICALE_PASSWORD).');
+    }
+    env['RADICALE_BASE_URL'] = radicaleBaseUrl;
+    env['RADICALE_USERNAME'] = radicaleUsername;
+    env['RADICALE_PASSWORD'] = radicalePassword;
   }
 
   final outcome = await execVendoredCli(tool: tool, args: cliArgs, env: env);
@@ -381,13 +417,15 @@ String _err(String message) => jsonEncode(<String, dynamic>{'error': message});
 /// without a round-trip. Kept compact; the model can run `["<cmd>","--help"]`
 /// for a subcommand's exact flags.
 const _description = '''
-Run the Kan.bn (project boards/cards) or Outline (wiki docs) CLI. This is the
-single tool for all Kan and Outline work — onboarding people, and creating,
-reading, editing, and deleting cards and documents.
+Run the Kan.bn (project boards/cards), Outline (wiki docs), or Radicale
+(CalDAV calendar events) CLI. This is the single tool for all Kan, Outline, and
+calendar work — onboarding people, creating/reading/editing/deleting cards and
+documents, and reading/managing calendar events.
 
-Pass `tool` ("kan" or "outline") and `args` (the subcommand + flags as an argv
-array of strings). Output is JSON on stdout. Run ["<subcommand>","--help"] to
-see a subcommand's flags. The --text-file and --site flags are disabled.
+Pass `tool` ("kan", "outline", or "radicale") and `args` (the subcommand +
+flags as an argv array of strings). Output is JSON on stdout. Run
+["<subcommand>","--help"] to see a subcommand's flags. The --text-file and
+--site flags are disabled.
 
 ONBOARDING (people asking to join):
   - Kan: ["get-invite-link","--workspace-id","<id>"] returns a shareable link
@@ -413,6 +451,12 @@ documents.info, documents.search, documents.create, documents.update,
 documents.move, documents.archive, documents.unarchive, documents.delete
 (add --permanent to bypass trash*), documents.drafts, documents.export,
 users.list, users.invite (--role admin requires admin*).
+
+RADICALE subcommands (calendar events): list-calendars, list-events
+(e.g. ["list-events","--calendar","nick/imagineering-events","--from","<ISO>",
+"--to","<ISO>"] — recurrence + timezones are expanded server-side, output is
+JSON in UTC), get-event, add-event*, delete-event*, mkcalendar*. --calendar
+accepts a full URL or a "<user>/<calendar>" path.
 
 Subcommands marked * require the requester to be an admin; everyone else may
 read, create, edit, comment, and delete cards/documents, and onboard members.

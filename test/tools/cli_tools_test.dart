@@ -22,6 +22,9 @@ void main() {
       kanBaseUrl: 'https://kan.example/api/v1',
       outlineApiKey: 'o',
       outlineBaseUrl: 'https://outline.example/api',
+      radicaleBaseUrl: 'https://dav.example.com',
+      radicaleUsername: 'nick',
+      radicalePassword: 'secret',
     );
     return registry;
   }
@@ -179,6 +182,43 @@ void main() {
         'args': ['collections.delete', '--id', 'xyz'],
       });
       expect(result['error'], contains('admin'));
+    });
+
+    test('blocks radicale write subcommands for non-admin', () async {
+      for (final sub in ['add-event', 'delete-event', 'mkcalendar']) {
+        final result = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': [sub, '--calendar', 'nick/imagineering-events'],
+        });
+        expect(result['error'], contains('admin'),
+            reason: '$sub writes the shared calendar — admin only');
+        expect(result['subcommand'], sub);
+      }
+    });
+
+    test('allows radicale list-events for non-admin (read is open)', () async {
+      // Passes the admin gate, then fails when the node CLI runs against fake
+      // creds — but the error must NOT be the admin refusal, proving the gate
+      // let the read through.
+      final result = await run(makeRegistry(isAdmin: false), {
+        'tool': 'radicale',
+        'args': ['list-events', '--calendar', 'nick/imagineering-events'],
+      });
+      final err = (result['error'] ?? '').toString();
+      expect(err.contains('admin privileges'), isFalse,
+          reason: 'reading the calendar is open to all members');
+    });
+
+    test('allows radicale write subcommands for admin', () async {
+      // Admin clears the gate; the call then fails at the node CLI (fake creds),
+      // but the error must NOT be the admin refusal.
+      final result = await run(makeRegistry(isAdmin: true), {
+        'tool': 'radicale',
+        'args': ['mkcalendar', '--calendar', 'nick/new-cal'],
+      });
+      final err = (result['error'] ?? '').toString();
+      expect(err.contains('admin privileges'), isFalse,
+          reason: 'admins may write the shared calendar');
     });
 
     test('gates permanent document delete but not trash delete', () async {
