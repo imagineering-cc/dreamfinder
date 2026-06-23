@@ -48,11 +48,34 @@ function authHeader({ username, password }) {
   return 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
 }
 
-// Absolute URL as-is; otherwise resolve a /user/calendar/ path against base.
+// SECURITY: an absolute URL is only honoured if it shares the configured
+// Radicale origin — otherwise the CLI would send the user's Basic-auth creds
+// to an arbitrary host (credential exfiltration via a crafted --calendar/
+// --addressbook, e.g. through a prompt-injected agent in a public room).
+function sameOrigin(u, base) {
+  try {
+    return new URL(u).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+}
+function resolveCollection(base, value, flag) {
+  if (!value) return null;
+  if (/^https?:\/\//.test(value)) {
+    if (!sameOrigin(value, base)) {
+      fail(
+        `refusing cross-origin ${flag} URL (${value}); it must be on the ` +
+          `configured Radicale host (${base}). Pass a "<user>/<name>" path.`,
+      );
+    }
+    return value.replace(/\/?$/, '/');
+  }
+  return `${base}/${value.replace(/^\/|\/$/g, '')}/`;
+}
+
+// Absolute URL (same-origin only) as-is; otherwise resolve a path against base.
 function calUrl(base, calendar) {
-  if (!calendar) return null;
-  if (/^https?:\/\//.test(calendar)) return calendar.replace(/\/?$/, '/');
-  return `${base}/${calendar.replace(/^\/|\/$/g, '')}/`;
+  return resolveCollection(base, calendar, '--calendar');
 }
 
 // ── CalDAV transport ───────────────────────────────────────────────────────
@@ -336,11 +359,9 @@ function buildVCard(opts) {
   return { uid, vcf: lines.join('\r\n') };
 }
 
-// addressbook URL: full URL, or "<user>/<book>" path under the site base.
+// addressbook URL: same-origin absolute, or "<user>/<book>" path under base.
 function bookUrl(base, book) {
-  if (!book) return null;
-  if (/^https?:\/\//.test(book)) return book.replace(/\/?$/, '/');
-  return `${base}/${book.replace(/^\/|\/$/g, '')}/`;
+  return resolveCollection(base, book, '--addressbook');
 }
 
 async function listAddressBooks(auth, opts) {
