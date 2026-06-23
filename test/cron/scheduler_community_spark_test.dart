@@ -41,15 +41,16 @@ void main() {
     String? hub = hubRoom,
     String mode = 'gated',
     Future<String> Function(String, String)? compose,
-  }) => Scheduler(
-    queries: queries,
-    sendMessage: (g, m) async => sink.add(MapEntry(g, m)),
-    composeWithTools: compose ?? (g, t) async => 'Sparkly idea ✨',
-    communitySparkReviewRoomId: review,
-    communitySparkHubRoomId: hub,
-    communitySparkMode: mode,
-    random: Random(42),
-  );
+  }) =>
+      Scheduler(
+        queries: queries,
+        sendMessage: (g, m) async => sink.add(MapEntry(g, m)),
+        composeWithTools: compose ?? (g, t) async => 'Sparkly idea ✨',
+        communitySparkReviewRoomId: review,
+        communitySparkHubRoomId: hub,
+        communitySparkMode: mode,
+        random: Random(42),
+      );
 
   group('disabled / guards', () {
     test('does nothing when the review room is not configured', () async {

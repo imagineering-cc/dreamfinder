@@ -40,23 +40,22 @@ typedef SendMessageFn = Future<void> Function(String groupId, String message);
 /// composes the message in-character and it lands in conversation history.
 ///
 /// System-initiated: tools are disabled for fast single-round responses.
-typedef ComposeViaAgentFn =
-    Future<String> Function(String groupId, String taskDescription);
+typedef ComposeViaAgentFn = Future<String> Function(
+    String groupId, String taskDescription);
 
 /// Like [ComposeViaAgentFn] but with full tool access and rich context
 /// (memories, events, repos). Used by the task radar for cross-source synthesis.
-typedef ComposeWithToolsFn =
-    Future<String> Function(String groupId, String taskDescription);
+typedef ComposeWithToolsFn = Future<String> Function(
+    String groupId, String taskDescription);
 
 /// Callback to trigger a dream cycle for a group.
 ///
 /// Returns `true` if the dream was successfully triggered.
-typedef TriggerDreamFn =
-    bool Function({
-      required String groupId,
-      required String triggeredByUuid,
-      required String date,
-    });
+typedef TriggerDreamFn = bool Function({
+  required String groupId,
+  required String triggeredByUuid,
+  required String date,
+});
 
 /// Periodic scheduler for standup prompts and data cleanup.
 class Scheduler {
@@ -347,9 +346,8 @@ class Scheduler {
           'Summarize the updates, highlight any blockers, and note '
           'common themes. Keep it concise and useful.',
         );
-        message = composed.isNotEmpty
-            ? composed
-            : _buildHardcodedSummary(responses);
+        message =
+            composed.isNotEmpty ? composed : _buildHardcodedSummary(responses);
       } on Exception catch (e) {
         developer.log(
           'Agent composition failed for standup summary in '
@@ -464,8 +462,7 @@ class Scheduler {
   /// Returns a jittered duration between [_radarMinIntervalHours] and
   /// [_radarMaxIntervalHours].
   Duration _randomRadarInterval() {
-    final hours =
-        _radarMinIntervalHours +
+    final hours = _radarMinIntervalHours +
         _random.nextDouble() *
             (_radarMaxIntervalHours - _radarMinIntervalHours);
     return Duration(minutes: (hours * 60).round());
@@ -715,8 +712,7 @@ class Scheduler {
   int _sparkDraftSeq = 0;
 
   Duration _randomSparkInterval() {
-    final days =
-        _sparkMinIntervalDays +
+    final days = _sparkMinIntervalDays +
         _random.nextDouble() * (_sparkMaxIntervalDays - _sparkMinIntervalDays);
     return Duration(minutes: (days * 24 * 60).round());
   }
@@ -802,9 +798,8 @@ class Scheduler {
     _communitySparkInFlight = true;
     try {
       final hubRoom = communitySparkHubRoomId?.trim();
-      final composeContext = (hubRoom != null && hubRoom.isNotEmpty)
-          ? hubRoom
-          : reviewRoom;
+      final composeContext =
+          (hubRoom != null && hubRoom.isNotEmpty) ? hubRoom : reviewRoom;
       final recent = queries.recentPublishedSparks(limit: 4);
 
       final composed = await compose(
@@ -932,7 +927,7 @@ class Scheduler {
     final recentBlock = recent.isEmpty
         ? ''
         : "\n\nYou've recently posted these sparks — propose something "
-              'different:\n- ${recent.join("\n- ")}';
+            'different:\n- ${recent.join("\n- ")}';
     return 'You have a moment to consider sparking something in the Imagineering '
         'community. Look at structured signals you can verify — the calendar '
         '(recent/upcoming events), the repos you track, the board. You may '
@@ -1009,8 +1004,7 @@ enum EventVenue {
         '5 minutes and to head to world.imagineering.cc and join in the '
         'room called "The Imagination Center". 1-2 sentences, playful, a '
         'stray emoji is fine. Output only the message.',
-    fallback:
-        "Imagineering starts in 5 minutes — and we're online this week! "
+    fallback: "Imagineering starts in 5 minutes — and we're online this week! "
         'Hop into TechWorld at world.imagineering.cc and find us in '
         'The Imagination Center. ✨',
   ),
@@ -1025,8 +1019,7 @@ enum EventVenue {
         '5 minutes and where to go (318 Russell St, Level 55), with a '
         'playful wizard/wand vibe. 1-2 sentences, a stray emoji is fine. '
         'Output only the message.',
-    fallback:
-        'Imagineering starts in 5 minutes — in person this week at '
+    fallback: 'Imagineering starts in 5 minutes — in person this week at '
         '318 Russell St, Level 55. Wands out, dreamers, for 3 hours of '
         'bringing ideas alive with AI. 🪄',
   );
