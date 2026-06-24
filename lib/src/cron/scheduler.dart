@@ -101,7 +101,7 @@ class Scheduler {
   /// cleanup window to summarize old conversation embeddings.
   final MemoryConsolidator? consolidator;
 
-  /// Matrix room ID (a mautrix-telegram portal room) for the weekly
+  /// Matrix room ID (the #imagineering hub room) for the weekly
   /// Imagineering "session starts in 5 minutes" reminder. When null, the
   /// reminder is disabled. See [_maybeSendEventReminder].
   final String? eventReminderRoomId;
@@ -623,9 +623,11 @@ class Scheduler {
   ///
   /// Picks the venue by week parity, composes an in-character message via the
   /// agent loop (falling back to a hardcoded line on empty/exception), and
-  /// posts to [eventReminderRoomId] — a mautrix-telegram portal room, so the
-  /// message lands in the bridged Imagineering Telegram group. Idempotent per
-  /// day via a `bot_metadata` date guard, and per-process via
+  /// posts to [eventReminderRoomId] — the #imagineering hub room
+  /// (!SNO2v77SDkrFKxUGFw:imagineering.cc), which the relay-bot superbridge
+  /// fans out to every bridged platform group (Telegram/Discord are plumbed
+  /// into the hub; Signal/WhatsApp receive it via their portal rooms).
+  /// Idempotent per day via a `bot_metadata` date guard, and per-process via
   /// [_eventReminderInFlight] so overlapping ticks can't double-send.
   Future<void> _maybeSendEventReminder(DateTime now) async {
     final roomId = eventReminderRoomId?.trim();
