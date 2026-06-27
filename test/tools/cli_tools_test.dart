@@ -259,8 +259,7 @@ void main() {
           'tool': 'radicale',
           'args': [sub, '--user', 'someone-else'],
         });
-        expect(
-            (result['error'] ?? '').toString().contains('admin privileges'),
+        expect((result['error'] ?? '').toString().contains('admin privileges'),
             isFalse,
             reason: 'admins may enumerate any principal');
       }

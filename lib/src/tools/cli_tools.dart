@@ -294,8 +294,7 @@ Future<String> _runCli(
   // design — this only gates the *discovery* of someone else's collections to
   // admins (Carnot, cage-match PR #115 r4).
   if (tool == 'radicale' &&
-      (subcommand == 'list-calendars' ||
-          subcommand == 'list-address-books') &&
+      (subcommand == 'list-calendars' || subcommand == 'list-address-books') &&
       _crossPrincipalUser(cliArgs, radicaleUsername) &&
       !(registry.context?.isAdmin ?? false)) {
     return jsonEncode(<String, dynamic>{
