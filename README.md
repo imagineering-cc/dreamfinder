@@ -98,8 +98,7 @@ language.
 ### Calendar (via Radicale)
 
 - View upcoming events and deadlines — 7-day lookahead injected into system prompt
-- Create and manage calendar events
-- Todo list management
+- Create and manage calendar events (CalDAV) and contacts (CardDAV)
 - Timezone-aware display (`EVENT_TIMEZONE`)
 
 ### Team Coordination
@@ -247,7 +246,7 @@ MATRIX_USERNAME=              # Matrix login username (alternative to access tok
 MATRIX_PASSWORD=              # Matrix login password (alternative to access token)
 MATRIX_IGNORE_ROOMS=          # Comma-separated room IDs to ignore (optional)
 
-# Required — MCP tools
+# Required — Kan + Outline (vendored CLIs via run_cli)
 KAN_BASE_URL=                 # Kan.bn instance URL
 KAN_API_KEY=                  # Kan.bn API key
 OUTLINE_BASE_URL=             # Outline instance URL
