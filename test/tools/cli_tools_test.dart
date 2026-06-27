@@ -213,6 +213,49 @@ void main() {
       }
     });
 
+    test('gates cross-principal --user enumeration for non-admin', () async {
+      // Listing your OWN collections (no --user, or --user == the configured
+      // principal 'nick') is open; naming ANOTHER principal reaches through
+      // River's shared creds into their collections and is admin-only
+      // (Carnot, cage-match PR #115 r4).
+      for (final sub in ['list-calendars', 'list-address-books']) {
+        final blocked = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': [sub, '--user', 'someone-else'],
+        });
+        expect(blocked['error'], contains('admin'),
+            reason: '$sub --user <other> enumerates another principal');
+        expect(blocked['subcommand'], sub);
+
+        for (final args in [
+          [sub],
+          [sub, '--user', 'nick'],
+        ]) {
+          final allowed = await run(makeRegistry(isAdmin: false), {
+            'tool': 'radicale',
+            'args': args,
+          });
+          expect(
+              (allowed['error'] ?? '').toString().contains('admin privileges'),
+              isFalse,
+              reason: '$args lists your own collections — open');
+        }
+      }
+    });
+
+    test('allows cross-principal --user enumeration for admin', () async {
+      for (final sub in ['list-calendars', 'list-address-books']) {
+        final result = await run(makeRegistry(isAdmin: true), {
+          'tool': 'radicale',
+          'args': [sub, '--user', 'someone-else'],
+        });
+        expect(
+            (result['error'] ?? '').toString().contains('admin privileges'),
+            isFalse,
+            reason: 'admins may enumerate any principal');
+      }
+    });
+
     test('allows radicale calendar reads for non-admin (read is open)',
         () async {
       // Passes the admin gate, then fails when the node CLI runs against fake

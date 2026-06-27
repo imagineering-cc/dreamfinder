@@ -102,6 +102,16 @@ const _radicaleAdminSubcommands = <String>{
   'delete-contact',
 };
 
+/// True if [args] requests a `--user` other than [selfUser] (the configured
+/// Radicale principal). Used to admin-gate cross-principal collection
+/// enumeration: omitting `--user` (or naming yourself) is open; naming someone
+/// else reaches through River's shared credentials into their collections.
+bool _crossPrincipalUser(List<String> args, String? selfUser) {
+  final i = args.indexOf('--user');
+  if (i == -1 || i + 1 >= args.length) return false;
+  return args[i + 1] != selfUser;
+}
+
 /// True if [args] sets an elevated invite role (`--role admin`). Onboarding a
 /// plain member is open; minting an admin is not.
 bool _invitesAdminRole(List<String> args) {
@@ -257,6 +267,26 @@ Future<String> _runCli(
       !(registry.context?.isAdmin ?? false)) {
     return jsonEncode(<String, dynamic>{
       'error': 'This action requires admin privileges.',
+      'tool': tool,
+      'subcommand': subcommand,
+    });
+  }
+
+  // --- Cross-principal enumeration gate (radicale) ---
+  // `list-calendars`/`list-address-books` default to River's own principal, but
+  // `--user <other>` enumerates ANOTHER principal's collections through River's
+  // shared Radicale credentials (which can read /nick/). The known-path content
+  // reads (`list-events --calendar nick/imagineering-events`) stay open by
+  // design — this only gates the *discovery* of someone else's collections to
+  // admins (Carnot, cage-match PR #115 r4).
+  if (tool == 'radicale' &&
+      (subcommand == 'list-calendars' ||
+          subcommand == 'list-address-books') &&
+      _crossPrincipalUser(cliArgs, radicaleUsername) &&
+      !(registry.context?.isAdmin ?? false)) {
+    return jsonEncode(<String, dynamic>{
+      'error': 'Listing another principal\'s collections requires admin '
+          'privileges. Omit --user to list your own.',
       'tool': tool,
       'subcommand': subcommand,
     });

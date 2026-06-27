@@ -262,6 +262,33 @@ function xmlHref(block) {
   const m = block.match(/<[^:>]*:?href\b[^>]*>([\s\S]*?)<\/[^:>]*:?href>/i);
   return m ? m[1].trim() : null;
 }
+// Decode XML entities. CalDAV/CardDAV embed the iCal/vCard payload as XML TEXT
+// inside <calendar-data>/<address-data>, so a SUMMARY/NOTE containing `&`,`<`,`>`
+// arrives entity-escaped (&amp; &lt; &gt;) and would otherwise surface verbatim
+// in the JSON output ("Tom &amp; Jerry"). Decode `&amp;` LAST so an already-
+// escaped entity like `&amp;lt;` round-trips to the literal `&lt;`, not `<`
+// (Carnot, cage-match PR #115 r4).
+function xmlDecode(s) {
+  return String(s)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&amp;/g, '&');
+}
+// Pull the entity-decoded text content of every <…:calendar-data>/<…:address-data>
+// element out of a DAV REPORT response, ready for iCal/vCard parsing. Used only
+// for REPORT responses (list-events/list-contacts); GET responses return a raw
+// iCal/vCard body and must NOT be entity-decoded.
+function extractDavData(xml, tag) {
+  const re = new RegExp(`<[^:>]*:?${tag}\\b[^>]*>([\\s\\S]*?)</[^:>]*:?${tag}>`, 'gi');
+  let out = '';
+  let m;
+  while ((m = re.exec(xml)) !== null) out += xmlDecode(m[1]) + '\n';
+  return out;
+}
 
 // ── verbs ──────────────────────────────────────────────────────────────────
 async function listCalendars(auth, opts) {
@@ -298,8 +325,10 @@ async function listEvents(auth, opts) {
     `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
     `<c:time-range start="${s}" end="${e}"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`;
   const { text } = await dav('REPORT', url, auth, { body, depth: 1, contentType: 'application/xml' });
-  // Each <response> carries an expanded VEVENT instance in its calendar-data.
-  const events = parseVEvents(text);
+  // Each <response> carries an expanded VEVENT instance as XML-escaped text in
+  // its <calendar-data>; entity-decode it before iCal parsing so `&`,`<`,`>` in
+  // a SUMMARY/DESCRIPTION don't leak as &amp;/&lt;/&gt; (Carnot, PR #115 r4).
+  const events = parseVEvents(extractDavData(text, 'calendar-data'));
   return events.map((e2) => ({
     uid: e2.uid,
     summary: e2.summary || '',
@@ -463,7 +492,9 @@ async function listContacts(auth, opts) {
     '<?xml version="1.0"?><card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">' +
     '<d:prop><card:address-data/></d:prop></card:addressbook-query>';
   const { text } = await dav('REPORT', url, auth, { body, depth: 1, contentType: 'application/xml' });
-  return parseVCards(text);
+  // <address-data> carries the vCard as XML-escaped text — decode entities
+  // before vCard parsing (Carnot, PR #115 r4).
+  return parseVCards(extractDavData(text, 'address-data'));
 }
 
 async function addContact(auth, opts) {
@@ -475,6 +506,18 @@ async function addContact(auth, opts) {
     contentType: 'text/vcard; charset=utf-8',
   });
   return { uid, addressbook: url, status: 'saved' };
+}
+
+// update-contact is a PUT-by-uid (full replace), so it MUST carry --uid. Without
+// one, addContact would mint a fresh UID and silently CREATE a duplicate instead
+// of updating — fail closed so a kickstart "update" can't fork a profile
+// (Carnot, cage-match PR #115 r4).
+async function updateContact(auth, opts) {
+  if (!opts.uid) {
+    fail('--uid is required for update-contact (it identifies the card to ' +
+      'replace; without it use add-contact to create a new one).');
+  }
+  return addContact(auth, opts);
 }
 
 async function getContact(auth, opts) {
@@ -589,7 +632,7 @@ async function main() {
     mkaddressbook,
     'list-contacts': listContacts,
     'add-contact': addContact,
-    'update-contact': addContact,
+    'update-contact': updateContact,
     'get-contact': getContact,
     'delete-contact': deleteContact,
   };
