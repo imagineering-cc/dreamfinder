@@ -129,16 +129,6 @@ Future<void> main() async {
     for (final config in mcpConfigs) {
       await mcpManager.startServer(config);
     }
-  } else {
-    // Fallback: no config file. Kan + Outline are handled by the `run_cli`
-    // executor (vendored CLIs), not MCP — only radicale remains on MCP here.
-    if (env.radicaleEnabled) {
-      await mcpManager.startServer(const McpServerConfig(
-        name: 'radicale',
-        command: 'node',
-        args: <String>['mcp-servers/packages/radicale/index.js'],
-      ));
-    }
   }
 
   final serverNames = mcpManager.getServerNames();
@@ -146,12 +136,18 @@ Future<void> main() async {
       'MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}');
 
   // Set up calendar event awareness — optional, enabled when CALENDAR_URL is
-  // set and Radicale MCP is running.
+  // set. Calendar reads go through the vendored `radicale` CLI (not the MCP),
+  // so this no longer depends on an MCP server being up.
   CalendarRetriever? calendarRetriever;
-  if (env.calendarUrl != null && serverNames.contains('radicale')) {
+  if (env.calendarUrl != null &&
+      env.radicaleBaseUrl != null &&
+      env.radicaleUsername != null &&
+      env.radicalePassword != null) {
     calendarRetriever = CalendarRetriever(
-      mcpManager: mcpManager,
       calendarUrl: env.calendarUrl!,
+      radicaleBaseUrl: env.radicaleBaseUrl!,
+      radicaleUsername: env.radicaleUsername!,
+      radicalePassword: env.radicalePassword!,
     );
     log.info('Calendar awareness enabled', extra: {'url': env.calendarUrl});
   }
@@ -181,6 +177,9 @@ Future<void> main() async {
     kanBaseUrl: env.kanBaseUrl,
     outlineApiKey: env.outlineApiKey,
     outlineBaseUrl: env.outlineBaseUrl,
+    radicaleBaseUrl: env.radicaleBaseUrl,
+    radicaleUsername: env.radicaleUsername,
+    radicalePassword: env.radicalePassword,
   );
   // Proactive lore capture — quietly append durable community stories to the
   // Outline Lore Inbox (dedup'd), so River builds the community's memory

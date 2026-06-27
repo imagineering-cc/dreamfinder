@@ -88,27 +88,24 @@ Share a little about yourself too. Invite whoever hasn't spoken yet.
 invite the next person — "Anyone else want to introduce themselves?" When the
 room goes quiet or someone says "that's everyone" / "done" / "next", advance.
 
-**Storing each profile**:
+**Storing each profile** (use `run_cli` with `tool: "radicale"`):
 Use the address book `$kickstartAddressBook`.
-First, try `radicale_list_address_books` to check if it exists.
-If not, create it with `radicale_create_address_book` (name: "Team Profiles").
+First, check it exists with `run_cli` radicale `["list-address-books"]`.
+If not, create it: `["mkaddressbook","--addressbook","$kickstartAddressBook","--name","Team Profiles"]`.
 
-For *each* person who introduces themselves, create a contact with
-`radicale_create_contact`:
-- `address_book`: `$kickstartAddressBook`
-- `full_name`: their preferred name
-- `nickname`: if they mention one
-- `note`: a brief profile summary including role, interests, and preferences
-- `timezone`: their IANA timezone (e.g., "Australia/Melbourne")
+For *each* person who introduces themselves, create a contact:
+`["add-contact","--addressbook","$kickstartAddressBook","--fn","<their preferred name>","--email","<if shared>","--org","<their role/team>","--note","<brief profile: role, interests, preferences, IANA timezone e.g. Australia/Melbourne>"]`
 
-Use the speaker's chat identity (their bridged display name / MXID) to
-distinguish profiles. If a contact already exists (from a previous kickstart),
-update it with `radicale_update_contact` instead.
+Use the speaker's chat identity (their bridged display name / MXID) inside the
+`--note` to distinguish profiles. To check who's already saved, run
+`["list-contacts","--addressbook","$kickstartAddressBook"]`. If a contact
+already exists (from a previous kickstart), update it instead with
+`["update-contact","--addressbook","$kickstartAddressBook","--uid","<their card uid>", ...same flags...]`.
 
 **Tone**: A round of intros at a first meetup, not interrogation. Let people
 volunteer; don't drag answers out of anyone.
 
-**Tools**: `radicale_list_address_books`, `radicale_create_address_book`, `radicale_create_contact`, `radicale_update_contact`, `radicale_list_contacts`''';
+**Tools**: `run_cli` with `tool: "radicale"` — subcommands `list-address-books`, `mkaddressbook`, `add-contact`, `update-contact`, `list-contacts` (run `["<subcommand>","--help"]` for exact flags).''';
 
 String _rosterPrompt(String groupId) => '''
 **Goal**: Map users to Kan workspace members.

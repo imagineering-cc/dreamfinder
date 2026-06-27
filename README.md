@@ -98,8 +98,7 @@ language.
 ### Calendar (via Radicale)
 
 - View upcoming events and deadlines — 7-day lookahead injected into system prompt
-- Create and manage calendar events
-- Todo list management
+- Create and manage calendar events (CalDAV) and contacts (CardDAV)
 - Timezone-aware display (`EVENT_TIMEZONE`)
 
 ### Team Coordination
@@ -189,9 +188,9 @@ restart, and the tools are available. No code changes needed.
 | LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart) |
 | MCP             | dart_mcp ^0.4.1                        |
 | Database        | SQLite (via sqlite3 package)           |
-| Task Management | Kan.bn (MCP)                           |
-| Knowledge Base  | Outline (MCP)                          |
-| Calendar        | Radicale (MCP)                         |
+| Task Management | Kan.bn (vendored CLI via `run_cli`)    |
+| Knowledge Base  | Outline (vendored CLI via `run_cli`)   |
+| Calendar        | Radicale (vendored CLI via `run_cli`)  |
 | Web Automation  | Playwright (MCP)                       |
 | Deployment      | Docker + Docker Compose on GCP         |
 | Package Manager | dart pub                               |
@@ -219,10 +218,9 @@ git submodule update --init
 # Install Dart dependencies
 dart pub get
 
-# Install MCP server dependencies
-for pkg in kan outline radicale; do
-  (cd mcp-servers/packages/$pkg && npm install)
-done
+# Kan, Outline, and Radicale are driven by vendored zero-dependency Node CLIs
+# (cli-tools/*.mjs — node builtins only, no npm install). Nothing to install
+# here; the run_cli tool shells out to them directly.
 
 # Set up environment
 cp .env.example .env
@@ -248,7 +246,7 @@ MATRIX_USERNAME=              # Matrix login username (alternative to access tok
 MATRIX_PASSWORD=              # Matrix login password (alternative to access token)
 MATRIX_IGNORE_ROOMS=          # Comma-separated room IDs to ignore (optional)
 
-# Required — MCP tools
+# Required — Kan + Outline (vendored CLIs via run_cli)
 KAN_BASE_URL=                 # Kan.bn instance URL
 KAN_API_KEY=                  # Kan.bn API key
 OUTLINE_BASE_URL=             # Outline instance URL
@@ -296,23 +294,26 @@ WhatsApp user ─puppet─┘
 
 ## MCP Integration
 
-MCP (Model Context Protocol) servers run as child processes managed by `McpManager`.
-The `dart_mcp` package provides the Dart client for MCP protocol communication via
-STDIO transport. Server configuration is loaded from `mcp-config.json`.
+MCP (Model Context Protocol) support remains in the app: servers run as child
+processes managed by `McpManager`, with the `dart_mcp` package providing the
+Dart client over STDIO transport. Server configuration is loaded from
+`mcp-config.json` (currently `[]` — no MCP servers run by default).
 
-The MCP server packages (Kan, Outline, Radicale) live in a
-[git submodule](https://github.com/nickmeinhold/mcp-servers) at `mcp-servers/`.
-Run `git submodule update --remote` to pull the latest.
+Kan, Outline, and Radicale are **no longer MCP-backed** — they are driven by
+vendored zero-dependency Node CLIs (`cli-tools/*.mjs`) through the single
+`run_cli` custom tool, which collapses ~50 MCP tool schemas into one and makes
+capability drift structurally impossible. The `mcp-servers/` submodule is kept
+only for the generic MCP framework / future servers, not these three.
 
-### Available Tool Sets (~75 tools total)
+### Available Tool Sets
 
-| Server     | Tools | Examples                                             |
-| ---------- | ----- | ---------------------------------------------------- |
-| Kan.bn     | ~15   | List boards, create card, update card, manage labels |
-| Outline    | ~15   | Search docs, create document, list collections       |
-| Radicale   | ~15   | List events, create todo, manage contacts            |
-| Playwright | ~20   | Navigate, screenshot, fill form, click element       |
-| Custom     | ~10   | Chat config, user mapping, standups, memory, radar   |
+| Tool set   | Backed by        | Examples                                             |
+| ---------- | ---------------- | ---------------------------------------------------- |
+| Kan.bn     | vendored CLI     | List boards, create card, update card, manage labels |
+| Outline    | vendored CLI     | Search docs, create document, list collections       |
+| Radicale   | vendored CLI     | List events, calendar/contacts (CalDAV/CardDAV)      |
+| Playwright | MCP (if enabled) | Navigate, screenshot, fill form, click element       |
+| Custom     | native Dart      | Chat config, user mapping, standups, memory, radar   |
 
 ### Custom Tools
 

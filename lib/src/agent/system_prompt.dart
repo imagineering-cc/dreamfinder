@@ -27,7 +27,8 @@ class CalendarEvent {
     this.description,
   });
 
-  /// Parses a calendar event from the JSON returned by the Radicale MCP server.
+  /// Parses a calendar event from the JSON returned by the radicale CLI's
+  /// `list-events` (`[{uid,summary,description,start,end,location}]`, UTC).
   factory CalendarEvent.fromJson(Map<String, dynamic> json) {
     return CalendarEvent(
       summary: json['summary'] as String? ?? '(untitled)',
@@ -184,7 +185,7 @@ String buildSystemPrompt(
 You have tools for:
 - **Task management (Kan)**: search tasks, create/update/move cards, assign members, add comments, manage labels, checklists, boards, lists
 - **Knowledge base (Outline)**: search/read/create/update wiki documents, manage collections
-- **Calendar & contacts (Radicale)**: manage events, todos, contacts, calendars, address books
+- **Calendar & contacts (Radicale)**: manage events, contacts, calendars, address books
 - **Memory & Knowledge Retrieval**: You have layered retrieval capabilities:
   - *Passive recall*: Relevant memories are automatically injected into your context — use them naturally without mentioning the memory system.
   - *Targeted search* (`search_memory`): Search past conversations when you need something specific from this chat's history.

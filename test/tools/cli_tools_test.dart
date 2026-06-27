@@ -22,6 +22,9 @@ void main() {
       kanBaseUrl: 'https://kan.example/api/v1',
       outlineApiKey: 'o',
       outlineBaseUrl: 'https://outline.example/api',
+      radicaleBaseUrl: 'https://dav.example.com',
+      radicaleUsername: 'nick',
+      radicalePassword: 'secret',
     );
     return registry;
   }
@@ -179,6 +182,153 @@ void main() {
         'args': ['collections.delete', '--id', 'xyz'],
       });
       expect(result['error'], contains('admin'));
+    });
+
+    test('blocks radicale calendar write subcommands for non-admin', () async {
+      for (final sub in ['add-event', 'delete-event', 'mkcalendar']) {
+        final result = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': [sub, '--calendar', 'nick/imagineering-events'],
+        });
+        expect(result['error'], contains('admin'),
+            reason: '$sub writes the shared calendar — admin only');
+        expect(result['subcommand'], sub);
+      }
+    });
+
+    test('blocks radicale contact write subcommands for non-admin', () async {
+      for (final sub in [
+        'mkaddressbook',
+        'add-contact',
+        'update-contact',
+        'delete-contact'
+      ]) {
+        final result = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': [sub, '--addressbook', 'dreamfinder/team-profiles'],
+        });
+        expect(result['error'], contains('admin'),
+            reason: '$sub writes the shared address book — admin only');
+        expect(result['subcommand'], sub);
+      }
+    });
+
+    test('gates cross-principal --user enumeration for non-admin', () async {
+      // Listing your OWN collections (no --user, or --user == the configured
+      // principal 'nick') is open; naming ANOTHER principal reaches through
+      // River's shared creds into their collections and is admin-only
+      // (Carnot, cage-match PR #115 r4).
+      for (final sub in ['list-calendars', 'list-address-books']) {
+        // Both argv grammars the vendored CLI accepts (`--user x` and
+        // `--user=x`), plus a duplicate-flag form where the last value wins —
+        // each must be gated (Carnot, cage-match PR #115 r5).
+        for (final blockedArgs in [
+          [sub, '--user', 'someone-else'],
+          [sub, '--user=someone-else'],
+          [sub, '--user', 'nick', '--user', 'someone-else'],
+        ]) {
+          final blocked = await run(makeRegistry(isAdmin: false), {
+            'tool': 'radicale',
+            'args': blockedArgs,
+          });
+          expect(blocked['error'], contains('admin'),
+              reason: '$blockedArgs enumerates another principal');
+          expect(blocked['subcommand'], sub);
+        }
+
+        for (final args in [
+          [sub],
+          [sub, '--user', 'nick'],
+          [sub, '--user=nick'],
+        ]) {
+          final allowed = await run(makeRegistry(isAdmin: false), {
+            'tool': 'radicale',
+            'args': args,
+          });
+          expect(
+              (allowed['error'] ?? '').toString().contains('admin privileges'),
+              isFalse,
+              reason: '$args lists your own collections — open');
+        }
+      }
+    });
+
+    test('allows cross-principal --user enumeration for admin', () async {
+      for (final sub in ['list-calendars', 'list-address-books']) {
+        final result = await run(makeRegistry(isAdmin: true), {
+          'tool': 'radicale',
+          'args': [sub, '--user', 'someone-else'],
+        });
+        expect((result['error'] ?? '').toString().contains('admin privileges'),
+            isFalse,
+            reason: 'admins may enumerate any principal');
+      }
+    });
+
+    test('allows radicale calendar reads for non-admin (read is open)',
+        () async {
+      // Passes the admin gate, then fails when the node CLI runs against fake
+      // creds — but the error must NOT be the admin refusal, proving the gate
+      // let the read through.
+      for (final args in [
+        ['list-calendars'],
+        ['list-events', '--calendar', 'nick/imagineering-events'],
+        ['get-event', '--calendar', 'nick/imagineering-events', '--uid', 'x'],
+      ]) {
+        final result = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': args,
+        });
+        final err = (result['error'] ?? '').toString();
+        expect(err.contains('admin privileges'), isFalse,
+            reason: '${args.first} is open to all members');
+      }
+    });
+
+    test('allows radicale contact reads for non-admin (read is open)',
+        () async {
+      for (final args in [
+        ['list-address-books'],
+        ['list-contacts', '--addressbook', 'dreamfinder/team-profiles'],
+        [
+          'get-contact',
+          '--addressbook',
+          'dreamfinder/team-profiles',
+          '--uid',
+          'x'
+        ],
+      ]) {
+        final result = await run(makeRegistry(isAdmin: false), {
+          'tool': 'radicale',
+          'args': args,
+        });
+        final err = (result['error'] ?? '').toString();
+        expect(err.contains('admin privileges'), isFalse,
+            reason: '${args.first} is open to all members');
+      }
+    });
+
+    test('allows radicale write subcommands for admin', () async {
+      // Admin clears the gate; the call then fails at the node CLI (fake creds),
+      // but the error must NOT be the admin refusal.
+      for (final args in [
+        ['mkcalendar', '--calendar', 'nick/new-cal'],
+        [
+          'add-contact',
+          '--addressbook',
+          'dreamfinder/team-profiles',
+          '--fn',
+          'Ada'
+        ],
+      ]) {
+        final result = await run(makeRegistry(isAdmin: true), {
+          'tool': 'radicale',
+          'args': args,
+        });
+        final err = (result['error'] ?? '').toString();
+        expect(err.contains('admin privileges'), isFalse,
+            reason: 'admins may write the shared calendar / contacts');
+      }
     });
 
     test('gates permanent document delete but not trash delete', () async {
