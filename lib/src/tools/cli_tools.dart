@@ -107,9 +107,23 @@ const _radicaleAdminSubcommands = <String>{
 /// enumeration: omitting `--user` (or naming yourself) is open; naming someone
 /// else reaches through River's shared credentials into their collections.
 bool _crossPrincipalUser(List<String> args, String? selfUser) {
-  final i = args.indexOf('--user');
-  if (i == -1 || i + 1 >= args.length) return false;
-  return args[i + 1] != selfUser;
+  // Match the vendored CLI's own argv grammar: Node `parseArgs` accepts BOTH
+  // `--user value` and `--user=value`, and on a repeated flag the LAST value
+  // wins. A guard that only saw `--user value` (or only the first occurrence)
+  // would be bypassed by `--user=other` or `--user me --user other`. Gate if
+  // ANY occurrence names someone other than the configured principal — same
+  // both-forms shape as [_invitesAdminRole] (Carnot, cage-match PR #115 r5).
+  for (var i = 0; i < args.length; i++) {
+    final a = args[i];
+    String? value;
+    if (a == '--user' && i + 1 < args.length) {
+      value = args[i + 1];
+    } else if (a.startsWith('--user=')) {
+      value = a.substring('--user='.length);
+    }
+    if (value != null && value != selfUser) return true;
+  }
+  return false;
 }
 
 /// True if [args] sets an elevated invite role (`--role admin`). Onboarding a

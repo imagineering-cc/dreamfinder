@@ -219,17 +219,27 @@ void main() {
       // River's shared creds into their collections and is admin-only
       // (Carnot, cage-match PR #115 r4).
       for (final sub in ['list-calendars', 'list-address-books']) {
-        final blocked = await run(makeRegistry(isAdmin: false), {
-          'tool': 'radicale',
-          'args': [sub, '--user', 'someone-else'],
-        });
-        expect(blocked['error'], contains('admin'),
-            reason: '$sub --user <other> enumerates another principal');
-        expect(blocked['subcommand'], sub);
+        // Both argv grammars the vendored CLI accepts (`--user x` and
+        // `--user=x`), plus a duplicate-flag form where the last value wins —
+        // each must be gated (Carnot, cage-match PR #115 r5).
+        for (final blockedArgs in [
+          [sub, '--user', 'someone-else'],
+          [sub, '--user=someone-else'],
+          [sub, '--user', 'nick', '--user', 'someone-else'],
+        ]) {
+          final blocked = await run(makeRegistry(isAdmin: false), {
+            'tool': 'radicale',
+            'args': blockedArgs,
+          });
+          expect(blocked['error'], contains('admin'),
+              reason: '$blockedArgs enumerates another principal');
+          expect(blocked['subcommand'], sub);
+        }
 
         for (final args in [
           [sub],
           [sub, '--user', 'nick'],
+          [sub, '--user=nick'],
         ]) {
           final allowed = await run(makeRegistry(isAdmin: false), {
             'tool': 'radicale',
