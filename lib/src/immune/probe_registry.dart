@@ -48,6 +48,16 @@ class ProbeRegistry {
 
   final Duration _probeTimeout;
 
+  /// The ids of probes whose recalibration deadline ([Probe.expiry]) is at or
+  /// before [now]. An expired antibody's baseline may be stale, so it should be
+  /// flagged for refresh (its owner paged) rather than trusted silently — the
+  /// sentinel-retirement discipline from the design. Probes with a null expiry
+  /// never appear here.
+  List<String> expired(DateTime now) => [
+        for (final probe in probes)
+          if (probe.expiry != null && !probe.expiry!.isAfter(now)) probe.id,
+      ];
+
   /// Runs every probe with a hard timeout and throw-isolation. Never throws.
   Future<List<ProbeResult>> runAll() async {
     final results = <ProbeResult>[];

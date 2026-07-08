@@ -76,6 +76,22 @@ abstract class Probe {
   /// PR1 probes are all read-only.
   SideEffect get sideEffect => SideEffect.pureRead;
 
+  /// The team/owner responsible for this antibody's lifecycle — who is paged
+  /// when it flakes and who refreshes an expired sentinel. Defaults to `immune`.
+  /// (Immune-memory discipline: monotonic growth without an owner is how a
+  /// registry drifts into autoimmunity.)
+  String get owner => 'immune';
+
+  /// Version of the golden data/sentinel this probe depends on, or null for a
+  /// probe with no external golden. A corpus/schema change bumps this to
+  /// *retire* the sentinel rather than silently *fire* a false failure.
+  String? get sentinelVersion => null;
+
+  /// Recalibration deadline. Past this instant the registry flags the probe as
+  /// expired (its baseline may be stale) instead of trusting it silently. Null
+  /// = never expires.
+  DateTime? get expiry => null;
+
   /// Invoke the real path and assert the invariant. Must not throw for an
   /// *expected* failure — return [ProbeStatus.failed]/[degraded] instead. The
   /// registry treats a thrown error as [ProbeStatus.unknown].
