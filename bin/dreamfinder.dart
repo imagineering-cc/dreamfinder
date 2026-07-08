@@ -603,6 +603,9 @@ Future<void> main() async {
   Future<void> Function(List<ProbeResult>)? onProbeResults;
   if (env.immuneProbesEnabled) {
     final calendarExpect = Platform.environment['IMMUNE_CALENDAR_EXPECT'];
+    // Capture into a local final so null-promotion works inside the closure and
+    // the "disabled" (null) signal is preserved distinctly from "returned 0".
+    final mr = memoryRetriever;
     probeRegistry = ProbeRegistry([
       AuthProbe(
         readAuthModeLabel: () => alerter.authModeLabel,
@@ -619,11 +622,10 @@ Future<void> main() async {
           expectedSummarySubstring: calendarExpect,
         ),
       RagProbe(
-        retrieveCount: () async {
-          final mr = memoryRetriever;
-          if (mr == null) return 0;
-          return (await mr.retrieve('Imagineering', 'immune-probe')).length;
-        },
+        retrieveCount: mr == null
+            ? null
+            : () async =>
+                (await mr.retrieve('Imagineering', 'immune-probe')).length,
       ),
     ]);
     onProbeResults = (results) async {
@@ -640,6 +642,12 @@ Future<void> main() async {
     // silently-broken tool is caught at deploy, not weeks later).
     final bootResults = await probeRegistry.runAll();
     await onProbeResults(bootResults);
+    // Write the same dedup key the scheduler uses, so the first tick after
+    // startup doesn't immediately re-run and re-page the boot results.
+    queries.setMetadata(
+      'immune_probe_last',
+      DateTime.now().toUtc().toIso8601String(),
+    );
     log.info('Immune probes ran at boot', extra: {'count': bootResults.length});
   }
 

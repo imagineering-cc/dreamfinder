@@ -33,9 +33,12 @@ enum MaintenanceMode {
   /// (not `failed`) so it does not page.
   meteredAllowed;
 
-  /// Parses `MAINTENANCE_MODE` env values. Unknown/empty → [none].
-  static MaintenanceMode fromEnv(String? raw) => switch (raw?.trim()) {
-        'metered_allowed' || 'meteredAllowed' => MaintenanceMode.meteredAllowed,
+  /// Parses `MAINTENANCE_MODE` env values (case/format-insensitive — this is an
+  /// emergency escape hatch, so silent rejection on casing would be brittle).
+  /// Unknown/empty → [none].
+  static MaintenanceMode fromEnv(String? raw) =>
+      switch (raw?.trim().toLowerCase().replaceAll('-', '_')) {
+        'metered_allowed' => MaintenanceMode.meteredAllowed,
         _ => MaintenanceMode.none,
       };
 }

@@ -52,6 +52,16 @@ void main() {
         MaintenanceMode.meteredAllowed,
       );
     });
+    test('is case/format-insensitive (escape hatch must not fail on casing)',
+        () {
+      expect(MaintenanceMode.fromEnv('METERED_ALLOWED'),
+          MaintenanceMode.meteredAllowed);
+      expect(MaintenanceMode.fromEnv('metered-allowed'),
+          MaintenanceMode.meteredAllowed);
+      expect(MaintenanceMode.fromEnv('  Metered_Allowed  '),
+          MaintenanceMode.meteredAllowed);
+    });
+
     test('defaults to none for unknown/empty', () {
       expect(MaintenanceMode.fromEnv(null), MaintenanceMode.none);
       expect(MaintenanceMode.fromEnv(''), MaintenanceMode.none);

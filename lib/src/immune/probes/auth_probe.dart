@@ -29,7 +29,12 @@ class AuthProbe extends Probe {
   @override
   Future<ProbeResult> run() async {
     final label = _readAuthModeLabel();
-    final onOAuth = label.toLowerCase().contains('oauth');
+    // Detect metered by the presence of "api key", NOT the absence of "oauth":
+    // the fallback label is literally "API key (OAuth fallback)", which
+    // contains "oauth" — a substring check for oauth would false-negative the
+    // exact drift this probe exists to catch (River fell back to metered).
+    final onMetered = label.toLowerCase().contains('api key');
+    final onOAuth = !onMetered;
 
     if (onOAuth) {
       return ProbeResult(

@@ -344,13 +344,17 @@ class HealthCheck {
   /// A `failed` probe here means River is up-but-wrong; it is escalated by the
   /// scheduler, never by a Docker restart.
   void _handleImmune(HttpRequest request) {
-    final anyFailed =
-        _immuneStatus.values.any((s) => s['status'] == 'failed');
+    final anyFailed = _immuneStatus.values.any((s) => s['status'] == 'failed');
+    // Before any probe has run, report `unknown` — not `ok` — so an empty
+    // surface isn't mistaken for a clean bill of health.
+    final overall = _immuneStatus.isEmpty
+        ? 'unknown'
+        : (anyFailed ? 'failed' : 'ok');
     request.response
       ..statusCode = HttpStatus.ok
       ..headers.contentType = ContentType.json
       ..write(jsonEncode(<String, Object?>{
-        'immune_status': anyFailed ? 'failed' : 'ok',
+        'immune_status': overall,
         'last_probe_run': _lastProbeRun?.toUtc().toIso8601String(),
         'probes': _immuneStatus,
       }))

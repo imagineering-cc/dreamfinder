@@ -143,6 +143,10 @@ class Scheduler {
   /// it survives restarts and never runs every 60s tick.
   static const _immuneProbeInterval = Duration(minutes: 5);
 
+  /// In-flight guard so an async tick firing while a prior probe run is still
+  /// awaiting cannot start a second overlapping run (same-process).
+  bool _probeRunInFlight = false;
+
   Timer? _timer;
 
   /// Tracks the last date (YYYY-MM-DD) that data cleanup ran, to ensure
@@ -198,6 +202,7 @@ class Scheduler {
   Future<void> _runProbeRegistry(DateTime now) async {
     final registry = probeRegistry;
     if (!immuneProbesEnabled || registry == null) return;
+    if (_probeRunInFlight) return; // same-process overlap guard
 
     final nowUtc = now.toUtc();
     final lastStr = queries.getMetadata('immune_probe_last');
@@ -208,16 +213,23 @@ class Scheduler {
       }
     }
 
+    // Claim the interval BEFORE running (a lease, not check-then-set-after) so
+    // an overlapping tick, a callback exception, or a crashed run cannot
+    // re-page the same failure within the window. The boot smoke run writes the
+    // same key so the first tick after startup respects it too.
+    queries.setMetadata('immune_probe_last', nowUtc.toIso8601String());
+    _probeRunInFlight = true;
     try {
       final results = await registry.runAll();
       await onProbeResults?.call(results);
-      queries.setMetadata('immune_probe_last', nowUtc.toIso8601String());
     } on Object catch (e) {
       developer.log(
         'Immune probe run failed: $e',
         name: 'Scheduler',
         level: 900,
       );
+    } finally {
+      _probeRunInFlight = false;
     }
   }
 

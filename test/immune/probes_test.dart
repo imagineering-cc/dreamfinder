@@ -22,6 +22,17 @@ class _ScriptedProbe extends Probe {
   Future<ProbeResult> run() => _body();
 }
 
+/// A probe that (illegally, for PR1) declares a send side-effect.
+class _SendProbe extends Probe {
+  @override
+  String get id => 'send';
+  @override
+  SideEffect get sideEffect => SideEffect.externalSend;
+  @override
+  Future<ProbeResult> run() async =>
+      const ProbeResult(id: 'send', status: ProbeStatus.ok);
+}
+
 String _deepSearchJson({
   required List<String> searched,
   List<String> failed = const [],
@@ -63,6 +74,13 @@ void main() {
       expect(results.single.detail, contains('timed out'));
     });
 
+    test('admission control rejects a write/send probe at construction', () {
+      expect(
+        () => ProbeRegistry([_SendProbe()]),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
     test('one broken probe does not stop the others', () async {
       final registry = ProbeRegistry([
         _ScriptedProbe('bad', () async => throw Exception('x')),
@@ -87,6 +105,17 @@ void main() {
 
     test('failed on metered drift (no maintenance)', () async {
       final r = await AuthProbe(readAuthModeLabel: () => 'API key').run();
+      expect(r.status, ProbeStatus.failed);
+      expect(r.shouldPage, isTrue);
+    });
+
+    test('failed on OAuth→API-key FALLBACK (label contains "OAuth" but is '
+        'metered)', () async {
+      // Regression: the fallback label is "API key (OAuth fallback)". A naive
+      // contains("oauth") check would false-negative this real drift.
+      final r = await AuthProbe(
+        readAuthModeLabel: () => 'API key (OAuth fallback)',
+      ).run();
       expect(r.status, ProbeStatus.failed);
       expect(r.shouldPage, isTrue);
     });

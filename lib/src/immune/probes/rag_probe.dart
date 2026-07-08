@@ -26,6 +26,12 @@ class RagProbe extends Probe {
   @override
   String get id => 'probe_rag';
 
+  // Retrieval embeds the query via the embedding provider (Voyage) — a paid
+  // remote call, NOT a pure local read. Labelled honestly so the registry's
+  // admission control and future budget accounting can see it.
+  @override
+  SideEffect get sideEffect => SideEffect.paidCall;
+
   @override
   Future<ProbeResult> run() async {
     final fn = _retrieveCount;

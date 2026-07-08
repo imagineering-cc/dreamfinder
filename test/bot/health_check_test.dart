@@ -360,6 +360,15 @@ void main() {
       expect(json['ready'], isTrue);
     });
 
+    test('/immune reports unknown before any probe has run', () async {
+      final response = await get('/immune');
+      expect(response.statusCode, HttpStatus.ok);
+      final json = jsonDecode(await response.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(json['immune_status'], 'unknown');
+      expect(json['last_probe_run'], isNull);
+    });
+
     test('/immune reports per-probe status', () async {
       health.recordProbeResult(const ProbeResult(
         id: 'probe_auth',

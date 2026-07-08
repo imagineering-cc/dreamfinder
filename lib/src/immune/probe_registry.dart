@@ -27,7 +27,21 @@ class ProbeRegistry {
   ProbeRegistry(
     this.probes, {
     Duration probeTimeout = _defaultProbeTimeout,
-  }) : _probeTimeout = probeTimeout;
+  }) : _probeTimeout = probeTimeout {
+    // Admission control: PR1 is detect-only. A probe may READ (including a
+    // read that costs, e.g. an embedding lookup), but must never mutate or send
+    // to the outside world. Reject write/send probes at construction rather
+    // than trusting the `sideEffect` label to be advisory.
+    for (final probe in probes) {
+      if (probe.sideEffect == SideEffect.idempotentWrite ||
+          probe.sideEffect == SideEffect.externalSend) {
+        throw ArgumentError(
+          'Probe "${probe.id}" has side-effect ${probe.sideEffect.name}; the '
+          'sensing spine admits only read/paidCall probes (no writes/sends).',
+        );
+      }
+    }
+  }
 
   /// The registered probes, run in order but independently.
   final List<Probe> probes;
