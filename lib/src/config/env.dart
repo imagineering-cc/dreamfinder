@@ -61,6 +61,9 @@ class Env {
     this.rateLimitPerUserSeconds = _defaultRateLimitPerUserSeconds,
     this.rateLimitGroupMax = _defaultRateLimitGroupMax,
     this.rateLimitGroupWindowSeconds = _defaultRateLimitGroupWindowSeconds,
+    this.maintenanceMode = 'none',
+    this.immuneProbesEnabled = false,
+    this.immuneCalendarExpect,
   });
 
   factory Env.load() {
@@ -151,6 +154,10 @@ class Env {
         'RATE_LIMIT_GROUP_WINDOW_SECONDS',
         _defaultRateLimitGroupWindowSeconds,
       ),
+      maintenanceMode: dotEnv['MAINTENANCE_MODE'] ?? 'none',
+      immuneProbesEnabled:
+          (dotEnv['IMMUNE_PROBES_ENABLED'] ?? '').toLowerCase() == 'true',
+      immuneCalendarExpect: dotEnv['IMMUNE_CALENDAR_EXPECT'],
     );
   }
 
@@ -202,6 +209,9 @@ class Env {
     int rateLimitPerUserSeconds = _defaultRateLimitPerUserSeconds,
     int rateLimitGroupMax = _defaultRateLimitGroupMax,
     int rateLimitGroupWindowSeconds = _defaultRateLimitGroupWindowSeconds,
+    String maintenanceMode = 'none',
+    bool immuneProbesEnabled = false,
+    String? immuneCalendarExpect,
   }) =>
       Env._(
         anthropicApiKey: anthropicApiKey,
@@ -251,6 +261,9 @@ class Env {
         rateLimitPerUserSeconds: rateLimitPerUserSeconds,
         rateLimitGroupMax: rateLimitGroupMax,
         rateLimitGroupWindowSeconds: rateLimitGroupWindowSeconds,
+        maintenanceMode: maintenanceMode,
+        immuneProbesEnabled: immuneProbesEnabled,
+        immuneCalendarExpect: immuneCalendarExpect,
       );
 
   /// Anthropic API key. Null when using OAuth auth.
@@ -462,6 +475,23 @@ class Env {
   bool get githubEnabled => githubToken != null && githubToken!.isNotEmpty;
   bool get liveKitEnabled =>
       liveKitUrl != null && liveKitApiKey != null && liveKitApiSecret != null;
+
+  /// Operator maintenance mode (`MAINTENANCE_MODE`). Raw string; convert with
+  /// `MaintenanceMode.fromEnv` at the boot-check call site so this config layer
+  /// stays free of any `immune/` dependency. Default `'none'`.
+  final String maintenanceMode;
+
+  /// Whether the immune-system probe tick runs (`IMMUNE_PROBES_ENABLED`).
+  /// Ships false — enabled only after the positive/negative backtest passes.
+  final bool immuneProbesEnabled;
+
+  /// Expected recurring-event summary substring for the calendar probe
+  /// (`IMMUNE_CALENDAR_EXPECT`). Null/unset → the calendar probe stays
+  /// unregistered (a wrong guess can't produce a false `failed`). Routed
+  /// through here (not `Platform.environment` directly) so a value set only in
+  /// `.env` is honoured — `DotEnv(includePlatformEnvironment: true)` reads both,
+  /// but a `.env` value never lands in `Platform.environment`.
+  final String? immuneCalendarExpect;
 
   /// Parses an integer env var, falling back to [defaultValue] if unset or
   /// non-positive, writing a warning to stderr on invalid/non-positive input.

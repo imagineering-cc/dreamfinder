@@ -26,7 +26,7 @@ Still respect correctness and type safety, but bias toward shipping.
 | Messaging       | Matrix                                 |
 | LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart) |
 | MCP             | dart_mcp ^0.4.1                        |
-| Database        | SQLite (via sqlite3 package)            |
+| Database        | SQLite (via sqlite3 package)           |
 | MCP Tools       | Kan.bn, Outline, Radicale, Playwright  |
 | Deployment      | Docker on OCI                          |
 | Package Manager | dart pub                               |
@@ -174,10 +174,10 @@ connects only to Matrix; the matrix-chat-superbridge handles relay to Signal, Di
 Telegram, and WhatsApp via puppet accounts.
 
 ```
-Signal ──┐
+Signal ──-┐
 Discord ──┤── Matrix Superbridge ──── Matrix ──── Dreamfinder
 Telegram ─┤      (puppets)
-WhatsApp ──┘
+WhatsApp ─┘
 ```
 
 Key milestones: platform-agnostic DB rename (schema v6, PR #47) → Matrix client layer

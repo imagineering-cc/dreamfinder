@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../immune/probe.dart';
 import '../memory/embedding_pipeline.dart';
 import '../memory/memory_record.dart';
 import '../memory/memory_retriever.dart';
@@ -51,6 +52,16 @@ class HealthCheck {
   int _messagesProcessed = 0;
   int _messagesDropped = 0;
   final Map<String, int> _dropReasons = {};
+
+  // --- Immune system (self-healer sensing spine) ---
+  // These fields back the /ready and /immune surfaces. They are DELIBERATELY
+  // kept out of the `isDegraded` computation in _handleHealth: the immune
+  // system reports on its own channel so a slow or failing probe can never
+  // trip PR #99's Docker-restart arc (which polls /health). See
+  // design/river-immune-system.html §health-surfaces.
+  bool _ready = false;
+  final Map<String, Map<String, Object?>> _immuneStatus = {};
+  DateTime? _lastProbeRun;
 
   // --- Claude brain health ---
   // The original health check only ever looked at the *last successful* Claude
@@ -173,6 +184,22 @@ class HealthCheck {
     _dropReasons[reason] = (_dropReasons[reason] ?? 0) + 1;
   }
 
+  /// Marks the bot ready to serve (hard boot invariants passed). Flips `/ready`
+  /// to 200. Called once after boot checks succeed.
+  void markReady() {
+    _ready = true;
+  }
+
+  /// Records the outcome of an immune probe for the `/immune` surface.
+  ///
+  /// This NEVER feeds the crash-health signal in `/health` — a failed probe is
+  /// visible on `/immune` and escalated by the caller, but must not cause a
+  /// Docker restart (that's the immune-system-trips-crash-arc failure mode).
+  void recordProbeResult(ProbeResult result) {
+    _immuneStatus[result.id] = result.toJson();
+    _lastProbeRun = DateTime.now();
+  }
+
   void _handleRequest(HttpRequest request) {
     // Handle CORS preflight for all /api/ paths.
     if (request.method == 'OPTIONS' && request.uri.path.startsWith('/api/')) {
@@ -186,6 +213,10 @@ class HealthCheck {
     switch (request.uri.path) {
       case '/health':
         _handleHealth(request);
+      case '/ready':
+        _handleReady(request);
+      case '/immune':
+        _handleImmune(request);
       case '/api/memory/recent':
         _setCorsHeaders(request);
         if (!_checkApiKey(request)) return;
@@ -288,6 +319,57 @@ class HealthCheck {
                 'message': _lastClaudeErrorMessage,
                 'at': _lastClaudeError!.toUtc().toIso8601String(),
               },
+      }))
+      ..close();
+  }
+
+  /// GET /ready — readiness gate (hard boot invariants).
+  ///
+  /// 200 once [markReady] has fired (auth-or-maintenance + env + DB all good),
+  /// 503 until then. Distinct from `/health`: readiness is "may I serve
+  /// correctly", `/health` is "am I crashed". A readiness failure does not
+  /// restart the container.
+  void _handleReady(HttpRequest request) {
+    request.response
+      ..statusCode = _ready ? HttpStatus.ok : HttpStatus.serviceUnavailable
+      ..headers.contentType = ContentType.json
+      ..write(jsonEncode(<String, Object?>{'ready': _ready}))
+      ..close();
+  }
+
+  /// GET /immune — the self-healer sensing surface.
+  ///
+  /// ALWAYS 200 (this endpoint has no restart power). The body reports each
+  /// probe's status plus the immune system's own liveness (`last_probe_run`).
+  /// A `failed` probe here means River is up-but-wrong; it is escalated by the
+  /// scheduler, never by a Docker restart.
+  void _handleImmune(HttpRequest request) {
+    // Aggregate with worst-wins precedence so the four probe states never
+    // collapse to a falsely-green surface. A registry that is all `degraded` or
+    // all `unknown` must NOT read as `ok` — that would make the self-healer
+    // commit the exact silent-semantic lie it exists to catch. Before any probe
+    // has run, report `unknown` so an empty surface isn't a clean bill of health.
+    bool anyStatus(String s) =>
+        _immuneStatus.values.any((v) => v['status'] == s);
+    final String overall;
+    if (_immuneStatus.isEmpty) {
+      overall = 'unknown';
+    } else if (anyStatus('failed')) {
+      overall = 'failed';
+    } else if (anyStatus('unknown')) {
+      overall = 'unknown';
+    } else if (anyStatus('degraded')) {
+      overall = 'degraded';
+    } else {
+      overall = 'ok';
+    }
+    request.response
+      ..statusCode = HttpStatus.ok
+      ..headers.contentType = ContentType.json
+      ..write(jsonEncode(<String, Object?>{
+        'immune_status': overall,
+        'last_probe_run': _lastProbeRun?.toUtc().toIso8601String(),
+        'probes': _immuneStatus,
       }))
       ..close();
   }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dreamfinder/src/bot/health_check.dart';
+import 'package:dreamfinder/src/immune/probe.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -326,6 +327,118 @@ void main() {
         client.close();
         await stuckHealth.stop();
       }
+    });
+  });
+
+  group('HealthCheck immune surfaces (/ready, /immune)', () {
+    late HealthCheck health;
+    late int port;
+
+    setUp(() async {
+      health = HealthCheck();
+      port = await health.start(port: 0);
+    });
+    tearDown(() async {
+      await health.stop();
+    });
+
+    Future<HttpClientResponse> get(String path) async {
+      final client = HttpClient();
+      final request = await client.get('localhost', port, path);
+      return request.close();
+    }
+
+    test('/ready is 503 until markReady, then 200', () async {
+      var response = await get('/ready');
+      expect(response.statusCode, HttpStatus.serviceUnavailable);
+
+      health.markReady();
+      response = await get('/ready');
+      expect(response.statusCode, HttpStatus.ok);
+      final json = jsonDecode(await response.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(json['ready'], isTrue);
+    });
+
+    test('/immune reports unknown before any probe has run', () async {
+      final response = await get('/immune');
+      expect(response.statusCode, HttpStatus.ok);
+      final json = jsonDecode(await response.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(json['immune_status'], 'unknown');
+      expect(json['last_probe_run'], isNull);
+    });
+
+    test('/immune reports per-probe status', () async {
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_auth',
+        status: ProbeStatus.ok,
+        detail: 'auth mode: OAuth',
+      ));
+      final response = await get('/immune');
+      expect(response.statusCode, HttpStatus.ok);
+      final json = jsonDecode(await response.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(json['immune_status'], 'ok');
+      expect(json['last_probe_run'], isNotNull);
+      final probes = json['probes'] as Map<String, dynamic>;
+      expect((probes['probe_auth'] as Map)['status'], 'ok');
+    });
+
+    test('/immune aggregate surfaces degraded (does not collapse to ok)',
+        () async {
+      // A registry that is all-degraded must NOT read as ok — the self-healer
+      // would otherwise commit the exact silent-semantic lie it exists to catch.
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_rag',
+        status: ProbeStatus.degraded,
+        detail: 'RAG disabled (VOYAGE unset)',
+      ));
+      final response = await get('/immune');
+      final json = jsonDecode(await response.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(json['immune_status'], 'degraded');
+    });
+
+    test('/immune aggregate surfaces unknown over degraded (worst-wins)',
+        () async {
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_rag',
+        status: ProbeStatus.degraded,
+      ));
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_deep_search',
+        status: ProbeStatus.unknown,
+      ));
+      final response = await get('/immune');
+      final json = jsonDecode(await response.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(json['immune_status'], 'unknown');
+    });
+
+    test(
+        'CRITICAL isolation: a FAILED probe leaves /health at 200 '
+        '(immune system cannot trip the Docker-restart arc)', () async {
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_deep_search',
+        status: ProbeStatus.failed,
+        detail: 'searched zero sources',
+      ));
+
+      // /immune reflects the failure...
+      final immune = await get('/immune');
+      final immuneJson = jsonDecode(await immune.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(immuneJson['immune_status'], 'failed');
+
+      // ...but /health (the Docker restart trigger) stays 200 / ok.
+      final healthResp = await get('/health');
+      expect(healthResp.statusCode, HttpStatus.ok,
+          reason: 'a failed immune probe must NOT degrade /health');
+      final healthJson =
+          jsonDecode(await healthResp.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      expect(healthJson['status'], 'ok');
     });
   });
 }

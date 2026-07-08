@@ -24,6 +24,13 @@ import 'package:dreamfinder/src/db/queries.dart';
 import 'package:dreamfinder/src/db/schema.dart';
 import 'package:dreamfinder/src/dream/dream_cycle.dart';
 import 'package:dreamfinder/src/game/game_event_router.dart';
+import 'package:dreamfinder/src/immune/boot_checks.dart';
+import 'package:dreamfinder/src/immune/probe.dart';
+import 'package:dreamfinder/src/immune/probe_registry.dart';
+import 'package:dreamfinder/src/immune/probes/auth_probe.dart';
+import 'package:dreamfinder/src/immune/probes/calendar_probe.dart';
+import 'package:dreamfinder/src/immune/probes/deep_search_probe.dart';
+import 'package:dreamfinder/src/immune/probes/rag_probe.dart';
 import 'package:dreamfinder/src/kickstart/kickstart.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_prompt.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_state.dart';
@@ -574,9 +581,85 @@ Future<void> main() async {
     },
   );
 
+  // --- Immune system (self-healer sensing spine) ---
+  // Boot hard invariants ALWAYS run: withhold readiness on violation rather
+  // than silently serving (e.g. metered-drift). Semantic probes are gated on
+  // IMMUNE_PROBES_ENABLED (ships dark). See design/river-immune-system.html.
+  final maintenanceMode = MaintenanceMode.fromEnv(env.maintenanceMode);
+  try {
+    assertHardInvariants(env, maintenanceMode: maintenanceMode);
+    health.markReady();
+  } on HardInvariantViolation catch (e) {
+    log.error(
+      'Boot hard invariant violated — withholding readiness',
+      extra: {'error': e.message},
+    );
+    unawaited(
+      alerter.escalate(kind: 'boot_hard_invariant', message: e.message),
+    );
+  }
+
+  ProbeRegistry? probeRegistry;
+  Future<void> Function(List<ProbeResult>)? onProbeResults;
+  if (env.immuneProbesEnabled) {
+    // Read via Env (dotEnv-backed), not Platform.environment directly, so a
+    // value set only in `.env` registers the calendar probe. (dotEnv reads both
+    // `.env` and platform env; the reverse is not true.)
+    final calendarExpect = env.immuneCalendarExpect;
+    // Capture into a local final so null-promotion works inside the closure and
+    // the "disabled" (null) signal is preserved distinctly from "returned 0".
+    final mr = memoryRetriever;
+    probeRegistry = ProbeRegistry([
+      AuthProbe(
+        readAuthModeLabel: () => alerter.authModeLabel,
+        maintenanceMode: maintenanceMode,
+      ),
+      DeepSearchProbe(executeTool: toolRegistry.executeTool),
+      // Opt-in: only when an operator has pinned the expected recurring event,
+      // so a wrong guess can't produce a false `failed`.
+      if (calendarRetriever != null &&
+          calendarExpect != null &&
+          calendarExpect.isNotEmpty)
+        CalendarProbe(
+          fetchUpcoming: calendarRetriever.fetchUpcoming,
+          expectedSummarySubstring: calendarExpect,
+        ),
+      RagProbe(
+        retrieveCount: mr == null
+            ? null
+            : () async =>
+                (await mr.retrieve('Imagineering', 'immune-probe')).length,
+      ),
+    ]);
+    onProbeResults = (results) async {
+      for (final r in results) {
+        health.recordProbeResult(r);
+        if (r.shouldPage) {
+          unawaited(
+            alerter.escalate(kind: r.id, message: r.detail ?? 'probe failed'),
+          );
+        }
+      }
+    };
+    // Boot smoke run — also serves the post-deploy smoke-test intent (a
+    // silently-broken tool is caught at deploy, not weeks later).
+    final bootResults = await probeRegistry.runAll();
+    await onProbeResults(bootResults);
+    // Write the same dedup key the scheduler uses, so the first tick after
+    // startup doesn't immediately re-run and re-page the boot results.
+    queries.setMetadata(
+      'immune_probe_last',
+      DateTime.now().toUtc().toIso8601String(),
+    );
+    log.info('Immune probes ran at boot', extra: {'count': bootResults.length});
+  }
+
   final scheduler = Scheduler(
     queries: queries,
     sendMessage: sendToRoom,
+    probeRegistry: probeRegistry,
+    onProbeResults: onProbeResults,
+    immuneProbesEnabled: env.immuneProbesEnabled,
     backfill: embeddingBackfill,
     consolidator: memoryConsolidator,
     triggerDream: dreamCycle.trigger,
