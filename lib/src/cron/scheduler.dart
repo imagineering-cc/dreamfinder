@@ -28,6 +28,8 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../db/queries.dart';
 import '../db/schema.dart';
+import '../immune/probe.dart';
+import '../immune/probe_registry.dart';
 import '../memory/embedding_backfill.dart';
 import '../memory/memory_consolidator.dart';
 
@@ -71,6 +73,9 @@ class Scheduler {
     this.communitySparkReviewRoomId,
     this.communitySparkHubRoomId,
     this.communitySparkMode = 'gated',
+    this.probeRegistry,
+    this.onProbeResults,
+    this.immuneProbesEnabled = false,
     Random? random,
   }) : _random = random ?? Random();
 
@@ -121,6 +126,23 @@ class Scheduler {
   /// gated draft side; autonomous publishing lands in a follow-up.)
   final String communitySparkMode;
 
+  /// Immune-system probes (self-healer sensing spine). When [immuneProbesEnabled]
+  /// and non-null, the tick runs them at [_immuneProbeInterval] and hands the
+  /// results to [onProbeResults] (which records to `/immune` and escalates
+  /// failures). Detect + escalate only — no remediation lives here.
+  final ProbeRegistry? probeRegistry;
+
+  /// Handles a batch of probe results (record to health + escalate failures).
+  /// Injected so the scheduler stays decoupled from HealthCheck/Alerter.
+  final Future<void> Function(List<ProbeResult>)? onProbeResults;
+
+  /// Whether the immune probe tick runs. Ships false (ship-dark).
+  final bool immuneProbesEnabled;
+
+  /// Minimum interval between immune probe runs; deduped via `bot_metadata` so
+  /// it survives restarts and never runs every 60s tick.
+  static const _immuneProbeInterval = Duration(minutes: 5);
+
   Timer? _timer;
 
   /// Tracks the last date (YYYY-MM-DD) that data cleanup ran, to ensure
@@ -165,6 +187,38 @@ class Scheduler {
   void stop() {
     _timer?.cancel();
     _timer = null;
+  }
+
+  /// Runs the immune-system probe registry at a bounded interval.
+  ///
+  /// Gated on [immuneProbesEnabled]; deduped via `bot_metadata` (survives
+  /// restarts, never fires every 60s tick). Wrapped so a probe run can never
+  /// throw into the scheduler tick. Never remediates — it records results and
+  /// escalates failures via [onProbeResults].
+  Future<void> _runProbeRegistry(DateTime now) async {
+    final registry = probeRegistry;
+    if (!immuneProbesEnabled || registry == null) return;
+
+    final nowUtc = now.toUtc();
+    final lastStr = queries.getMetadata('immune_probe_last');
+    if (lastStr != null) {
+      final last = DateTime.tryParse(lastStr);
+      if (last != null && nowUtc.difference(last) < _immuneProbeInterval) {
+        return;
+      }
+    }
+
+    try {
+      final results = await registry.runAll();
+      await onProbeResults?.call(results);
+      queries.setMetadata('immune_probe_last', nowUtc.toIso8601String());
+    } on Object catch (e) {
+      developer.log(
+        'Immune probe run failed: $e',
+        name: 'Scheduler',
+        level: 900,
+      );
+    }
   }
 
   /// Runs one scheduler cycle for the given [now] time.
@@ -227,6 +281,10 @@ class Scheduler {
     // Community Spark — proactive community ideation to the hub (gated by
     // human approval in Phase 1). Not per-config; runs once per tick.
     await _maybeSparkCommunity(now);
+
+    // Immune-system sensing spine — run the probes at a bounded interval and
+    // hand results to the recorder/escalator. Detect + escalate only.
+    await _runProbeRegistry(now);
 
     // Run data cleanup once per day after 3 AM UTC. Uses a date guard instead
     // of exact minute matching so timer drift or restarts can't skip a day.
