@@ -60,6 +60,16 @@ void main() {
       final a = store.sentinels['a']!;
       expect(sealer.verify(a.sentinel, a.seal), isTrue);
     });
+
+    test('rejects duplicate sentinel ids (no silent last-writer-wins)', () {
+      expect(
+        () => FixtureSentinelStore.sealed(sealer, const [
+          Sentinel(id: 'dup', payload: 'first', version: 'v1'),
+          Sentinel(id: 'dup', payload: 'second', version: 'v1'),
+        ]),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 
   group('ContentIntegrityProbe', () {
@@ -120,6 +130,23 @@ void main() {
         (_) async => (payload: 'POISONED', seal: 'deadbeef'),
       ).run();
       expect(r.status, ProbeStatus.failed);
+    });
+
+    test(
+        'failed on a REPLAYED alternate: a different payload with its OWN valid '
+        'immune seal (same id+version) is not the golden', () async {
+      // HMAC authenticates origin, not equality to this fixture. An alternate
+      // tuple signed with the SAME immune key (same id + version, different
+      // payload) is validly-signed but is NOT the expected golden — it must be
+      // rejected on identity, or a replay bypasses the content check.
+      const alternate =
+          Sentinel(id: 'lore-canary', payload: 'ALTERNATE', version: 'v1');
+      final alternateSeal = sealer.seal(alternate);
+      final r = await probe(
+        (_) async => (payload: 'ALTERNATE', seal: alternateSeal),
+      ).run();
+      expect(r.status, ProbeStatus.failed);
+      expect(r.shouldPage, isTrue);
     });
 
     test('declares pureRead side-effect and carries sentinel version', () {

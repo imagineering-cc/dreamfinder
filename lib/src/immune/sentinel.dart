@@ -23,6 +23,18 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+/// Length-guarded constant-time string equality. Compares every code unit so a
+/// caller can't recover the expected value by timing a byte-by-byte early
+/// return. Used for seal and golden-payload comparisons in the sensing path.
+bool constantTimeEquals(String a, String b) {
+  if (a.length != b.length) return false;
+  var mismatch = 0;
+  for (var i = 0; i < a.length; i++) {
+    mismatch |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+  }
+  return mismatch == 0;
+}
+
 /// A golden record whose content integrity can be verified without trusting the
 /// store it was retrieved from.
 class Sentinel {
@@ -72,15 +84,8 @@ class SentinelSealer {
   /// True iff [signature] is a valid seal for [s] under this key. Uses a
   /// length-guarded constant-time comparison so the seal can't be recovered by
   /// timing a byte-by-byte early return.
-  bool verify(Sentinel s, String signature) {
-    final expected = seal(s);
-    if (expected.length != signature.length) return false;
-    var mismatch = 0;
-    for (var i = 0; i < expected.length; i++) {
-      mismatch |= expected.codeUnitAt(i) ^ signature.codeUnitAt(i);
-    }
-    return mismatch == 0;
-  }
+  bool verify(Sentinel s, String signature) =>
+      constantTimeEquals(seal(s), signature);
 }
 
 /// A sentinel paired with its seal.
@@ -108,13 +113,27 @@ class FixtureSentinelStore implements SentinelStore {
   FixtureSentinelStore(this.sentinels);
 
   /// Seals [sentinels] with [sealer] up front, keyed by id.
+  ///
+  /// Rejects duplicate ids: a fixture collision would let one golden silently
+  /// replace another (last-writer-wins), retiring an antibody with no visible
+  /// failure — unacceptable in an integrity library.
   factory FixtureSentinelStore.sealed(
     SentinelSealer sealer,
     List<Sentinel> sentinels,
-  ) =>
-      FixtureSentinelStore({
-        for (final s in sentinels) s.id: SealedSentinel(s, sealer.seal(s)),
-      });
+  ) {
+    final sealed = <String, SealedSentinel>{};
+    for (final s in sentinels) {
+      if (sealed.containsKey(s.id)) {
+        throw ArgumentError.value(
+          s.id,
+          'sentinels',
+          'duplicate sentinel id — golden records must be unique',
+        );
+      }
+      sealed[s.id] = SealedSentinel(s, sealer.seal(s));
+    }
+    return FixtureSentinelStore(sealed);
+  }
 
   @override
   final Map<String, SealedSentinel> sentinels;

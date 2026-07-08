@@ -111,20 +111,29 @@ class ContentIntegrityProbe extends Probe {
       );
     }
 
-    // Verify the RETURNED payload against the RETURNED seal with our key. A
-    // corpus that returns wrong content (or a forged seal) cannot validate
-    // without the secret, so tampering and hollow both fail here.
+    // Two assertions, because HMAC authenticates ORIGIN, not equality to THIS
+    // fixture:
+    //  (1) the returned tuple carries a valid immune seal over its own bytes
+    //      (integrity — a stripped/forged/corrupted seal fails), and
+    //  (2) the returned payload IS the expected golden (identity — a replayed
+    //      *alternate* immune-signed tuple with the same id+version but a
+    //      different payload must NOT pass). This is the "invariants assert
+    //      identity, not non-emptiness" rule turned on the probe itself.
     final candidate = Sentinel(
       id: sentinelId,
       payload: fetched.payload,
       version: golden.sentinel.version,
     );
-    if (!sealer.verify(candidate, fetched.seal)) {
+    final sealValid = sealer.verify(candidate, fetched.seal);
+    final isGolden =
+        constantTimeEquals(fetched.payload, golden.sentinel.payload);
+    if (!sealValid || !isGolden) {
       return ProbeResult(
         id: id,
         status: ProbeStatus.failed,
-        detail: 'sentinel "$sentinelId" failed seal verification — returned '
-            'content is forged or corrupted (not the sealed golden)',
+        detail: 'sentinel "$sentinelId" failed integrity check — returned '
+            'content is not the sealed golden (forged, corrupted, or a '
+            'replayed alternate)',
         coverage: const ['integration-hollow', 'measurement-integrity'],
       );
     }
