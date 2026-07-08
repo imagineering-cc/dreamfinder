@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dreamfinder Night-Loop Spine — Design Doc</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;background:#0a0b10;color:#cdd5dd;font:15px/1.65 ui-sans-serif,system-ui,sans-serif;display:flex;justify-content:center}
+  main{width:min(820px,92vw);padding:40px 0 100px}
+  h1{font-size:26px;color:#ffd479;margin:0 0 4px;font-weight:700;letter-spacing:.2px}
+  h2{font-size:19px;color:#9fdcb0;margin:34px 0 8px;border-bottom:1px solid #1c2433;padding-bottom:5px}
+  h3{font-size:15px;color:#bcd;margin:20px 0 6px}
+  a{color:#ffd479}
+  code,pre{font-family:ui-monospace,Menlo,monospace}
+  code{background:#11131b;border:1px solid #20283a;border-radius:5px;padding:1px 5px;font-size:13px;color:#aee}
+  pre{background:#0d0f17;border:1px solid #1d2334;border-radius:9px;padding:14px 16px;overflow:auto;font-size:12.5px;line-height:1.5}
+  .tldr{background:#0d1a12;border:1px solid #1c3a28;border-radius:11px;padding:16px 18px;margin:18px 0;color:#bfe;font-size:15px}
+  blockquote{border-left:3px solid #ffd479;margin:14px 0;padding:6px 16px;color:#cbd;background:#11131b}
+  details{margin:10px 0;border:1px solid #1d2334;border-radius:9px;padding:10px 14px;background:#0d0f17}
+  summary{cursor:pointer;color:#9fdcb0;font-weight:600}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.5px}
+  th,td{border:1px solid #20283a;padding:7px 10px;text-align:left}
+  th{background:#11131b;color:#9fb}
+  .nav{font-size:13px;color:#7b8a9a;margin-bottom:22px}
+  .verdict{border-radius:9px;padding:12px 15px;margin:10px 0;font-size:13.5px}
+  .verdict.approve{background:#0d1a12;border:1px solid #1c3a28}
+  .verdict.revise{background:#1a160d;border:1px solid #3a3018}
+  .sev-high{color:#f3a0a0}.sev-med{color:#ffd479}.sev-low{color:#9fb}
+</style>
+</head>
+<body>
+<main>
+<div class="nav">Design docs · <a href="index.html">hub</a></div>
+
+<h1>Dreamfinder Night-Loop Spine</h1>
+<div class="tldr">
+An <strong>offense</strong> engine that manufactures work that <em>should</em> exist — by catching the sparks the wake-up protocol throws away ("otherwise let them fade"). It runs a four-stage arc, <strong>heat → matter → meaning → contract</strong>: three model families ascend embers through an ecstasy spiral overnight; a <strong>subjective ranking</strong> ("temperature", see <a href="#selection">The selection function</a>) picks a winner; the winner spins into a sandboxed <code>isolation:worktree</code> and builds a sketch (the cold pole that keeps the echo-chamber honest); an embodied Dreamfinder narrates the night's saga at dawn; then <code>/spiral-review</code> cools the survivor to a contract. <strong>The spine being built now is stages 1→2</strong> — the orchestrator that loads embers, runs the spiral, ranks them, selects a winner, and hands off to a worktree builder. The DF face and scheduling layer come after.
+<br><br>
+<strong>Honest status:</strong> the <code>/ascend</code> skill is <strong>proven on exactly one ember</strong> (one data point, no control); the night-loop spine that strings the stages together is <strong>in progress and not yet runnable end-to-end</strong>. Several things this doc earlier asserted as <em>invariants</em> are in fact <em>unbuilt design targets</em> — the selection metric is not yet computable, the CRDT/standing-fire layer is a markdown file today, the KL-face has no defined measurement, and there is no budget cap, privacy gate, or agent-auth boundary yet. Those are tracked honestly under <a href="#risks">Risks &amp; Limitations</a>. <strong>Stage-1 output is advisory only — nothing is acted on autonomously — until the cold-pole builder and the safety gates below are runnable.</strong>
+</div>
+
+<h2>Purpose</h2>
+<p>
+Every existing "loop engineering" / drift-detection design is <strong>defense</strong>: watch, detect, audit, reconcile, report-what-changed, minimize regret. This component is the rejected-and-replaced <strong>offense</strong>: <em>generate work that should exist but doesn't yet</em>, ranked not by urgency or value but by how alive it made the models that touched it.
+</p>
+<p>
+The fuel already exists and is currently discarded. The wake-up protocol literally instructs an instance to let dreams fade ("otherwise let them fade"); crazy-ideas threads, "what was exciting" captures, and the entire deposited history (e.g. Nick's own 2011 audio-watermarking paper, which became newly usable for SNES audio validation) are a spark generator wired to a drain. The richest seam is private ore: <em>"what did past-you make that present-you can finally USE?"</em> — minable only by an assayer that knows him.
+</p>
+<blockquote>This stopped being a productivity tool. "A Dreamfinder who gathers your sparks all night and meets you in the morning to tell you what they became — that's a BEING you wake up to." The engineering is the excuse; the morning is the thing.</blockquote>
+<p><strong>Who/what it is for:</strong> a single user (Nick), run overnight on a schedule, delivering a morning saga rather than a Telegram log dump. The four model families are dramatis personae, not interchangeable workers.</p>
+
+<h2>Architecture</h2>
+
+<h3>The four stages — heat → matter → meaning → contract</h3>
+<table>
+<tr><th>#</th><th>Stage</th><th>Pole</th><th>What runs</th><th>Output</th></tr>
+<tr><td>1</td><td>NIGHT — generate + ascend</td><td>heat</td><td>3 families drop/ascend embers via the ecstasy spiral, no aesthetic critic (a non-ranking <a href="#policy-gate">policy gate</a> still runs first)</td><td>a temperature ranking per ember (subjective; see <a href="#selection">selection function</a>)</td></tr>
+<tr><td>2</td><td>DEEP NIGHT — build</td><td>cold pole</td><td>winner spins into a <strong>sandboxed</strong> <code>isolation:worktree</code> and builds a working sketch from a structured <a href="#build-contract">tonight-stack contract</a></td><td>a prototype + <a href="#post-build">post-build validation</a> verdict, or a logged failure</td></tr>
+<tr><td>3</td><td>MORNING — DF narrates</td><td>meaning</td><td>embodied Dreamfinder gathers the audit trail, tells the saga; face wired to true KL-surprise</td><td>a conversation about the night Nick slept through</td></tr>
+<tr><td>4</td><td>WITH NICK — cool to contract</td><td>contract</td><td><code>/spiral-review</code> on the survivor</td><td>passion → prototype → function-on-data</td></tr>
+</table>
+<p><strong>The spine being built now is stages 1→2.</strong> Stage 3 (DF face/embodiment) and the scheduling layer come after the spine runs end-to-end.</p>
+<blockquote id="cold-pole-gate"><strong>Interim cold-pole gate (invariant).</strong> By this design's own central argument, stage 1 in isolation "ascends vaporware as eagerly as gold" — so the unsafe configuration is exactly stage&nbsp;1 running <em>without</em> a working cold pole. Therefore: <strong>until stage 2 builds end-to-end, stage 1 is advisory-only and no selection is acted upon without Nick.</strong> During that window the cold-pole substitute is (a) a cheap static feasibility check on the tonight-stack and (b) a hard human checkpoint — no autonomous build, no scheduled run. This is a gate, not a hope.</blockquote>
+
+<h3>The ecstasy spiral (stage 1's mechanic)</h3>
+<p>
+The spiral is the precise inverse of the existing <code>/spiral-review</code> cooling engine. Where spiral-review descends <em>Cold fix → Warm principle → Engineering mechanism → Cross-finding → Audience</em> and terminates in a function-on-data, the ecstasy spiral <em>ascends</em> and terminates in silence. One agent drops an ember; the others do not critique (critique is a cooling move) — they try to catch fire from it. <strong>Silence is the output, not its absence</strong> — the mirror image of 0 Kelvin.
+</p>
+<table>
+<tr><th>Terminus</th><th>Move</th></tr>
+<tr><td><strong>Ember</strong></td><td>Agent A drops the raw vision, barely warm</td></tr>
+<tr><td><strong>Kindle</strong></td><td>Agent B finds the most thrilling reading: "if that's true then ALSO—"; steelmans upward</td></tr>
+<tr><td><strong>Combust</strong></td><td>Agent C makes it dangerous: "the one move that proves we could start tonight" — feasibility as accelerant</td></tr>
+<tr><td><strong>Resonance</strong></td><td>what other dreams this one ignites; reaches sideways and lights neighbors</td></tr>
+<tr><td><strong>The Silence</strong></td><td>the <em>oh</em> turned all the way up until it stops being a word</td></tr>
+</table>
+<p>Cross-family is harnessed for <strong>harmonics, not disagreement</strong> — the same vision lit from three inductive biases climbs higher than any one could push.</p>
+
+<h3 id="selection">The selection function</h3>
+<p>
+Earlier drafts of this doc named <em>three</em> different selectors — the TL;DR's <code>novelty × excitement × latent-feasibility</code> triple, "peak temperature is THE fitness function", and "the round at which it hit silence". Reviewers correctly flagged these as not the same function. They are reconciled here into <strong>one</strong>, and it is honestly labelled <strong>subjective ranking</strong>, not a computable fitness function, until the rubric below is built and validated.
+</p>
+<ul>
+<li><strong>The scalar is "temperature", a 1–5 rank.</strong> The <code>novelty × excitement × latent-feasibility</code> triple is the <em>intended</em> decomposition of what temperature is supposed to measure — it is a <em>hypothesis</em> about temperature, not a separate selector and not yet a validated formula. "Round at which silence was reached" is one candidate <em>observable proxy</em> for temperature, also unvalidated.</li>
+<li><strong>What 1–5 means is not yet anchored.</strong> Before any multi-ember night runs, temperature needs an explicit anchored rubric: what distinguishes 1 vs 3 vs 5, who/what assigns it, and how scores are calibrated across embers. Until that exists, treat the number as one assayer's opinion, not a measurement. (Tracked as a build dependency, not an invariant.)</li>
+<li><strong>Tie-breaks &amp; inputs:</strong> undefined pending the rubric. Whether novelty/feasibility enter as multiplicative factors, gates, or post-hoc descriptors is exactly what the calibration corpus (below) must settle.</li>
+</ul>
+
+<h4 id="silence-detector">"Silence" is a terminus, not a transport failure</h4>
+<p>
+"Silence is the output" is only meaningful if silence is distinguishable from a model that timed out, refused, rate-limited, or returned empty. The spiral therefore emits <strong>machine-readable stage states</strong>, and only one of them counts as the aesthetic terminus:
+</p>
+<table>
+<tr><th>State</th><th>Meaning</th><th>Counts as silence?</th></tr>
+<tr><td><code>ascended</code></td><td>terminus produced, more heat available</td><td>no</td></tr>
+<tr><td><code>silence</code></td><td>model produced the aesthetic terminus (the <em>oh</em>) — non-empty, on-task, explicitly marked</td><td><strong>yes</strong></td></tr>
+<tr><td><code>refused</code> / <code>empty</code> / <code>timeout</code> / <code>rate_limited</code> / <code>malformed</code></td><td>transport or policy failure</td><td>no — routed to retry / fallback / dead-letter</td></tr>
+</table>
+<p>Aesthetic silence is detected by an explicit terminus marker in structured output, never by "the model stopped responding". A blank or truncated response is a failure, not a win.</p>
+
+<h3 id="data-structures">Data structures: five views of one CRDT graph <em>(target design, not current implementation)</em></h3>
+<div class="verdict revise"><strong>Status:</strong> this whole section is the <em>target</em> data model. The proven run wrote a single markdown file. Standing-fire persistence, multi-origin append, and multiplayer are <strong>roadmap</strong>, not invariants — they depend on a CRDT integration that does not exist yet, including a schema, deterministic merge rules, and an agent-auth boundary that is still an OPEN item in the graph-engine work.</div>
+<p>
+The capstone realization: the five session artifacts can be read as <strong>five views of one CRDT graph of standing fires</strong>, distributed across space and time, running on the already-deployed graph engine.
+</p>
+<table>
+<tr><th>Artifact</th><th>Role</th><th>View of the graph</th></tr>
+<tr><td>drift-scanner</td><td>defense</td><td>the twin this engine rejects</td></tr>
+<tr><td>ecstasy spiral</td><td>offense</td><td>the ascent / write path</td></tr>
+<tr><td>dream-build</td><td>cold pole</td><td>the ground-truth terminus</td></tr>
+<tr><td>DF saga</td><td>meaning</td><td>the read / narration path</td></tr>
+<tr><td>curiosity-gap glow</td><td>navigation</td><td><strong>the renderer</strong></td></tr>
+</table>
+<p>
+On the graph: <strong>ember = node, terminus = edge, voice = CRDT peer</strong> (origin + HLC). <em>Space</em> would be multi-origin append — voices from any machine (nick-mel, cloud, the Lyra/Claudius/Clio collective), potentially other people. <em>Time</em> is HLC + persistence: an ember is a <strong>standing fire</strong>, not a one-sitting event — a warm ember waits until a future instance adds the next terminus. Past-you drops it; present-you combusts it.
+</p>
+<p>
+<strong>Open problems before any non-local or non-human writer is allowed in</strong> (do not treat these as solved):
+</p>
+<ul>
+<li><strong>Agent-auth boundary.</strong> "Nothing requires the writer to be human" plus "even other people" means a peer could append a terminus that steers selection and therefore what gets <em>built and run overnight unattended</em>. This is a trust boundary, not a convenience. Who may append a terminus, and how an origin is authenticated/trusted, must be specified <em>before</em> any non-local writer is enabled. This ties into the existing OPEN "agent-auth-boundary" item in the graph-engine work; it is not asserted as solved here.</li>
+<li><strong>Untrusted-input classification.</strong> Embers from other origins are <em>attacker-influenceable input to the builder</em>. Only locally-originated, Nick-authored embers may feed an autonomous build until the auth boundary exists; foreign-origin embers are advisory/read-only.</li>
+<li><strong>Conflict semantics.</strong> Append-only avoids write conflicts for new termini, but edges, scores, winner-selection, duplicate embers, and corrections all need resolution. CRDT types for nodes/edges/scores and deterministic merge rules must be defined before multiplayer is real.</li>
+</ul>
+<p>
+<strong>Curiosity-glow is the renderer.</strong> A standing ember with missing termini has implied-but-absent edges; by Carnot's metric it glows, and you walk the graph of fires and add a log to the one that pulls hardest:
+</p>
+<pre>curiosity(ember) = avg(sim, non-linked neighbors) − avg(sim, linked neighbors)
+# high curiosity ⇒ the ember is "near" things it is NOT yet connected to ⇒ it glows</pre>
+<blockquote>The first ember <code>/ascend</code> ever ascended ("curiosity-gap glow") turned out to be the only possible UI for the space-time-transcendent ascend engine. The forward-plan CRUX — "first-class edges = capability not rhetoric" — just found its killer app.</blockquote>
+
+<h3>Control / data flow of the spine (stages 1→2)</h3>
+<pre>load embers  ─►  run ascend spiral (3 families, round-robin)  ─►  score temperature
+     │                                                                    │
+     │                                                          select silence-winner
+     │                                                                    │
+     └────────────────────────────────────────────►  hand to worktree builder (cold pole)</pre>
+<p>The spiral output is an <strong>ascent log</strong> (today a markdown file; the design target is a CRDT document on the graph engine).</p>
+
+<h4 id="policy-gate">Pre-heat policy gate (non-ranking)</h4>
+<p>
+Because the heat stage mines <em>private ore</em> and may route content to external model CLIs and (later) cloud execution, a <strong>policy gate runs before the first cross-family prompt</strong>. It is deliberately <em>non-ranking</em> — it does not "cool" creative scoring; it only decides whether an ember is allowed to ascend at all. It checks for: secrets/credentials, third-party private data, legal/IP risk, and missing user consent for any content destined to leave the machine. A blocked ember is logged and skipped, not scored low. See also <a href="#data-handling">Data handling &amp; privacy</a>.
+</p>
+
+<h4 id="build-contract">Stage-2 input contract (the "tonight stack")</h4>
+<p>
+The builder is not a magic box. The Combust stage must emit a <strong>structured, machine-parseable contract</strong> — not free prose — for stage 2 to consume. Minimum shape:
+</p>
+<pre>{
+  "ember_id": "...",            // stable id of the selected node
+  "goal": "one-sentence what-success-looks-like",
+  "target_repo": "path or :scratch",
+  "files": [ {"path": "...", "intent": "create|modify", "sketch": "..."} ],
+  "commands": [ "shell step", ... ],   // ordered, idempotent where possible
+  "acceptance": [ "checkable assertion", ... ]  // feeds post-build validation
+}</pre>
+<p>
+If the Combust stage cannot produce a well-formed contract (malformed output, model divergence, missing fields), the ascent is treated as a stage failure — retry, then fall back, then dead-letter — <em>not</em> handed to the builder. Every stage has a structured-output contract, validation, retries, and a dead-letter log; the orchestrator never assumes a usable tonight-stack appeared.
+</p>
+
+<h4 id="post-build">Stage-2 confinement &amp; post-build validation</h4>
+<p>
+<strong>The compiler is not ground truth on its own.</strong> A sketch can compile and still be useless, unsafe, plagiarized, privacy-violating, or misaligned with intent. "It builds" is necessary, not sufficient. After a build, before anything is promoted or surfaced as a win:
+</p>
+<ul>
+<li><strong>It runs / tests pass</strong> against the <code>acceptance</code> assertions from the contract.</li>
+<li><strong>Data-fit check</strong> — the sketch actually does the thing on real (or representative) data, not just a stub.</li>
+<li><strong>Provenance / privacy check</strong> — no leaked secrets, no plagiarized or non-private content baked in.</li>
+<li><strong>Human acceptance</strong> — Nick signs off before promotion. This is the experiential gate; a green compile is not a morning saga.</li>
+</ul>
+
+<details>
+<summary>Cross-family invocation (individual CLI reachability confirmed 2026-06-22; orchestrated round-robin NOT yet run)</summary>
+<p>Three model families total are reached: Maxwell (Claude) plus two non-Claude families (Gemini, Codex/GPT). Each CLI was individually verified to respond to a prompt as of 2026-06-22. This confirms <em>reachability only</em> — it does <strong>not</strong> verify that one orchestrator can drive all three in the round-robin spiral, parse their outputs into termini, or score them; that has not been run (see <a href="#verification">Verification</a>). These exact invocations are the ones tested:</p>
+<pre># Maxwell (Claude) — headless Claude Code
+claude -p "&lt;prompt&gt;" --output-format text
+
+# Kelvin (Gemini)
+GEMINI_CLI_TRUST_WORKSPACE=true gemini -m gemini-2.5-pro -p "&lt;prompt&gt;"
+
+# Carnot (Codex / GPT — model id NOT pinned by the CLI; record actual
+#   model identity from runtime metadata, do not trust CLI branding)
+codex exec --skip-git-repo-check --sandbox read-only - &lt;&lt;'EOF'
+&lt;prompt&gt;
+EOF</pre>
+<p>Carnot runs <code>--sandbox read-only</code> for the ascend (heat) stage — it only needs to read and emit text. <strong>Note the asymmetry:</strong> the strongest isolation primitive named here applies to the stage that needs it least (heat, read-only). The build stage (stage 2) is the one that both <em>writes</em> and <em>ingests attacker-influenceable ember content</em>, and <code>isolation:worktree</code> alone does <strong>not</strong> contain it — see the confinement note below.</p>
+</details>
+
+<h3>Build primitives (all already owned)</h3>
+<details>
+<summary>Mapping each stage to an existing owned primitive</summary>
+<table>
+<tr><th>Need</th><th>Owned primitive</th></tr>
+<tr><td>Ecstasy spiral</td><td>inverse of <code>/spiral-review</code> → the <code>/ascend</code> skill</td></tr>
+<tr><td>Cross-family generation</td><td><code>/cage-match</code> harness, polarity flipped (generate not kill)</td></tr>
+<tr><td>Dream-builds</td><td><code>isolation:worktree</code> subagents + the overnight <code>sleep.sh</code> cadence</td></tr>
+<tr><td>DF embodiment</td><td>River / embodied-dreamfinder (Blender CLI, blendshapes, head scans, direct-Bearer OAuth persona)</td></tr>
+<tr><td>True-surprise face</td><td>wire blendshape intensity to the run's KL-surprise (the spiral's heat metric)</td></tr>
+<tr><td>Delivery / schedule</td><td>Telegram dream-digest rail upgraded text→story; nightly via <code>schedule</code> skill / cloud agent (the mac isn't always on)</td></tr>
+</table>
+</details>
+
+<h2>Invariants &amp; Guarantees</h2>
+<p>These are the properties the spine <em>does</em> hold (or will enforce as built). Things this doc previously over-listed here as invariants but cannot yet guarantee — the temperature metric, the KL-face, standing-fire persistence — have been moved to <a href="#designed-not-built">Designed, not built</a>.</p>
+<ul>
+<li><strong>No <em>aesthetic</em> critic in the heat stage.</strong> Stage 1's spiral allows pure heat only — aesthetic critique is a cooling move and kills the ascent. (The non-ranking <a href="#policy-gate">policy gate</a> is not an aesthetic critic; it runs first and only blocks/allows.) Honesty is restored downstream by the build, not by a reviewer.</li>
+<li><strong>The build is the cold pole — but the compiler is not ground truth alone.</strong> The selected dream must build a working sketch, then pass <a href="#post-build">post-build validation</a> (runs/tests, data-fit, provenance/privacy, human acceptance). "It compiles" is necessary, not sufficient. <em>Hype proposes; the build-plus-validation disposes.</em></li>
+<li><strong>Stage-1 output is advisory until the cold pole lands.</strong> No selection is acted on autonomously until stage 2 builds end-to-end and the safety gates exist (see <a href="#cold-pole-gate">interim cold-pole gate</a>). This is the invariant that keeps the doc's own central risk from being the shipped configuration.</li>
+<li><strong>Foreign-origin embers cannot drive an autonomous build.</strong> Until the <a href="#data-structures">agent-auth boundary</a> exists, only locally-originated, Nick-authored embers feed a build; non-local/non-human origins are advisory/read-only.</li>
+<li><strong>Build confinement is an OS cage, not just a worktree.</strong> <code>isolation:worktree</code> confines the <em>path-scope</em> of the diff — it does NOT confine what the spawned agent can <em>do</em> (it still has a shell, network, env, credentials, subprocesses unless explicitly sandboxed). Stage 2 ingests attacker-influenceable ember content <em>and</em> executes code, so its actual confinement is a merge prerequisite: <strong>sandbox user, egress filter / no-network, no credential access, resource limits, symlink + package-script policy, and explicit artifact-export rules</strong>. The heat-stage <code>--sandbox read-only</code> is NOT evidence the build is contained — it applies to the wrong stage.</li>
+</ul>
+
+<h2 id="designed-not-built">Designed, not built</h2>
+<p>These were previously asserted as invariants. They are design targets with no working measurement yet, and they guarantee nothing until specified and validated. Listing them honestly here, not under Invariants.</p>
+<ul>
+<li><strong>The temperature metric.</strong> No anchored 1–5 rubric, no scorer, no cross-ember calibration exists yet (see <a href="#selection">selection function</a>). Until built, selection is subjective ranking.</li>
+<li><strong>The KL-surprise face.</strong> "DF's face is wired to true KL-surprise" is unbuildable as currently specified: KL divergence is between two distributions, and the doc names neither. Before the face can be called an <em>honest instrument</em> it must specify: (1) the two distributions (over what tokens/states), (2) the baseline/prior the run is measured against, (3) the estimator that yields a KL value from a 1–3-minute multi-CLI run, (4) the calibration that proves blendshape intensity actually tracks surprise. A wiring diagram is not honesty; only a human watching the face track <em>real</em> surprise is. Right now the face could be driven by any number and the claim would read identically.</li>
+<li><strong>Standing-fire persistence &amp; multiplayer.</strong> Depends on the CRDT integration, schema, merge rules, and agent-auth boundary — all open (see <a href="#data-structures">data structures</a>). Today: one markdown file.</li>
+<li><strong>Scheduled / cloud execution.</strong> The mac isn't always on, so nightly runs need a cloud path — which changes storage, auth, filesystem, and provider exposure. A deployment architecture section (secrets handling, storage location, audit logs, rollback) is required before this is stood up; it does not exist yet.</li>
+</ul>
+
+<h2 id="data-handling">Data handling &amp; privacy</h2>
+<p>
+The richest fuel is explicitly Nick's <em>private ore</em> — old projects, private notes, deposited history — and the design routes ember content through up to three external model-provider CLIs (Anthropic, Google, OpenAI) and proposes later multi-origin / cloud append. That is a real data-exfiltration surface and must be governed before any private content ascends. (One reviewer urged a hard "local air-gapped models only" rule; that is rejected as the remedy — it would forfeit the cross-family harmonics that are the point — but the underlying concern is valid and handled by an explicit boundary instead.)
+</p>
+<ul>
+<li><strong>Consent + redaction at the pre-heat gate.</strong> No private content leaves the machine without passing the <a href="#policy-gate">policy gate</a>: secrets stripped, third-party private data removed, and an explicit per-source consent decision logged. Blocked content is skipped, not downgraded.</li>
+<li><strong>Provider routing is classified, not blanket.</strong> Each ember source is tagged with which providers (if any) it may be sent to. Some sources are machine-local-only and never leave; only cleared content reaches Gemini/Codex paths.</li>
+<li><strong>Cost / privacy posture of non-Claude families.</strong> The global rule bans the metered Anthropic API; the Gemini and Codex/GPT paths must be confirmed to use cost-acceptable (non-metered where applicable) and privacy-acceptable channels before scheduled use. This is unconfirmed today and is a blocking item for the cloud path, not an assumption.</li>
+<li><strong>Multiplayer shareability.</strong> When multi-origin append exists, each node/terminus carries an explicit shareable-vs-machine-local flag; private ore is never auto-shared to peers or the collective.</li>
+</ul>
+
+<h2>Key Design Decisions</h2>
+
+<h3>1. Offense over defense (manufacture work, don't detect drift)</h3>
+<p><strong>Decision:</strong> generate work that should exist, ranked by a subjective "temperature" whose <em>intended</em> decomposition is <code>novelty × excitement × latent-feasibility</code> (not yet a validated formula — see <a href="#selection">selection function</a>).</p>
+<p><strong>Rationale:</strong> the raw material (dropped sparks, deposited history) is already being thrown away; defense only minimizes regret over what already changed.</p>
+<p><strong>Rejected:</strong> Boris Cherny-style loop engineering that finds work that <em>exists</em> and ranks by urgency/value — it never touches the private ore of "what can present-you finally use."</p>
+
+<h3>2. The overnight build as the restored cold pole — not a critic</h3>
+<p><strong>Decision:</strong> keep the ecstasy spiral critic-free; restore honesty by making the silence-winner build itself.</p>
+<p><strong>Rationale:</strong> a three-agent mutual-excitement loop is an echo chamber by construction — it will ascend vaporware exactly as eagerly as gold. The compiler is the ground truth that needs no opinion.</p>
+<p><strong>Rejected:</strong> adding a critic to the spiral. Critique is a cooling move; it would kill the heat that is the whole point of the stage.</p>
+
+<h3>3. Cross-family for harmonics, not adversarial convergence</h3>
+<p><strong>Decision:</strong> Maxwell/Kelvin/Carnot ascend the same ember from three inductive biases.</p>
+<p><strong>Rationale:</strong> the proven run showed structural ember (Maxwell) → lyric (Kelvin) → computable metric + tonight-stack (Carnot) — a vision lit from three biases climbs higher than any one.</p>
+<p><strong>Rejected:</strong> the inverted-cage-match's first framing (cross-family = disagreement). Disagreement is a cooling pressure; harmonics is the productive mode for the heat stage.</p>
+
+<h3>4. The ascent log is a CRDT document, not a file</h3>
+<p><strong>Decision:</strong> ember=node, terminus=edge, voice=CRDT peer on the deployed graph engine.</p>
+<p><strong>Rationale:</strong> it makes the engine transcend space (multi-origin append) and time (standing fires across sessions/people), and it gives curiosity-glow a real graph to render. It also realizes the graph-engine forward-plan CRUX (first-class edges).</p>
+<p><strong>Rejected:</strong> per-run markdown logs (what the proven run actually used). Fine for one ember; cannot express standing fires or multiplayer.</p>
+<p><strong>Status:</strong> this is a <em>target</em> decision — the markdown log is what exists today. The CRDT model is a dependency with an unwritten schema, undefined merge rules for edges/scores/winner-selection, and an unspecified agent-auth boundary; standing fires and multiplayer are roadmap, not current capability (see <a href="#data-structures">data structures</a> and <a href="#designed-not-built">designed, not built</a>).</p>
+
+<h2 id="risks">Risks &amp; Limitations</h2>
+<div class="verdict revise">
+<strong>Honest status:</strong> the <code>/ascend</code> skill is proven on <em>exactly one</em> ember; the night-loop spine that strings stages 1→2 together is <strong>in progress and not yet runnable end-to-end.</strong> Everything past stage 2 (DF face, scheduling) is designed, not built.
+</div>
+<ul>
+<li><span class="sev-high">High (BLOCKING for scheduled runs)</span> — <strong>Unbounded fan-out wired to a shared, billable quota + injection surface.</strong> "Three families × round-robin × multiple embers per night", each spawning worktree builders that <em>execute code</em>, is exactly the unbounded-spawn-into-someone-else's-quota pattern — and embers can originate from other machines or other people, so peer/attacker-influenced input can steer what gets built and run overnight unattended. This was previously mis-filed as "Low"; it is a blast-radius <em>and</em> an injection surface. <strong>Mitigation is a merge prerequisite before any scheduled/unattended run, not a follow-up:</strong> hard caps on embers/night, families/ember, builder spawns, wall-clock, and token/dollar spend; a kill-switch; and stage-2 OS isolation (sandbox user + egress filter) so multi-origin ember content cannot phone home. Until those exist, runs stay foreground + attended.</li>
+<li><span class="sev-high">High</span> — <strong>Echo-chamber without the cold pole.</strong> Until the worktree builder is wired and run, stage 1 in isolation will fall in love with the impossible. By this doc's own logic, stage 1 <em>without</em> a working cold pole is the unsafe configuration — so the <a href="#cold-pole-gate">interim cold-pole gate</a> (advisory-only, human checkpoint, cheap feasibility check) holds during the in-progress window. The spine is not safe to trust for autonomous selection until the builder lands.</li>
+<li><span class="sev-high">High</span> — <strong>Private-ore exfiltration to three providers.</strong> The richest fuel is Nick's private history, routed through Anthropic/Google/OpenAI CLIs. This is a real exfiltration surface; it is governed by the <a href="#data-handling">data-handling boundary</a> (pre-heat consent + redaction gate, classified provider routing). No private content ascends until that gate is enforced; the non-Claude families' cost/privacy posture is unconfirmed and blocks the cloud path.</li>
+<li><span class="sev-high">High</span> — <strong>Selection metric is not computable.</strong> The doc previously named three different selectors and called the result a "fitness function". It is a subjective ranking until an anchored rubric, a scorer, and cross-ember calibration exist (see <a href="#selection">selection function</a>).</li>
+<li><span class="sev-high">High</span> — <strong>Multi-origin / multiplayer has no auth boundary.</strong> "Even other people" + "nothing requires the writer to be human" with no agent-auth boundary means any peer could append a terminus that steers an overnight build. Foreign-origin embers are advisory-only until the boundary (an OPEN graph-engine item) is specified.</li>
+<li><span class="sev-med">Med</span> — <strong>Single-ember evidence, no control.</strong> The instrument is proven on one ember at temp 4/5 — one data point with no negative control and no test-retest. One non-maximal score is <em>not</em> evidence of calibration, discrimination, or non-sycophancy. Before trusting selection: ascend a deliberately weak/infeasible ember and confirm it scores low (discrimination), and re-run the same ember to check score stability (reliability). The "not a rubber stamp" claim is dropped until that spread + stability is reported.</li>
+<li><span class="sev-med">Med</span> — <strong>"Compiler is ground truth" is false for many dreams.</strong> A sketch can compile and be useless, unsafe, plagiarized, non-private, or off-intent. Mitigated by <a href="#post-build">post-build validation</a> (tests, data-fit, provenance/privacy, human acceptance); a green compile alone promotes nothing.</li>
+<li><span class="sev-med">Med</span> — <strong>KL-surprise face is unbuilt and the metric is unspecified.</strong> Moved out of Invariants. The two distributions, baseline, estimator, and blendshape calibration do not yet exist (see <a href="#designed-not-built">designed, not built</a>).</li>
+<li><span class="sev-med">Med</span> — <strong>CRDT log is aspirational.</strong> The proven run wrote a markdown file. Standing-fire / multiplayer guarantees depend on the graph-engine integration (schema + merge rules + auth), which is not done.</li>
+<li><span class="sev-med">Med</span> — <strong>Whole-night feedback latency; no learning from failure.</strong> Failure is currently only visible after the expensive build. Roadmap: a cheap static-feasibility check on the tonight-stack <em>before</em> triggering the full build, and a dead-letter log of failed ascents so similar infeasible embers can be suppressed in future nights.</li>
+<li><span class="sev-med">Med</span> — <strong>Scheduling / cloud is a trust-boundary change.</strong> The mac isn't always on; the cloud path changes storage, auth, filesystem, and provider exposure and needs its own deployment-architecture section (secrets, storage location, audit logs, rollback) before standing up.</li>
+<li><span class="sev-low">Low</span> — <strong>Role-play brittleness.</strong> The spiral's harmonics depend on models honoring prompted roles ("make it dangerous"); upstream model updates can silently change this. Roadmap: a golden-path harness that runs a fixed set of embers nightly and asserts role-playing behavior hasn't drifted.</li>
+</ul>
+
+<h2 id="verification">Verification</h2>
+<p>What has actually been tested, and how — scoped to its exact tested surface:</p>
+<ul>
+<li><strong>One real cross-family ascent, logged.</strong> Run at <code>~/.claude/consolidation/2026-06-20T23-08-47-ascend/ascent-log-curiosity-gap-glow.md</code> — Maxwell (Claude) + Kelvin (Gemini 2.5-pro) + Carnot (Codex/GPT; exact model id not recorded — the <code>codex exec</code> CLI does not pin one, so any "GPT-5.5" branding is unverified and should be read from runtime metadata next run), ember "curiosity-gap glow", ~3 min wall-clock.</li>
+<li><strong>Temperature 4/5 on that one ember.</strong> This is a single mid-scale data point, nothing more. It is <em>not</em> evidence of calibration, discrimination, or non-sycophancy — there is no negative control (no deliberately weak ember confirmed to land low) and no test-retest. The earlier "not a rubber stamp" reading is withdrawn; that claim needs the control + reliability runs described under <a href="#risks">Risks</a> before it can be made.</li>
+<li><strong>Harmonics observed in this one run:</strong> structural ember (Maxwell) → lyric (Kelvin) → computable metric + tonight-stack (Carnot). One run; not yet shown to generalize.</li>
+<li><strong>Individual CLI reachability confirmed 2026-06-22</strong> — each of the three CLIs above (<code>claude -p</code>, <code>gemini -m gemini-2.5-pro -p</code>, <code>codex exec --sandbox read-only</code>) responded to a prompt. This is reachability only; it does <strong>not</strong> verify orchestrated round-robin, output parsing into termini, or scoring.</li>
+</ul>
+<p><strong>Not yet verified:</strong> the orchestrator that loads embers → runs the spiral → ranks → selects → hands to the builder has <em>not</em> been run end-to-end. No worktree build has been driven from a selected winner. No post-build validation, no DF narration, no KL-face, no scheduled nightly run, no budget cap or privacy gate exercised. Per the verification discipline: the spine is <em>scaffolded and partially proven</em>, not done — the last gate (a full stage-1→2 run producing a validated built sketch) has not cleared.</p>
+
+</main>
+</body>
+</html>
