@@ -36,13 +36,14 @@ class _SendProbe extends Probe {
 String _deepSearchJson({
   required List<String> searched,
   List<String> failed = const [],
+  List<String> unavailable = const [],
   int totalCount = 3,
   String? error,
 }) =>
     jsonEncode(<String, dynamic>{
       if (error != null) 'error': error,
       'sources_searched': searched,
-      'sources_unavailable': <String>[],
+      'sources_unavailable': unavailable,
       'sources_failed': failed,
       'total_count': totalCount,
       'results': <Object>[],
@@ -90,8 +91,8 @@ void main() {
         ),
       ]);
       final results = await registry.runAll();
-      expect(results.map((r) => r.status),
-          [ProbeStatus.unknown, ProbeStatus.ok]);
+      expect(
+          results.map((r) => r.status), [ProbeStatus.unknown, ProbeStatus.ok]);
     });
   });
 
@@ -109,7 +110,8 @@ void main() {
       expect(r.shouldPage, isTrue);
     });
 
-    test('failed on OAuth→API-key FALLBACK (label contains "OAuth" but is '
+    test(
+        'failed on OAuth→API-key FALLBACK (label contains "OAuth" but is '
         'metered)', () async {
       // Regression: the fallback label is "API key (OAuth fallback)". A naive
       // contains("oauth") check would false-negative this real drift.
@@ -138,13 +140,30 @@ void main() {
       expect(r.status, ProbeStatus.ok);
     });
 
-    test('failed on the hollow signal: zero sources searched', () async {
-      // The exact 11-commit incident: the tool searched nothing.
+    test('failed on the hollow signal: zero sources searched, none unavailable',
+        () async {
+      // The exact 11-commit incident: the tool searched nothing AND nothing was
+      // even flagged unavailable — the integration is wired off.
       final r = await DeepSearchProbe(
         executeTool: (_, __) async => _deepSearchJson(searched: []),
       ).run();
       expect(r.status, ProbeStatus.failed);
       expect(r.detail, contains('zero sources'));
+    });
+
+    test(
+        'degraded (not failed) when the only requested source is unavailable '
+        '(disabled, e.g. VOYAGE unset) — no false page', () async {
+      // Regression: with VOYAGE_API_KEY unset, memory retrieval is null, so
+      // deep_search reports memory in sources_unavailable with sources_searched
+      // empty. That is a known-off capability, not a hollow — it must degrade,
+      // not page (mirrors RagProbe's disabled path).
+      final r = await DeepSearchProbe(
+        executeTool: (_, __) async =>
+            _deepSearchJson(searched: [], unavailable: ['memory']),
+      ).run();
+      expect(r.status, ProbeStatus.degraded);
+      expect(r.shouldPage, isFalse);
     });
 
     test('failed when a source errored', () async {
@@ -165,8 +184,8 @@ void main() {
   });
 
   group('CalendarProbe', () {
-    CalendarEvent event(String summary) =>
-        CalendarEvent.fromJson({'summary': summary, 'start': '2026-07-10T09:00:00Z'});
+    CalendarEvent event(String summary) => CalendarEvent.fromJson(
+        {'summary': summary, 'start': '2026-07-10T09:00:00Z'});
 
     test('ok when the pinned recurring event is present', () async {
       final r = await CalendarProbe(

@@ -602,7 +602,10 @@ Future<void> main() async {
   ProbeRegistry? probeRegistry;
   Future<void> Function(List<ProbeResult>)? onProbeResults;
   if (env.immuneProbesEnabled) {
-    final calendarExpect = Platform.environment['IMMUNE_CALENDAR_EXPECT'];
+    // Read via Env (dotEnv-backed), not Platform.environment directly, so a
+    // value set only in `.env` registers the calendar probe. (dotEnv reads both
+    // `.env` and platform env; the reverse is not true.)
+    final calendarExpect = env.immuneCalendarExpect;
     // Capture into a local final so null-promotion works inside the closure and
     // the "disabled" (null) signal is preserved distinctly from "returned 0".
     final mr = memoryRetriever;

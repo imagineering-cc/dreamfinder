@@ -17,11 +17,14 @@ typedef ToolExecutor = Future<String> Function(
 /// Runs `deep_search` with a fixed query and asserts the integration is
 /// actually *wired* — i.e. it searched at least one source and none errored.
 ///
-/// The key signal is **`sources_searched` being empty**, not `total_count == 0`.
-/// The historical hollow returned "sources: none" — the tool searched nothing
-/// because it was gated on retired names. Zero *results* can be legitimate (no
-/// match for the query); zero *sources searched* cannot. (Content-level hollow
-/// detection via a fixture-isolated sentinel is a PR2 measurement-integrity
+/// The key signal is **`sources_searched` being empty while nothing was
+/// `sources_unavailable`**, not `total_count == 0`. The historical hollow
+/// returned "sources: none" — the tool searched nothing because it was gated on
+/// retired names. Zero *results* can be legitimate (no match for the query);
+/// zero *sources searched* with sources that were merely disabled is a known-off
+/// capability (degrade, don't page); zero searched with none even disabled is
+/// the true hollow (page). (Content-level hollow detection via a
+/// fixture-isolated sentinel is a PR2 measurement-integrity
 /// gate.)
 class DeepSearchProbe extends Probe {
   DeepSearchProbe({
@@ -72,6 +75,7 @@ class DeepSearchProbe extends Probe {
 
     final searched = (decoded['sources_searched'] as List?) ?? const [];
     final failed = (decoded['sources_failed'] as List?) ?? const [];
+    final unavailable = (decoded['sources_unavailable'] as List?) ?? const [];
 
     if (failed.isNotEmpty) {
       return ProbeResult(
@@ -82,7 +86,26 @@ class DeepSearchProbe extends Probe {
       );
     }
     if (searched.isEmpty) {
-      // The exact 11-commit signal: the tool searched nothing.
+      // Distinguish "searched nothing because every requested source is
+      // legitimately disabled" (a known-off capability — e.g. memory when
+      // VOYAGE_API_KEY is unset) from a true integration hollow. The former is
+      // ambiguous (config state, not a live break), so it degrades and does NOT
+      // page — mirroring RagProbe's disabled path and the impedance-match rule.
+      // Only a genuine "searched nothing AND nothing was even unavailable"
+      // (the tool is wired off despite sources being configured) is the
+      // 11-commit hollow signal that pages.
+      if (unavailable.isNotEmpty) {
+        return ProbeResult(
+          id: id,
+          status: ProbeStatus.degraded,
+          detail:
+              'deep_search searched zero sources; all requested sources are '
+              'unavailable (disabled): $unavailable — surfaced, not paged',
+          coverage: const ['integration-hollow'],
+        );
+      }
+      // The exact 11-commit signal: the tool searched nothing and nothing was
+      // even flagged unavailable — the integration is wired off.
       return ProbeResult(
         id: id,
         status: ProbeStatus.failed,

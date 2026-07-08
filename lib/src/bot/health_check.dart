@@ -344,12 +344,25 @@ class HealthCheck {
   /// A `failed` probe here means River is up-but-wrong; it is escalated by the
   /// scheduler, never by a Docker restart.
   void _handleImmune(HttpRequest request) {
-    final anyFailed = _immuneStatus.values.any((s) => s['status'] == 'failed');
-    // Before any probe has run, report `unknown` — not `ok` — so an empty
-    // surface isn't mistaken for a clean bill of health.
-    final overall = _immuneStatus.isEmpty
-        ? 'unknown'
-        : (anyFailed ? 'failed' : 'ok');
+    // Aggregate with worst-wins precedence so the four probe states never
+    // collapse to a falsely-green surface. A registry that is all `degraded` or
+    // all `unknown` must NOT read as `ok` — that would make the self-healer
+    // commit the exact silent-semantic lie it exists to catch. Before any probe
+    // has run, report `unknown` so an empty surface isn't a clean bill of health.
+    bool anyStatus(String s) =>
+        _immuneStatus.values.any((v) => v['status'] == s);
+    final String overall;
+    if (_immuneStatus.isEmpty) {
+      overall = 'unknown';
+    } else if (anyStatus('failed')) {
+      overall = 'failed';
+    } else if (anyStatus('unknown')) {
+      overall = 'unknown';
+    } else if (anyStatus('degraded')) {
+      overall = 'degraded';
+    } else {
+      overall = 'ok';
+    }
     request.response
       ..statusCode = HttpStatus.ok
       ..headers.contentType = ContentType.json

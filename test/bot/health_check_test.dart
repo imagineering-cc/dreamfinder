@@ -385,6 +385,37 @@ void main() {
       expect((probes['probe_auth'] as Map)['status'], 'ok');
     });
 
+    test('/immune aggregate surfaces degraded (does not collapse to ok)',
+        () async {
+      // A registry that is all-degraded must NOT read as ok — the self-healer
+      // would otherwise commit the exact silent-semantic lie it exists to catch.
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_rag',
+        status: ProbeStatus.degraded,
+        detail: 'RAG disabled (VOYAGE unset)',
+      ));
+      final response = await get('/immune');
+      final json = jsonDecode(await response.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(json['immune_status'], 'degraded');
+    });
+
+    test('/immune aggregate surfaces unknown over degraded (worst-wins)',
+        () async {
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_rag',
+        status: ProbeStatus.degraded,
+      ));
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_deep_search',
+        status: ProbeStatus.unknown,
+      ));
+      final response = await get('/immune');
+      final json = jsonDecode(await response.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      expect(json['immune_status'], 'unknown');
+    });
+
     test(
         'CRITICAL isolation: a FAILED probe leaves /health at 200 '
         '(immune system cannot trip the Docker-restart arc)', () async {
@@ -396,9 +427,8 @@ void main() {
 
       // /immune reflects the failure...
       final immune = await get('/immune');
-      final immuneJson =
-          jsonDecode(await immune.transform(utf8.decoder).join())
-              as Map<String, dynamic>;
+      final immuneJson = jsonDecode(await immune.transform(utf8.decoder).join())
+          as Map<String, dynamic>;
       expect(immuneJson['immune_status'], 'failed');
 
       // ...but /health (the Docker restart trigger) stays 200 / ok.
