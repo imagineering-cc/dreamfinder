@@ -198,4 +198,132 @@ void main() {
       expect(extractHttpCode(StateError('plain')), isNull);
     });
   });
+
+  group('claudeErrorUserMessage', () {
+    test('every kind yields a non-empty, distinct message', () {
+      final messages = {
+        for (final k in ClaudeErrorKind.values) k: claudeErrorUserMessage(k),
+      };
+      // None blank — the whole point is the user is never left with a dead
+      // "something went wrong".
+      for (final entry in messages.entries) {
+        expect(entry.value.trim(), isNotEmpty, reason: '${entry.key} message');
+      }
+      // Each kind reads differently — the classification actually reaches the
+      // user rather than collapsing to one generic line.
+      expect(messages.values.toSet(), hasLength(ClaudeErrorKind.values.length));
+    });
+
+    test('each message names what actually broke', () {
+      expect(claudeErrorUserMessage(ClaudeErrorKind.billing).toLowerCase(),
+          contains('credit'));
+      expect(
+          claudeErrorUserMessage(ClaudeErrorKind.transient), contains('429'));
+      expect(
+        claudeErrorUserMessage(ClaudeErrorKind.auth).toLowerCase(),
+        anyOf(contains('login'), contains('credential'), contains('auth')),
+      );
+      // `other` has no specific cause, but must still say *something* concrete
+      // rather than a blank — guard it so the group name doesn't overclaim.
+      expect(claudeErrorUserMessage(ClaudeErrorKind.other).toLowerCase(),
+          anyOf(contains('misfired'), contains('nick')));
+    });
+  });
+
+  group('redactSecrets', () {
+    test('keeps ordinary error text untouched', () {
+      expect(redactSecrets('rate limit hit (429)'), 'rate limit hit (429)');
+      expect(redactSecrets('connection reset by peer'),
+          'connection reset by peer');
+    });
+
+    test('masks provider-prefixed tokens and URL credentials', () {
+      expect(redactSecrets('bad key sk-ant-abc12345defg'),
+          isNot(contains('sk-ant-abc12345defg')));
+      expect(
+        redactSecrets('connect https://user:hunter2@radicale.example/dav'),
+        isNot(contains('hunter2')),
+      );
+      expect(redactSecrets('token=${'a' * 40}'), contains('<redacted'));
+    });
+
+    // The canonical HTTP auth form leaked before: the label rule consumed only
+    // up to "Bearer" and left the credential. Use a NON-prefixed token so the
+    // provider-prefix rule can't mask the bug (the old test passed by accident
+    // because its token started `xoxb-`).
+    test('masks a non-prefixed Authorization: Bearer token', () {
+      final r = redactSecrets(
+          'HTTP 401 Authorization: Bearer abcDEF123456ghIJklMNop0987 denied');
+      expect(r, isNot(contains('abcDEF123456ghIJklMNop0987')));
+      expect(r, contains('<redacted'));
+    });
+
+    test('masks a bare Bearer token with no header label', () {
+      final r = redactSecrets('sending Bearer notaknownprefix_9times8');
+      expect(r, isNot(contains('notaknownprefix_9times8')));
+    });
+
+    test('masks a JWT (dotted blob starting eyJ)', () {
+      const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.'
+          'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+      final r = redactSecrets('unauthorized: $jwt (bad sig)');
+      expect(r, isNot(contains(jwt)));
+      expect(r, contains('<redacted-jwt>'));
+    });
+
+    test('masks non-Bearer Authorization schemes (Basic/Token)', () {
+      final basic = redactSecrets(
+          'HTTP 401 Authorization: Basic dXNlcjpwYXNzd29yZA denied');
+      expect(basic, isNot(contains('dXNlcjpwYXNzd29yZA')));
+      final tok = redactSecrets('Authorization: Token deadbeefsecretvalue99');
+      expect(tok, isNot(contains('deadbeefsecretvalue99')));
+    });
+
+    test('masks Digest auth credential params (response/nonce)', () {
+      final r = redactSecrets(
+          'Authorization: Digest username="nick", realm="x", '
+          'nonce="deadbeefnonce", uri="/", response="abcdef0123456789hash"');
+      // The actual credential material (response hash + nonce) must be masked;
+      // non-secret params (username/realm/uri) may remain.
+      expect(r, isNot(contains('abcdef0123456789hash')));
+      expect(r, isNot(contains('deadbeefnonce')));
+    });
+
+    test('masks a quoted JSON secret value with internal delimiters', () {
+      // The value has commas/semicolons/equals inside the quotes — the tail
+      // must not leak (cage-match r2: unquoted-only capture stopped at the
+      // first comma and leaked the rest).
+      final r =
+          redactSecrets('Error: {"client_secret": "foo,bar;baz=qux", "ok": 1}');
+      expect(r, isNot(contains('bar')));
+      expect(r, isNot(contains('baz')));
+      expect(r, isNot(contains('qux')));
+      expect(r, contains('<redacted'));
+    });
+
+    test('masks additional secret formats (AWS, ghs_, client_secret)', () {
+      expect(redactSecrets('id AKIAIOSFODNN7EXAMPLE here'),
+          isNot(contains('AKIAIOSFODNN7EXAMPLE')));
+      expect(redactSecrets('bad ghs_16CharsOrMoreToken12345xyz'),
+          isNot(contains('ghs_16CharsOrMoreToken12345xyz')));
+      expect(redactSecrets('client_secret=abcdef123456supersecretxyz'),
+          isNot(contains('abcdef123456supersecretxyz')));
+    });
+
+    test('roomSafeErrorDetail redacts BEFORE truncating (secret past the cut)',
+        () {
+      // A secret that starts past the 200-char boundary. Truncate-first would
+      // slice it into a fragment that evades the patterns; redact-first masks it
+      // on the full string before the cut.
+      const secret = 'Bearer verylongsecrettoken0123456789abcdefGHIJ';
+      final padded = '${'x' * 190} $secret trailing';
+      final r = roomSafeErrorDetail(Exception(padded));
+      expect(r, isNot(contains('verylongsecrettoken0123456789abcdefGHIJ')));
+    });
+
+    test('roomSafeErrorDetail truncates the safe string to maxLength', () {
+      final r = roomSafeErrorDetail(Exception('y' * 500));
+      expect(r.length, lessThanOrEqualTo(201)); // 200 + the ellipsis char
+    });
+  });
 }

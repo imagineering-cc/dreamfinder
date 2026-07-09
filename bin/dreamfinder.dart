@@ -1265,10 +1265,22 @@ Future<void> main() async {
             messageRepo.deleteConversation(event.roomId);
           }
 
+          // In-character AND informative in every case (Nick's ask): a
+          // Claude failure gets River's kind-aware line + the technical cause;
+          // any other processing error names itself as plumbing, not brain.
+          // The cause goes through roomSafeErrorDetail — the single door that
+          // redacts secrets on the FULL text before truncating, so a token near
+          // the 200-char cut can't slip through as a fragment (cage-match:
+          // truncate-then-redact leaked; the room is durable multi-party
+          // history).
+          final userMessage = e is ClaudeCallFailure
+              ? '${claudeErrorUserMessage(e.kind)}\n\n(what broke: ${roomSafeErrorDetail(e.cause)})'
+              : 'That broke on my end, not my brain — my plumbing, not my '
+                  'thinking. (what broke: ${roomSafeErrorDetail(e)}) Give it another go.';
           try {
             await matrixClient.sendMessage(
               roomId: event.roomId,
-              message: 'Something went wrong. Please try again.',
+              message: userMessage,
             );
           } on Object catch (sendErr) {
             log.error('Failed to send error message: $sendErr');
