@@ -271,6 +271,26 @@ void main() {
       expect(r, contains('<redacted-jwt>'));
     });
 
+    test('masks non-Bearer Authorization schemes (Basic/Token)', () {
+      final basic = redactSecrets(
+          'HTTP 401 Authorization: Basic dXNlcjpwYXNzd29yZA denied');
+      expect(basic, isNot(contains('dXNlcjpwYXNzd29yZA')));
+      final tok = redactSecrets('Authorization: Token deadbeefsecretvalue99');
+      expect(tok, isNot(contains('deadbeefsecretvalue99')));
+    });
+
+    test('masks a quoted JSON secret value with internal delimiters', () {
+      // The value has commas/semicolons/equals inside the quotes — the tail
+      // must not leak (cage-match r2: unquoted-only capture stopped at the
+      // first comma and leaked the rest).
+      final r =
+          redactSecrets('Error: {"client_secret": "foo,bar;baz=qux", "ok": 1}');
+      expect(r, isNot(contains('bar')));
+      expect(r, isNot(contains('baz')));
+      expect(r, isNot(contains('qux')));
+      expect(r, contains('<redacted'));
+    });
+
     test('masks additional secret formats (AWS, ghs_, client_secret)', () {
       expect(redactSecrets('id AKIAIOSFODNN7EXAMPLE here'),
           isNot(contains('AKIAIOSFODNN7EXAMPLE')));

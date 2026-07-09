@@ -104,9 +104,16 @@ String redactSecrets(String s) => s
     // Matched first so the dotted blob isn't split by the opaque rule below.
     .replaceAll(
         RegExp(r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+'), '<redacted-jwt>')
-    // Bearer scheme, with or without an `Authorization:` label — mask the
-    // credential, keep the scheme word. The canonical `Authorization: Bearer
-    // <tok>` form leaked before (the label rule consumed only up to "Bearer").
+    // Authorization header, ANY scheme (Bearer/Basic/Token/Digest/…) — mask the
+    // whole credential. A Bearer-only rule leaked `Basic`/`Token` creds; the
+    // generic label rule below only ate the scheme word (cage-match r2). Runs
+    // before the label rule so `authorization` is handled here, not there.
+    .replaceAll(
+        RegExp(
+            r'''\b(authorization)["']?\s*[:=]\s*["']?(?:[A-Za-z]+\s+)?[A-Za-z0-9._~+/=:-]{3,}''',
+            caseSensitive: false),
+        r'authorization=<redacted>')
+    // Bare `Bearer <tok>` with no `Authorization:` label.
     .replaceAllMapped(
         RegExp(r'\b(bearer)\s+[A-Za-z0-9._~+/=-]{6,}', caseSensitive: false),
         (m) => '${m[1]} <redacted>')
@@ -117,11 +124,13 @@ String redactSecrets(String s) => s
         RegExp(
             r'\b(sk|pa|xox[bpacsr]|xapp|gh[porsu]|github_pat|glpat|npm)[-_][A-Za-z0-9._-]{8,}'),
         '<redacted-token>')
-    // label=value / label: value (optionally quoted, incl. JSON) — keep the
-    // label, mask the value.
+    // label=value / label: value — keep the label, mask the value. The value
+    // alternation treats a quoted string as ATOMIC (incl. internal commas /
+    // semicolons), so a JSON `"secret": "foo,bar;baz"` no longer leaks its tail
+    // (cage-match r2); an unquoted value stops at the first delimiter.
     .replaceAllMapped(
         RegExp(
-            r'''\b(bearer|authorization|api[-_]?key|access[-_]?key|secret|client[-_]?secret|refresh[-_]?token|access[-_]?token|private[-_]?key|password|passwd|pwd|token|cookie|session)["']?\s*[:=]\s*["']?([^"'\s,;&}]+)''',
+            r'''\b(bearer|api[-_]?key|access[-_]?key|secret|client[-_]?secret|refresh[-_]?token|access[-_]?token|private[-_]?key|password|passwd|pwd|token|cookie|session)["']?\s*[:=]\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s,;&}]+)''',
             caseSensitive: false),
         (m) => '${m[1]}=<redacted>')
     // Credentials embedded in a URL (https://user:pass@host).
