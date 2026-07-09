@@ -201,8 +201,9 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
     CI, `Dockerfile` / compose, `*.json` / `pubspec.yaml` / `analysis_options.yaml` config,
     schema/migrations, wire-format, prompts, **normative/agent-instruction docs incl.
     `CLAUDE.md`**, branch-protection / auth / policy semantics, dependencies, and any
-    state-lifecycle / status-shift / multi-file / trust-boundary change. **When in doubt,
-    full.**
+    state-lifecycle / status-shift / trust-boundary / multi-file *behavioural or
+    cross-boundary* change (a purely non-semantic multi-file docs cleanup stays light).
+    **When in doubt, full.**
   - Branch protection can't tier by path natively, so today the tier governs *which ritual
     you run*, not the enforced count (still 2). The substrate-first fix — a required CI
     status check that classifies the diff against the allowlist above, demanding full review
