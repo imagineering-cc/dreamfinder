@@ -64,6 +64,7 @@ class Env {
     this.maintenanceMode = 'none',
     this.immuneProbesEnabled = false,
     this.immuneCalendarExpect,
+    this.immuneSentinelKey,
   });
 
   factory Env.load() {
@@ -158,6 +159,7 @@ class Env {
       immuneProbesEnabled:
           (dotEnv['IMMUNE_PROBES_ENABLED'] ?? '').toLowerCase() == 'true',
       immuneCalendarExpect: dotEnv['IMMUNE_CALENDAR_EXPECT'],
+      immuneSentinelKey: dotEnv['IMMUNE_SENTINEL_KEY'],
     );
   }
 
@@ -212,6 +214,7 @@ class Env {
     String maintenanceMode = 'none',
     bool immuneProbesEnabled = false,
     String? immuneCalendarExpect,
+    String? immuneSentinelKey,
   }) =>
       Env._(
         anthropicApiKey: anthropicApiKey,
@@ -264,6 +267,7 @@ class Env {
         maintenanceMode: maintenanceMode,
         immuneProbesEnabled: immuneProbesEnabled,
         immuneCalendarExpect: immuneCalendarExpect,
+        immuneSentinelKey: immuneSentinelKey,
       );
 
   /// Anthropic API key. Null when using OAuth auth.
@@ -492,6 +496,13 @@ class Env {
   /// `.env` is honoured — `DotEnv(includePlatformEnvironment: true)` reads both,
   /// but a `.env` value never lands in `Platform.environment`.
   final String? immuneCalendarExpect;
+
+  /// Secret HMAC key for the immune system's forge-proof content sentinels
+  /// (`IMMUNE_SENTINEL_KEY`). Null/unset → the content-integrity probe stays
+  /// unregistered (no key ⇒ no sealer ⇒ no trustworthy content check). Never
+  /// stored in a user-writable store; only the immune system holds it, so a
+  /// planted look-alike record in the corpus cannot produce a valid seal.
+  final String? immuneSentinelKey;
 
   /// Parses an integer env var, falling back to [defaultValue] if unset or
   /// non-positive, writing a warning to stderr on invalid/non-positive input.

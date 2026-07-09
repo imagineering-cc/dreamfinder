@@ -417,6 +417,33 @@ void main() {
     });
 
     test(
+        'recordExpired annotates a probe as expired without changing the '
+        'aggregate, and clears it (surface only, PR2b)', () async {
+      health.recordProbeResult(const ProbeResult(
+        id: 'probe_content_integrity',
+        status: ProbeStatus.ok,
+      ));
+      health.recordExpired(['probe_content_integrity']);
+
+      var json = jsonDecode(
+              await (await get('/immune')).transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      var probes = json['probes'] as Map<String, dynamic>;
+      expect((probes['probe_content_integrity'] as Map)['expired'], isTrue);
+      // Surface only: an overdue recalibration is not a live fault.
+      expect(json['immune_status'], 'ok');
+
+      // No longer expired → the flag clears.
+      health.recordExpired(const []);
+      json = jsonDecode(
+              await (await get('/immune')).transform(utf8.decoder).join())
+          as Map<String, dynamic>;
+      probes = json['probes'] as Map<String, dynamic>;
+      expect((probes['probe_content_integrity'] as Map).containsKey('expired'),
+          isFalse);
+    });
+
+    test(
         'CRITICAL isolation: a FAILED probe leaves /health at 200 '
         '(immune system cannot trip the Docker-restart arc)', () async {
       health.recordProbeResult(const ProbeResult(

@@ -200,6 +200,26 @@ class HealthCheck {
     _lastProbeRun = DateTime.now();
   }
 
+  /// Annotates probes whose recalibration deadline ([Probe.expiry]) has passed
+  /// with `"expired": true` on the `/immune` surface, and clears the flag from
+  /// any that are no longer expired.
+  ///
+  /// PR2b surfaces this only — it does NOT page (paging an expired antibody
+  /// needs the severity-aware alerter in PR2c) and does NOT change the
+  /// worst-wins `immune_status` aggregate (an overdue recalibration is not a
+  /// live fault). Call AFTER [recordProbeResult] so the fresh result JSON (which
+  /// carries no `expired` key) doesn't overwrite the annotation.
+  void recordExpired(List<String> expiredIds) {
+    final expired = expiredIds.toSet();
+    for (final entry in _immuneStatus.entries) {
+      if (expired.contains(entry.key)) {
+        entry.value['expired'] = true;
+      } else {
+        entry.value.remove('expired');
+      }
+    }
+  }
+
   void _handleRequest(HttpRequest request) {
     // Handle CORS preflight for all /api/ paths.
     if (request.method == 'OPTIONS' && request.uri.path.startsWith('/api/')) {
