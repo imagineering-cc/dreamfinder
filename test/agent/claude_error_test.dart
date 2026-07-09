@@ -279,6 +279,16 @@ void main() {
       expect(tok, isNot(contains('deadbeefsecretvalue99')));
     });
 
+    test('masks Digest auth credential params (response/nonce)', () {
+      final r = redactSecrets(
+          'Authorization: Digest username="nick", realm="x", '
+          'nonce="deadbeefnonce", uri="/", response="abcdef0123456789hash"');
+      // The actual credential material (response hash + nonce) must be masked;
+      // non-secret params (username/realm/uri) may remain.
+      expect(r, isNot(contains('abcdef0123456789hash')));
+      expect(r, isNot(contains('deadbeefnonce')));
+    });
+
     test('masks a quoted JSON secret value with internal delimiters', () {
       // The value has commas/semicolons/equals inside the quotes — the tail
       // must not leak (cage-match r2: unquoted-only capture stopped at the

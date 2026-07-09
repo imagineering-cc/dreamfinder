@@ -128,9 +128,14 @@ String redactSecrets(String s) => s
     // alternation treats a quoted string as ATOMIC (incl. internal commas /
     // semicolons), so a JSON `"secret": "foo,bar;baz"` no longer leaks its tail
     // (cage-match r2); an unquoted value stops at the first delimiter.
+    // (…including the Digest-auth secret params `response`/`nonce`/`cnonce`,
+    // whose comma-separated quoted values the any-scheme rule above can't eat as
+    // a unit — here the atomic quoted capture masks each credential precisely,
+    // cage-match r3. Non-secret Digest params like username/realm/uri may remain
+    // — they are not credentials.)
     .replaceAllMapped(
         RegExp(
-            r'''\b(bearer|api[-_]?key|access[-_]?key|secret|client[-_]?secret|refresh[-_]?token|access[-_]?token|private[-_]?key|password|passwd|pwd|token|cookie|session)["']?\s*[:=]\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s,;&}]+)''',
+            r'''\b(bearer|api[-_]?key|access[-_]?key|secret|client[-_]?secret|refresh[-_]?token|access[-_]?token|private[-_]?key|password|passwd|pwd|token|cookie|session|response|nonce|cnonce)["']?\s*[:=]\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s,;&}]+)''',
             caseSensitive: false),
         (m) => '${m[1]}=<redacted>')
     // Credentials embedded in a URL (https://user:pass@host).
