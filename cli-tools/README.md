@@ -8,6 +8,7 @@ kan + outline MCP servers.
 |------|-------|--------------|
 | `kan.mjs` | Kan.bn REST API (`/api/v1`) | `KAN_API_KEY`, `KAN_BASE_URL` |
 | `outline.mjs` | Outline RPC API | `OUTLINE_API_KEY`, `OUTLINE_API_URL` |
+| `radicale.mjs` | Radicale CalDAV events (RFC 4791 expand) + CardDAV contacts | `RADICALE_BASE_URL`, `RADICALE_USERNAME`, `RADICALE_PASSWORD` |
 
 **Why CLIs instead of MCP servers?** The MCP servers were a hand-maintained
 *subset* of these CLIs and drifted behind — they lacked onboarding tools
@@ -16,7 +17,7 @@ onboard people. Shelling out to the full CLIs makes capability gaps
 structurally impossible and collapses ~50 MCP tool schemas into one tool.
 
 **Provenance:** these are copies of Nick's canonical CLIs at
-`~/.claude/cli-tools/{kan,outline}/`. They have **no npm dependencies** (only
+`~/.claude/cli-tools/{kan,outline,radicale}/`. They have **no npm dependencies** (only
 node builtins), so they're copied verbatim into the image — no `npm install`.
 If you change behaviour, change the canonical copy first, then re-vendor here
 with one command (run on the **dev machine** — the canonical CLIs are not in CI):

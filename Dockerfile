@@ -42,16 +42,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev 
 
 WORKDIR /app
 
-# Kan + Outline are driven by the vendored zero-dependency CLIs (no npm
-# install needed — they import only node builtins). The `run_cli` tool shells
-# out to these; CLI_TOOLS_DIR tells it where to find them.
+# Kan + Outline + Radicale are driven by the vendored zero-dependency CLIs (no
+# npm install needed — they import only node builtins). The `run_cli` tool
+# shells out to these; CLI_TOOLS_DIR tells it where to find them. The radicale
+# MCP server is fully retired (mcp-config.json is []), so it is no longer copied
+# or npm-installed into the image.
 COPY cli-tools/ /app/cli-tools/
 ENV CLI_TOOLS_DIR=/app/cli-tools
-
-# Radicale stays on MCP (no CLI equivalent) — install its deps.
-COPY mcp-servers/packages/radicale/package.json mcp-servers/packages/radicale/
-COPY mcp-servers/packages/radicale/ mcp-servers/packages/radicale/
-RUN cd mcp-servers/packages/radicale && npm install --omit=dev 2>/dev/null || true
 
 # Copy compiled binary and MCP config from build stage.
 COPY --from=build /app/bin/dreamfinder /app/bin/dreamfinder

@@ -32,15 +32,20 @@ void main() {
       expect(section, contains(groupId));
     });
 
-    test('meet and greet step mentions radicale tools', () {
+    test('meet and greet step drives contacts via the radicale CLI', () {
       final section = buildKickstartPromptSection(
         KickstartStep.meetAndGreet,
         groupId,
       );
       expect(section, contains('Step 2 of 6: Meet & Greet'));
-      expect(section, contains('radicale_create_contact'));
-      expect(section, contains('radicale_list_address_books'));
+      // Driven through run_cli (tool: radicale), NOT the retired MCP tools.
+      expect(section, contains('run_cli'));
+      expect(section, contains('add-contact'));
+      expect(section, contains('list-address-books'));
       expect(section, contains(kickstartAddressBook));
+      // The old MCP tool names must be gone.
+      expect(section, isNot(contains('radicale_create_contact')));
+      expect(section, isNot(contains('radicale_list_address_books')));
     });
 
     test('meet and greet asks about timezone and role', () {

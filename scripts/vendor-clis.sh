@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Re-vendor the zero-dependency Node CLIs that Dreamfinder shells out to
-# (kan.mjs, outline.mjs) FROM Nick's canonical copies at ~/.claude/cli-tools/,
+# (kan.mjs, outline.mjs, radicale.mjs) FROM Nick's canonical copies at
+# ~/.claude/cli-tools/,
 # then regenerate the committed SHA256 manifest so the CI drift guard passes.
 #
 # Run this on the DEV MACHINE (the canonical CLIs are not in CI) whenever you
@@ -27,6 +28,7 @@ MANIFEST="$VENDOR_DIR/.vendored-manifest.sha256"
 VENDORED=(
   "kan/kan.mjs kan.mjs"
   "outline/outline.mjs outline.mjs"
+  "radicale/radicale.mjs radicale.mjs"
 )
 
 echo "Vendoring CLIs from $CANONICAL_ROOT into $VENDOR_DIR"
