@@ -143,5 +143,87 @@ void main() {
       await alerter.escalate(kind: 'auth', message: 'invalid_grant');
       expect(notifyCalls, hasLength(1));
     });
+
+    group('severity-aware framing', () {
+      String telegramBody() =>
+          (jsonDecode(notifyCalls.single.body) as Map<String, dynamic>)['message']
+              as String;
+
+      test('default severity is brainOffline — unchanged brain-offline frame',
+          () async {
+        final alerter = buildAlerter();
+        await alerter.escalate(kind: 'billing', message: 'credit balance low');
+
+        // Backward-compatible: same wording the pre-severity alerter produced.
+        expect(telegramBody(), contains('brain offline'));
+        expect(roomSends.single.$2.toLowerCase(), contains('walkabout'));
+      });
+
+      test('capabilityFailure pages both channels with a distinct honest frame',
+          () async {
+        final alerter = buildAlerter();
+        await alerter.escalate(
+          kind: 'probe_content_integrity',
+          message: 'golden sentinel mismatch',
+          severity: AlertSeverity.capabilityFailure,
+        );
+
+        // Operator sees it is a capability, not a dead brain.
+        final body = telegramBody();
+        expect(body, contains('probe_content_integrity'));
+        expect(body, contains('golden sentinel mismatch'));
+        expect(body.toLowerCase(), isNot(contains('brain offline')));
+        expect(body.toLowerCase(), contains('capability'));
+
+        // The room is warned NOT to trust River — but it is not told the brain
+        // is dead (River is up, just wrong).
+        expect(roomSends, hasLength(1));
+        final roomMsg = roomSends.single.$2.toLowerCase();
+        expect(roomMsg, isNot(contains('walkabout')));
+      });
+
+      test('maintenance reaches operator only, never the room', () async {
+        final alerter = buildAlerter();
+        await alerter.escalate(
+          kind: 'expired::probe_calendar',
+          message: 'recalibration overdue',
+          severity: AlertSeverity.maintenance,
+        );
+
+        // Operator gets a quiet nudge...
+        expect(notifyCalls, hasLength(1));
+        final body = telegramBody().toLowerCase();
+        expect(body, isNot(contains('brain offline')));
+        // ...and the community room is left undisturbed by a maintenance event.
+        expect(roomSends, isEmpty);
+      });
+
+      test('maintenance nags daily, not hourly (longer cooldown)', () async {
+        final alerter = buildAlerter();
+        await alerter.escalate(
+          kind: 'expired::probe_calendar',
+          message: 'overdue',
+          severity: AlertSeverity.maintenance,
+        );
+        // An hour later a brain-offline page would fire again; a standing
+        // maintenance condition must not.
+        now = now.add(const Duration(hours: 2));
+        await alerter.escalate(
+          kind: 'expired::probe_calendar',
+          message: 'overdue',
+          severity: AlertSeverity.maintenance,
+        );
+        expect(notifyCalls, hasLength(1));
+
+        // But past a day it nudges again.
+        now = now.add(const Duration(hours: 23));
+        await alerter.escalate(
+          kind: 'expired::probe_calendar',
+          message: 'overdue',
+          severity: AlertSeverity.maintenance,
+        );
+        expect(notifyCalls, hasLength(2));
+      });
+    });
   });
 }
