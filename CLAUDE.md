@@ -167,25 +167,36 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
   whole value is the different-inductive-bias adversary (which is why the count is 2 and
   the reviewers are non-Claude).
 
-- **The gate is the count; the ritual is tiered by risk** (Nick, 2026-07-10): the
-  2-different-family approval *floor* above never relaxes — but the *review ritual* that
-  earns those approvals scales to the change, so a docs typo does not summon a 4-way
-  adversarial review. Tier off **objective signals** (paths touched, diff size,
-  conventional-commit type), never the author-instance's in-the-moment "this looks trivial"
-  — an author self-classifying its own diff *down* to dodge the adversary is exactly the
-  procedural laundering the gate exists to prevent.
-  - **Light tier → two `/pr-review` passes** (different families, satisfying the floor):
-    docs-only, comment/string-only, or a trivial single-file change **outside `lib/`** with
-    no behaviour shift. A docs change that edits *policy/security semantics* (this section,
-    branch protection, auth) is **not** light — treat as full.
-  - **Full tier → `/cage-match`** (4-way): anything touching `lib/**` behaviour, plus
-    state-lifecycle, wire-format/schema, migrations, trust boundaries, status-shifts, or
-    multi-file refactors. **When in doubt, cage-match.**
+- **The enforced floor is two different-family approvals; only the ritual is tiered**
+  (Nick, 2026-07-10): the floor above never relaxes — and the invariant is *two approvals
+  **from different model families***, not merely two approvals. What scales to the change is
+  the *review ritual* that earns them, so a doc typo does not summon a 4-way adversarial
+  review. **Fail closed: FULL is the default; a change qualifies for the light tier only by
+  matching the closed allowlist below.** This is deliberately a blocklist's opposite — an
+  "outside `lib/`" carve-out is a loophole (`pubspec.yaml`, `.github/**`, `Dockerfile`,
+  `*.json` config, `scripts/`, `cli-tools/` all live outside `lib/` and are
+  behaviour/security-critical), and in an agent-driven repo a "docs" edit to `CLAUDE.md` or
+  a prompt *is* a behaviour change. The author-instance never classifies its own diff *down*
+  — ambiguity resolves to FULL, and commit-type is at most a weak hint, never a deciding
+  signal (a risky change split into single-file "light" PRs is still FULL).
+  - **Light tier → two `/pr-review` passes** (different families, satisfying the floor).
+    ONLY these, and only when the change is *exclusively*: (a) typo / formatting / prose
+    edits to **non-normative** docs (a doc that does not instruct agent behaviour — README
+    prose, not `CLAUDE.md`/prompts/runbooks); (b) code comments that cannot affect
+    generated or runtime behaviour; (c) inert metadata with no execution, release, security,
+    or review effect. If a change is not *entirely* inside this allowlist, it is FULL.
+  - **Full tier → `/cage-match`** (4-way): the default for everything else, explicitly
+    including all `lib/**`, `bin/**`, `test/**`, `scripts/**`, `cli-tools/**`, `.github/**` /
+    CI, `Dockerfile` / compose, `*.json` / `pubspec.yaml` / `analysis_options.yaml` config,
+    schema/migrations, wire-format, prompts, **normative/agent-instruction docs incl.
+    `CLAUDE.md`**, branch-protection / auth / policy semantics, dependencies, and any
+    state-lifecycle / status-shift / multi-file / trust-boundary change. **When in doubt,
+    full.**
   - Branch protection can't tier by path natively, so today the tier governs *which ritual
     you run*, not the enforced count (still 2). The substrate-first fix — a required CI
-    status check that only *demands* review when risky paths change and auto-passes
-    docs-only diffs — is tracked as a task; until it lands, honour the tier by judgment
-    keyed to the objective signals above.
+    status check that classifies the diff against the allowlist above, demanding full review
+    on any non-allowlisted path and auto-passing only inert changes — is tracked as a task
+    (#40); until it lands, a disputed/ambiguous classification resolves to FULL.
 
 ## Signal → Matrix Migration (complete)
 
