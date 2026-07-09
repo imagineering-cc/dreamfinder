@@ -59,6 +59,22 @@ enum ClaudeErrorKind {
       this == ClaudeErrorKind.other;
 }
 
+/// A user-facing, in-character line explaining a Claude failure — funny but
+/// honest. River wears the Australian-pub register (cf. the "brain's gone
+/// walkabout" alert), and every kind names *what actually broke* so the reader
+/// isn't left with a blank "something went wrong". The specific technical cause
+/// is appended separately by the caller (see bin/dreamfinder.dart).
+String claudeErrorUserMessage(ClaudeErrorKind kind) => switch (kind) {
+      ClaudeErrorKind.billing =>
+        "Bit awkward, this — my account's out of credit, so I literally can't afford a thought right now. Someone shout the Anthropic bill and I'll be a genius again.",
+      ClaudeErrorKind.auth =>
+        "My Claude login's gone stale — the token expired and the backup key didn't bite either. I'm locked out of my own head till someone re-ups the auth.",
+      ClaudeErrorKind.transient =>
+        "Claude's throttling me — too many requests, or the servers are cactus (a 429/5xx). I gave it a few goes and it's still stroppy. Poke me again in a tick.",
+      ClaudeErrorKind.other =>
+        "Something upstairs misfired, and it wasn't the usual suspects. Give it another crack — and if I keep flaking, poke Nick.",
+    };
+
 /// Transient HTTP status codes that warrant a retry with backoff.
 const _transientCodes = {429, 500, 502, 503, 504, 529};
 

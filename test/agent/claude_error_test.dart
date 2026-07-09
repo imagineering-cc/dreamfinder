@@ -198,4 +198,30 @@ void main() {
       expect(extractHttpCode(StateError('plain')), isNull);
     });
   });
+
+  group('claudeErrorUserMessage', () {
+    test('every kind yields a non-empty, distinct message', () {
+      final messages = {
+        for (final k in ClaudeErrorKind.values) k: claudeErrorUserMessage(k),
+      };
+      // None blank — the whole point is the user is never left with a dead
+      // "something went wrong".
+      for (final entry in messages.entries) {
+        expect(entry.value.trim(), isNotEmpty, reason: '${entry.key} message');
+      }
+      // Each kind reads differently — the classification actually reaches the
+      // user rather than collapsing to one generic line.
+      expect(messages.values.toSet(), hasLength(ClaudeErrorKind.values.length));
+    });
+
+    test('each message names what actually broke', () {
+      expect(claudeErrorUserMessage(ClaudeErrorKind.billing).toLowerCase(),
+          contains('credit'));
+      expect(claudeErrorUserMessage(ClaudeErrorKind.transient), contains('429'));
+      expect(
+        claudeErrorUserMessage(ClaudeErrorKind.auth).toLowerCase(),
+        anyOf(contains('login'), contains('token'), contains('auth')),
+      );
+    });
+  });
 }

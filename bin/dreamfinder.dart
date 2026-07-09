@@ -1246,10 +1246,17 @@ Future<void> main() async {
             messageRepo.deleteConversation(event.roomId);
           }
 
+          // In-character AND informative in every case (Nick's ask): a
+          // Claude failure gets River's kind-aware line + the technical cause;
+          // any other processing error names itself as plumbing, not brain.
+          final userMessage = e is ClaudeCallFailure
+              ? '${claudeErrorUserMessage(e.kind)}\n\n(what broke: ${_shortError(e.cause)})'
+              : 'That broke on my end, not my brain — my plumbing, not my '
+                  'thinking. (what broke: ${_shortError(e)}) Give it another go.';
           try {
             await matrixClient.sendMessage(
               roomId: event.roomId,
-              message: 'Something went wrong. Please try again.',
+              message: userMessage,
             );
           } on Object catch (sendErr) {
             log.error('Failed to send error message: $sendErr');
