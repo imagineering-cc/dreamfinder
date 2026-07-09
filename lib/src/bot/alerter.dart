@@ -146,28 +146,56 @@ class Alerter {
       });
       return;
     }
-    _lastAlertAt[kind] = now;
+
+    // NOTE: dedup is keyed by `kind` alone, not `(kind, severity)`. Current
+    // callers namespace maintenance separately (`expired::<id>` vs a probe's
+    // bare `r.id` vs `billing`/`auth`), so a low-severity page can never suppress
+    // an urgent one. If a future caller reuses a `kind` across severities, this
+    // invariant breaks — key by `(kind, severity)` then. (Carnot/Tesla, PR2c.)
 
     // Match the log level to the severity: a maintenance nudge is not an error,
     // and logging it as one just rebuilds the alert fatigue we cured on the
-    // Telegram side inside the observability layer (Tesla, PR2c review).
+    // Telegram side inside the observability layer (Tesla, PR2c review). The
+    // brainOffline message string is preserved verbatim so log/pager scrapes
+    // keyed on it don't detune.
     final logExtra = <String, Object?>{
       'kind': kind,
       'severity': severity.name,
       'message': message,
       'auth_mode': authModeLabel,
     };
-    if (severity == AlertSeverity.maintenance) {
-      _log?.warning('Escalating maintenance alert', extra: logExtra);
-    } else {
-      _log?.error('Escalating alert', extra: logExtra);
+    switch (severity) {
+      case AlertSeverity.brainOffline:
+        _log?.error('Escalating brain failure', extra: logExtra);
+      case AlertSeverity.capabilityFailure:
+        _log?.error('Escalating capability failure', extra: logExtra);
+      case AlertSeverity.maintenance:
+        _log?.warning('Escalating maintenance alert', extra: logExtra);
     }
 
     // Both channels are best-effort and independent. The room only fires for
     // severities loud enough to earn it.
-    await _alertTelegram(kind, message, severity);
+    final telegramDelivered = await _alertTelegram(kind, message, severity);
+    var roomDelivered = false;
     if (severity.reachesRoom) {
-      await _alertInRoom(severity);
+      roomDelivered = await _alertInRoom(severity);
+    }
+
+    // Stamp the cooldown only on SUCCESSFUL delivery to at least one channel. A
+    // rate-limit lease must be earned by a page that actually landed, not by the
+    // intent to page — otherwise a failed first send (sidecar cold, 5xx) burns
+    // the whole cooldown and the operator hears silence, worst of all for the
+    // 24h maintenance window. On total delivery failure we leave the key unset
+    // so the next tick retries. (Carnot blocker / Tesla, PR2c review.)
+    //
+    // NB: this dedup is process-local, so a standing maintenance condition still
+    // re-pages once per process restart regardless of the window — the durable
+    // cross-restart cadence (persist to bot_metadata) is deferred to task #41.
+    if (telegramDelivered || roomDelivered) {
+      _lastAlertAt[kind] = now;
+    } else {
+      _log?.warning('Alert not delivered on any channel; cooldown not stamped',
+          extra: {'kind': kind, 'severity': severity.name});
     }
   }
 
@@ -192,12 +220,15 @@ class Alerter {
     }
   }
 
-  Future<void> _alertTelegram(
+  /// Returns true iff the alert was delivered (a 2xx from the sidecar). A
+  /// not-configured channel, a non-2xx, or a thrown error all return false so
+  /// [escalate] can withhold the cooldown stamp until a page actually lands.
+  Future<bool> _alertTelegram(
       String kind, String message, AlertSeverity severity) async {
     final url = notifyUrl;
     final apiKey = notifyApiKey;
     if (url == null || url.isEmpty || apiKey == null || apiKey.isEmpty) {
-      return; // Channel not configured — skip silently.
+      return false; // Channel not configured — nothing delivered.
     }
     final body = _telegramBody(kind, message, severity);
     try {
@@ -216,24 +247,31 @@ class Alerter {
         _log?.warning('notify alert non-2xx', extra: {
           'status': response.statusCode,
         });
+        return false;
       }
+      return true;
     } on Object catch (e) {
       _log?.warning('notify alert failed: $e');
+      return false;
     }
   }
 
-  Future<void> _alertInRoom(AlertSeverity severity) async {
+  /// Returns true iff the in-room message was sent without throwing. A
+  /// not-configured room or a send failure returns false (see [_alertTelegram]).
+  Future<bool> _alertInRoom(AlertSeverity severity) async {
     assert(severity.reachesRoom,
         'in-room alert requested for $severity, which does not reach the room');
     final roomId = announceRoomId;
     final send = _sendToRoom;
     if (roomId == null || roomId.isEmpty || send == null) {
-      return; // Channel not configured — skip silently.
+      return false; // Channel not configured — nothing delivered.
     }
     try {
       await send(roomId, _inRoomMessage(severity));
+      return true;
     } on Object catch (e) {
       _log?.warning('in-room alert failed: $e');
+      return false;
     }
   }
 

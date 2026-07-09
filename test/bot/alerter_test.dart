@@ -204,6 +204,56 @@ void main() {
         expect(roomSends, isEmpty);
       });
 
+      test('capabilityFailure re-fires after the urgent window, not the daily one',
+          () async {
+        final alerter = buildAlerter();
+        await alerter.escalate(
+          kind: 'probe_rag',
+          message: 'hollow',
+          severity: AlertSeverity.capabilityFailure,
+        );
+        // Just past the 1h urgent window — capability is urgent, not daily, so
+        // it must re-page (guards against a future "make capability daily" slip).
+        now = now.add(const Duration(hours: 1, minutes: 1));
+        await alerter.escalate(
+          kind: 'probe_rag',
+          message: 'hollow',
+          severity: AlertSeverity.capabilityFailure,
+        );
+        expect(notifyCalls, hasLength(2));
+      });
+
+      test('a failed first delivery does NOT burn the cooldown', () async {
+        // Telegram-only alerter (no room) whose sidecar is down: the first
+        // maintenance page never lands. The 24h lease must NOT be stamped on a
+        // spark that never left the coil — the next attempt must still fire.
+        var attempts = 0;
+        final alerter = Alerter(
+          notifyUrl: 'http://notify.test:8090',
+          notifyApiKey: 'secret',
+          announceRoomId: null, // maintenance is operator-only anyway
+          httpClient: http_testing.MockClient((_) async {
+            attempts++;
+            return http.Response('nope', 503); // sidecar cold
+          }),
+          clock: () => now,
+        );
+        await alerter.escalate(
+          kind: 'expired::probe_calendar',
+          message: 'overdue',
+          severity: AlertSeverity.maintenance,
+        );
+        // Seconds later — a real retry, well inside the 24h window.
+        now = now.add(const Duration(minutes: 1));
+        await alerter.escalate(
+          kind: 'expired::probe_calendar',
+          message: 'overdue',
+          severity: AlertSeverity.maintenance,
+        );
+        // Both attempts hit the wire — the failed page didn't lock out the retry.
+        expect(attempts, 2);
+      });
+
       test('maintenance nags daily, not hourly (longer cooldown)', () async {
         final alerter = buildAlerter();
         await alerter.escalate(
