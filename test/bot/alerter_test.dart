@@ -146,9 +146,8 @@ void main() {
     });
 
     group('severity-aware framing', () {
-      String telegramBody() =>
-          (jsonDecode(notifyCalls.single.body) as Map<String, dynamic>)['message']
-              as String;
+      String telegramBody() => (jsonDecode(notifyCalls.single.body)
+          as Map<String, dynamic>)['message'] as String;
 
       test('default severity is brainOffline — unchanged brain-offline frame',
           () async {
@@ -205,7 +204,8 @@ void main() {
         expect(roomSends, isEmpty);
       });
 
-      test('capabilityFailure re-fires after the urgent window, not the daily one',
+      test(
+          'capabilityFailure re-fires after the urgent window, not the daily one',
           () async {
         final alerter = buildAlerter();
         await alerter.escalate(
@@ -224,7 +224,8 @@ void main() {
         expect(notifyCalls, hasLength(2));
       });
 
-      test('concurrent same-key escalates page only once (no double-admit race)',
+      test(
+          'concurrent same-key escalates page only once (no double-admit race)',
           () async {
         // Hold the first request in flight so the second escalate re-enters
         // while the first is mid-await — the exact interleave a boot smoke run
