@@ -25,12 +25,16 @@ import 'package:dreamfinder/src/db/schema.dart';
 import 'package:dreamfinder/src/dream/dream_cycle.dart';
 import 'package:dreamfinder/src/game/game_event_router.dart';
 import 'package:dreamfinder/src/immune/boot_checks.dart';
+import 'package:dreamfinder/src/immune/golden_seeder.dart';
+import 'package:dreamfinder/src/immune/golden_sentinels.dart';
 import 'package:dreamfinder/src/immune/probe.dart';
 import 'package:dreamfinder/src/immune/probe_registry.dart';
 import 'package:dreamfinder/src/immune/probes/auth_probe.dart';
 import 'package:dreamfinder/src/immune/probes/calendar_probe.dart';
+import 'package:dreamfinder/src/immune/probes/content_integrity_probe.dart';
 import 'package:dreamfinder/src/immune/probes/deep_search_probe.dart';
 import 'package:dreamfinder/src/immune/probes/rag_probe.dart';
+import 'package:dreamfinder/src/immune/sentinel.dart';
 import 'package:dreamfinder/src/kickstart/kickstart.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_prompt.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_state.dart';
@@ -609,7 +613,7 @@ Future<void> main() async {
     // Capture into a local final so null-promotion works inside the closure and
     // the "disabled" (null) signal is preserved distinctly from "returned 0".
     final mr = memoryRetriever;
-    probeRegistry = ProbeRegistry([
+    final probes = <Probe>[
       AuthProbe(
         readAuthModeLabel: () => alerter.authModeLabel,
         maintenanceMode: maintenanceMode,
@@ -630,7 +634,49 @@ Future<void> main() async {
             : () async =>
                 (await mr.retrieve('Imagineering', 'immune-probe')).length,
       ),
-    ]);
+    ];
+
+    // Content-integrity antibody (PR2b): catches content-hollow/forgery a wiring
+    // probe misses, by retrieving a forge-proof golden through the REAL memory
+    // path and verifying its HMAC seal + identity. Requires IMMUNE_SENTINEL_KEY
+    // (no key ⇒ no sealer ⇒ no trustworthy check). Seeding is boot infra, not a
+    // probe, so it lives here (outside the detect-only registry).
+    final sentinelKey = env.immuneSentinelKey;
+    if (sentinelKey != null && sentinelKey.isNotEmpty) {
+      final sealer = SentinelSealer(sentinelKey);
+      final store = FixtureSentinelStore.sealed(sealer, immuneGoldens);
+      SealedFetcher? fetch;
+      // Gate the fetcher on embeddings: with Voyage off, retrieval returns
+      // nothing → the probe would `failed` (false page). Instead leave the
+      // fetcher null so the probe reports `degraded` (a known-off capability).
+      if (mr != null && voyageClient != null) {
+        await GoldenSeeder(
+          client: voyageClient,
+          queries: queries,
+          sealer: sealer,
+        ).seed(immuneGoldens);
+        fetch = buildGoldenFetcher(retriever: mr);
+      }
+      probes.add(
+        ContentIntegrityProbe(
+          id: 'probe_content_integrity',
+          sentinelId: immuneContentGolden.id,
+          store: store,
+          sealer: sealer,
+          fetchSealed: fetch,
+        ),
+      );
+      log.info(
+        fetch == null
+            ? 'Content-integrity probe registered (degraded: embeddings off)'
+            : 'Content-integrity probe registered + golden seeded',
+      );
+    } else {
+      log.info('Content-integrity probe disabled (no IMMUNE_SENTINEL_KEY)');
+    }
+
+    final registry = ProbeRegistry(probes);
+    probeRegistry = registry;
     onProbeResults = (results) async {
       for (final r in results) {
         health.recordProbeResult(r);
@@ -640,6 +686,10 @@ Future<void> main() async {
           );
         }
       }
+      // PR2b: surface (never page) antibodies whose recalibration deadline has
+      // passed. Runs on both the boot smoke run and every scheduler tick (both
+      // call this closure). Paging expired antibodies is PR2c.
+      health.recordExpired(registry.expired(DateTime.now().toUtc()));
     };
     // Boot smoke run — also serves the post-deploy smoke-test intent (a
     // silently-broken tool is caught at deploy, not weeks later).
