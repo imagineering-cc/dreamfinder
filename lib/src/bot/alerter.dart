@@ -148,12 +148,20 @@ class Alerter {
     }
     _lastAlertAt[kind] = now;
 
-    _log?.error('Escalating alert', extra: {
+    // Match the log level to the severity: a maintenance nudge is not an error,
+    // and logging it as one just rebuilds the alert fatigue we cured on the
+    // Telegram side inside the observability layer (Tesla, PR2c review).
+    final logExtra = <String, Object?>{
       'kind': kind,
       'severity': severity.name,
       'message': message,
       'auth_mode': authModeLabel,
-    });
+    };
+    if (severity == AlertSeverity.maintenance) {
+      _log?.warning('Escalating maintenance alert', extra: logExtra);
+    } else {
+      _log?.error('Escalating alert', extra: logExtra);
+    }
 
     // Both channels are best-effort and independent. The room only fires for
     // severities loud enough to earn it.
@@ -215,6 +223,8 @@ class Alerter {
   }
 
   Future<void> _alertInRoom(AlertSeverity severity) async {
+    assert(severity.reachesRoom,
+        'in-room alert requested for $severity, which does not reach the room');
     final roomId = announceRoomId;
     final send = _sendToRoom;
     if (roomId == null || roomId.isEmpty || send == null) {
@@ -228,21 +238,28 @@ class Alerter {
   }
 
   /// Static, in-character room message for [severity]. Deliberately NOT
-  /// agent-composed — the agent may be exactly what's broken. Maintenance never
-  /// reaches the room (guarded in [escalate]), so it is not represented here.
+  /// agent-composed — the agent may be exactly what's broken.
+  ///
+  /// The capability-failure copy is deliberately *subsystem-agnostic*: a
+  /// capability failure fires from any of the immune probes (content, calendar,
+  /// search, auth), so naming one — e.g. "my memory" — would tell the room a
+  /// failure mode the probe did not actually observe. That is the exact lie this
+  /// PR exists to kill, one grain finer; keep it generic (Tesla, PR2c review).
   String _inRoomMessage(AlertSeverity severity) {
     switch (severity) {
       case AlertSeverity.brainOffline:
         return "Oi — my brain's gone walkabout. Can't reach Claude right now, "
             "so I'm no good to anyone till it's sorted. Someone poke Nick.";
       case AlertSeverity.capabilityFailure:
-        return 'Heads up — one of my self-checks just failed, so my memory '
-            "might be feeding you rubbish. Don't take my word as gospel till "
-            "someone's had a look. Poke Nick.";
+        return 'Heads up — one of my self-checks just failed, so I might be '
+            "off the mark on something till it's looked at. Don't take my word "
+            'as gospel for now. Poke Nick.';
       case AlertSeverity.maintenance:
-        // Never sent to the room; escalate() gates maintenance out. Kept
-        // exhaustive so a new severity can't silently fall through.
-        return '';
+        // Unreachable: escalate() gates maintenance out of the room via
+        // reachesRoom, and _alertInRoom asserts it. Fail loud (caught by the
+        // best-effort wrapper in _alertInRoom) rather than posting silence to
+        // the room if a future edit ever routes maintenance here.
+        throw StateError('maintenance severity has no room message');
     }
   }
 }

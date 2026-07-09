@@ -698,8 +698,10 @@ Future<void> main() async {
       for (final r in results) {
         health.recordProbeResult(r);
         if (r.shouldPage) {
-          // A probe `failed` means River is up but a capability is returning
-          // wrong results — a capability failure, NOT a dead brain.
+          // shouldPage is true iff status == failed (ProbeResult.shouldPage):
+          // River is up but a capability is returning wrong results — a
+          // capability failure, NOT a dead brain. degraded/unknown never reach
+          // here, so this frame always matches the observation.
           unawaited(
             alerter.escalate(
               kind: r.id,

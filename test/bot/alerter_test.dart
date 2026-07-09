@@ -180,6 +180,12 @@ void main() {
         expect(roomSends, hasLength(1));
         final roomMsg = roomSends.single.$2.toLowerCase();
         expect(roomMsg, isNot(contains('walkabout')));
+        // ...and it must NOT name a specific subsystem the probe didn't convict:
+        // a capability failure fires from any immune probe (content, calendar,
+        // search, auth), so the room copy stays subsystem-agnostic. Naming
+        // "memory" for a calendar-probe failure is the exact lie this PR kills.
+        expect(roomMsg, isNot(contains('memory')));
+        expect(roomMsg, isNot(contains('calendar')));
       });
 
       test('maintenance reaches operator only, never the room', () async {
