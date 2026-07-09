@@ -217,7 +217,8 @@ void main() {
     test('each message names what actually broke', () {
       expect(claudeErrorUserMessage(ClaudeErrorKind.billing).toLowerCase(),
           contains('credit'));
-      expect(claudeErrorUserMessage(ClaudeErrorKind.transient), contains('429'));
+      expect(
+          claudeErrorUserMessage(ClaudeErrorKind.transient), contains('429'));
       expect(
         claudeErrorUserMessage(ClaudeErrorKind.auth).toLowerCase(),
         anyOf(contains('login'), contains('credential'), contains('auth')),

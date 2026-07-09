@@ -88,7 +88,8 @@ String redactSecrets(String s) => s
         '<redacted-token>')
     // key/token/password/bearer assignments — keep the label, mask the value.
     .replaceAllMapped(
-        RegExp(r'(bearer|authorization|api[-_]?key|token|password)\s*[:=]\s*\S+',
+        RegExp(
+            r'(bearer|authorization|api[-_]?key|token|password)\s*[:=]\s*\S+',
             caseSensitive: false),
         (m) => '${m[1]}=<redacted>')
     // Long opaque hex/base64 runs (keys, hashes with secret material).
