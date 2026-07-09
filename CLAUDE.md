@@ -159,13 +159,33 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
   acted). There is no real bot actor behind these commits unless a genuine org-authorized
   automation account + scoped token is provisioned.
 - **Merge gate — two adversarial approvals, enforced** (Nick, 2026-06-21): branch, push,
-  open the PR as yourself, then run `/cage-match`. Merging `main` requires **2 approving
-  reviews from different model families** — `kelvin-bit-brawler[bot]` (Gemini) and
-  `carnotcodecarver[bot]` (GPT) — and `main` branch protection enforces it
-  (`required_approving_review_count: 2`, `require_last_push_approval: true`). The session
-  may merge once the gate is satisfied; it must **never** `--admin`-bypass or lean on a
-  same-instance approval, because the gate's whole value is the different-inductive-bias
-  adversary (which is why the count is 2 and the reviewers are non-Claude).
+  open the PR as yourself. Merging `main` requires **2 approving reviews from different
+  model families** — `kelvin-bit-brawler[bot]` (Gemini) and `carnotcodecarver[bot]` (GPT)
+  — and `main` branch protection enforces it (`required_approving_review_count: 2`,
+  `require_last_push_approval: true`). The session may merge once the gate is satisfied; it
+  must **never** `--admin`-bypass or lean on a same-instance approval, because the gate's
+  whole value is the different-inductive-bias adversary (which is why the count is 2 and
+  the reviewers are non-Claude).
+
+- **The gate is the count; the ritual is tiered by risk** (Nick, 2026-07-10): the
+  2-different-family approval *floor* above never relaxes — but the *review ritual* that
+  earns those approvals scales to the change, so a docs typo does not summon a 4-way
+  adversarial review. Tier off **objective signals** (paths touched, diff size,
+  conventional-commit type), never the author-instance's in-the-moment "this looks trivial"
+  — an author self-classifying its own diff *down* to dodge the adversary is exactly the
+  procedural laundering the gate exists to prevent.
+  - **Light tier → two `/pr-review` passes** (different families, satisfying the floor):
+    docs-only, comment/string-only, or a trivial single-file change **outside `lib/`** with
+    no behaviour shift. A docs change that edits *policy/security semantics* (this section,
+    branch protection, auth) is **not** light — treat as full.
+  - **Full tier → `/cage-match`** (4-way): anything touching `lib/**` behaviour, plus
+    state-lifecycle, wire-format/schema, migrations, trust boundaries, status-shifts, or
+    multi-file refactors. **When in doubt, cage-match.**
+  - Branch protection can't tier by path natively, so today the tier governs *which ritual
+    you run*, not the enforced count (still 2). The substrate-first fix — a required CI
+    status check that only *demands* review when risky paths change and auto-passes
+    docs-only diffs — is tracked as a task; until it lands, honour the tier by judgment
+    keyed to the objective signals above.
 
 ## Signal → Matrix Migration (complete)
 
