@@ -231,18 +231,69 @@ void main() {
   });
 
   group('redactSecrets', () {
-    test('masks tokens/keys/auth but keeps ordinary error text', () {
+    test('keeps ordinary error text untouched', () {
       expect(redactSecrets('rate limit hit (429)'), 'rate limit hit (429)');
+      expect(redactSecrets('connection reset by peer'),
+          'connection reset by peer');
+    });
+
+    test('masks provider-prefixed tokens and URL credentials', () {
       expect(redactSecrets('bad key sk-ant-abc12345defg'),
           isNot(contains('sk-ant-abc12345defg')));
-      expect(redactSecrets('Authorization: Bearer xoxb-9999-deadbeefcafe'),
-          isNot(contains('deadbeefcafe')));
       expect(
         redactSecrets('connect https://user:hunter2@radicale.example/dav'),
         isNot(contains('hunter2')),
       );
-      // A long opaque blob is masked.
       expect(redactSecrets('token=${'a' * 40}'), contains('<redacted'));
+    });
+
+    // The canonical HTTP auth form leaked before: the label rule consumed only
+    // up to "Bearer" and left the credential. Use a NON-prefixed token so the
+    // provider-prefix rule can't mask the bug (the old test passed by accident
+    // because its token started `xoxb-`).
+    test('masks a non-prefixed Authorization: Bearer token', () {
+      final r = redactSecrets(
+          'HTTP 401 Authorization: Bearer abcDEF123456ghIJklMNop0987 denied');
+      expect(r, isNot(contains('abcDEF123456ghIJklMNop0987')));
+      expect(r, contains('<redacted'));
+    });
+
+    test('masks a bare Bearer token with no header label', () {
+      final r = redactSecrets('sending Bearer notaknownprefix_9times8');
+      expect(r, isNot(contains('notaknownprefix_9times8')));
+    });
+
+    test('masks a JWT (dotted blob starting eyJ)', () {
+      const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.'
+          'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+      final r = redactSecrets('unauthorized: $jwt (bad sig)');
+      expect(r, isNot(contains(jwt)));
+      expect(r, contains('<redacted-jwt>'));
+    });
+
+    test('masks additional secret formats (AWS, ghs_, client_secret)', () {
+      expect(redactSecrets('id AKIAIOSFODNN7EXAMPLE here'),
+          isNot(contains('AKIAIOSFODNN7EXAMPLE')));
+      expect(redactSecrets('bad ghs_16CharsOrMoreToken12345xyz'),
+          isNot(contains('ghs_16CharsOrMoreToken12345xyz')));
+      expect(redactSecrets('client_secret=abcdef123456supersecretxyz'),
+          isNot(contains('abcdef123456supersecretxyz')));
+    });
+
+    test('roomSafeErrorDetail redacts BEFORE truncating (secret past the cut)',
+        () {
+      // A secret that starts past the 200-char boundary. Truncate-first would
+      // slice it into a fragment that evades the patterns; redact-first masks it
+      // on the full string before the cut.
+      const secret = 'Bearer verylongsecrettoken0123456789abcdefGHIJ';
+      final padded = '${'x' * 190} $secret trailing';
+      final r = roomSafeErrorDetail(Exception(padded));
+      expect(r, isNot(contains('verylongsecrettoken0123456789abcdefGHIJ')));
+    });
+
+    test('roomSafeErrorDetail truncates the safe string to maxLength', () {
+      final r = roomSafeErrorDetail(Exception('y' * 500));
+      expect(r.length, lessThanOrEqualTo(201)); // 200 + the ellipsis char
     });
   });
 }

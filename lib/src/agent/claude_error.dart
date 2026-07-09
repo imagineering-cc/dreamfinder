@@ -70,32 +70,66 @@ String claudeErrorUserMessage(ClaudeErrorKind kind) => switch (kind) {
       ClaudeErrorKind.auth =>
         "My Claude credentials just got knocked back — someone needs to re-up the auth (the login or the API key). I'm locked out of my own head till then.",
       ClaudeErrorKind.transient =>
-        "Claude's throttling me — too many requests, or the servers are cactus (a 429/5xx). I gave it a few goes and it's still stroppy. Poke me again in a tick.",
+        "Claude's unreachable or rate-limiting me — throttled, or the servers are cactus (a 429/5xx, a timeout, or a dropped connection). I gave it a few goes and it's still stroppy. Poke me again in a tick.",
       ClaudeErrorKind.other =>
         "Something upstairs misfired, and it wasn't the usual suspects. Give it another crack — and if I keep flaking, poke Nick.",
     };
 
+/// The single room-safe rendering of an exception: redact secrets on the
+/// **full** text, **then** shorten. This is the one door a room-bound error
+/// string goes through — never hand a raw or pre-truncated cause to a
+/// multi-party channel. Truncating first can slice a secret so a fragment
+/// slips past the patterns (cage-match: truncate-then-redact leaked). Callers
+/// that build a user-facing error string for a Matrix room use this, not
+/// `redactSecrets` composed with an external truncator.
+String roomSafeErrorDetail(Object error, {int maxLength = 200}) {
+  final redacted = redactSecrets(error.toString().replaceAll('\n', ' ').trim());
+  return redacted.length > maxLength
+      ? '${redacted.substring(0, maxLength)}…'
+      : redacted;
+}
+
 /// Masks secret-looking substrings before an error detail is shown to users in
-/// a chat room. `_shortError` only truncates; error text (esp. non-Claude
-/// exceptions) can carry a bearer token, API key, URL credential, or auth
-/// header that must not land in room history. This keeps the *informative*
-/// part (status, message) while redacting the dangerous part. Defence in depth
-/// — the caller still decides whether to surface a cause at all.
+/// a chat room. Error text (esp. non-Claude exceptions) can carry a bearer
+/// token, JWT, API key, URL credential, or auth header that must not land in
+/// durable room history. It keeps the *informative* part (status, message)
+/// while masking the dangerous part.
+///
+/// Defence in depth, not a perfect filter: it **fails closed** by over-redacting
+/// long opaque runs (a request-id or UUID may be masked) — at a multi-party
+/// boundary a lost correlation handle beats a leaked key. Always run it via
+/// [roomSafeErrorDetail] so redaction precedes truncation.
 String redactSecrets(String s) => s
-    // Provider/token prefixes: sk-…, pa-… (Voyage), xoxb-/xoxp-… (Slack), ghp_…
+    // JWTs: header.payload.signature, always starting `eyJ` (base64url of `{"`).
+    // Matched first so the dotted blob isn't split by the opaque rule below.
     .replaceAll(
-        RegExp(r'\b(sk|pa|xox[bpas]|ghp|gho|github_pat)[-_][A-Za-z0-9._-]{8,}'),
+        RegExp(r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+'), '<redacted-jwt>')
+    // Bearer scheme, with or without an `Authorization:` label — mask the
+    // credential, keep the scheme word. The canonical `Authorization: Bearer
+    // <tok>` form leaked before (the label rule consumed only up to "Bearer").
+    .replaceAllMapped(
+        RegExp(r'\b(bearer)\s+[A-Za-z0-9._~+/=-]{6,}', caseSensitive: false),
+        (m) => '${m[1]} <redacted>')
+    // AWS access key id: AKIA + 16 upper/digits, no separator.
+    .replaceAll(RegExp(r'\bAKIA[0-9A-Z]{16}\b'), '<redacted-token>')
+    // Known provider token prefixes (separator-delimited).
+    .replaceAll(
+        RegExp(
+            r'\b(sk|pa|xox[bpacsr]|xapp|gh[porsu]|github_pat|glpat|npm)[-_][A-Za-z0-9._-]{8,}'),
         '<redacted-token>')
-    // key/token/password/bearer assignments — keep the label, mask the value.
+    // label=value / label: value (optionally quoted, incl. JSON) — keep the
+    // label, mask the value.
     .replaceAllMapped(
         RegExp(
-            r'(bearer|authorization|api[-_]?key|token|password)\s*[:=]\s*\S+',
+            r'''\b(bearer|authorization|api[-_]?key|access[-_]?key|secret|client[-_]?secret|refresh[-_]?token|access[-_]?token|private[-_]?key|password|passwd|pwd|token|cookie|session)["']?\s*[:=]\s*["']?([^"'\s,;&}]+)''',
             caseSensitive: false),
         (m) => '${m[1]}=<redacted>')
-    // Long opaque hex/base64 runs (keys, hashes with secret material).
-    .replaceAll(RegExp(r'\b[A-Za-z0-9+/_-]{32,}\b'), '<redacted>')
     // Credentials embedded in a URL (https://user:pass@host).
-    .replaceAll(RegExp(r'://[^/\s:@]+:[^/\s@]+@'), '://<redacted>@');
+    .replaceAll(RegExp(r'://[^/\s:@]+:[^/\s@]+@'), '://<redacted>@')
+    // Catch-all: long opaque runs (keys, base64, hex). No `\b` anchor — `\b` is
+    // defined on `\w` and fails at a base64 `+`/`/` edge, letting real keys slip
+    // (cage-match). Over-redacts long ids by design (fail closed).
+    .replaceAll(RegExp(r'[A-Za-z0-9+/=_-]{32,}'), '<redacted>');
 
 /// Transient HTTP status codes that warrant a retry with backoff.
 const _transientCodes = {429, 500, 502, 503, 504, 529};
