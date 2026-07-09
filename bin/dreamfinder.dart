@@ -641,8 +641,13 @@ Future<void> main() async {
     // path and verifying its HMAC seal + identity. Requires IMMUNE_SENTINEL_KEY
     // (no key ⇒ no sealer ⇒ no trustworthy check). Seeding is boot infra, not a
     // probe, so it lives here (outside the detect-only registry).
-    final sentinelKey = env.immuneSentinelKey;
-    if (sentinelKey != null && sentinelKey.trim().isNotEmpty) {
+    // Trim once at admission so the guard and the sealer agree on THE key: an
+    // env value with accidental surrounding whitespace (`" abc "`) must produce
+    // the same HMAC key as `"abc"`, or a later clean re-set silently breaks every
+    // seal. Whitespace-only ⇒ null ⇒ treated as unset.
+    final rawKey = env.immuneSentinelKey?.trim();
+    final sentinelKey = (rawKey != null && rawKey.isNotEmpty) ? rawKey : null;
+    if (sentinelKey != null) {
       final sealer = SentinelSealer(sentinelKey);
       final store = FixtureSentinelStore.sealed(sealer, immuneGoldens);
       SealedFetcher? fetch;
