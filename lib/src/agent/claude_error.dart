@@ -68,12 +68,33 @@ String claudeErrorUserMessage(ClaudeErrorKind kind) => switch (kind) {
       ClaudeErrorKind.billing =>
         "Bit awkward, this — my account's out of credit, so I literally can't afford a thought right now. Someone shout the Anthropic bill and I'll be a genius again.",
       ClaudeErrorKind.auth =>
-        "My Claude login's gone stale — the token expired and the backup key didn't bite either. I'm locked out of my own head till someone re-ups the auth.",
+        "My Claude credentials just got knocked back — someone needs to re-up the auth (the login or the API key). I'm locked out of my own head till then.",
       ClaudeErrorKind.transient =>
         "Claude's throttling me — too many requests, or the servers are cactus (a 429/5xx). I gave it a few goes and it's still stroppy. Poke me again in a tick.",
       ClaudeErrorKind.other =>
         "Something upstairs misfired, and it wasn't the usual suspects. Give it another crack — and if I keep flaking, poke Nick.",
     };
+
+/// Masks secret-looking substrings before an error detail is shown to users in
+/// a chat room. `_shortError` only truncates; error text (esp. non-Claude
+/// exceptions) can carry a bearer token, API key, URL credential, or auth
+/// header that must not land in room history. This keeps the *informative*
+/// part (status, message) while redacting the dangerous part. Defence in depth
+/// — the caller still decides whether to surface a cause at all.
+String redactSecrets(String s) => s
+    // Provider/token prefixes: sk-…, pa-… (Voyage), xoxb-/xoxp-… (Slack), ghp_…
+    .replaceAll(
+        RegExp(r'\b(sk|pa|xox[bpas]|ghp|gho|github_pat)[-_][A-Za-z0-9._-]{8,}'),
+        '<redacted-token>')
+    // key/token/password/bearer assignments — keep the label, mask the value.
+    .replaceAllMapped(
+        RegExp(r'(bearer|authorization|api[-_]?key|token|password)\s*[:=]\s*\S+',
+            caseSensitive: false),
+        (m) => '${m[1]}=<redacted>')
+    // Long opaque hex/base64 runs (keys, hashes with secret material).
+    .replaceAll(RegExp(r'\b[A-Za-z0-9+/_-]{32,}\b'), '<redacted>')
+    // Credentials embedded in a URL (https://user:pass@host).
+    .replaceAll(RegExp(r'://[^/\s:@]+:[^/\s@]+@'), '://<redacted>@');
 
 /// Transient HTTP status codes that warrant a retry with backoff.
 const _transientCodes = {429, 500, 502, 503, 504, 529};

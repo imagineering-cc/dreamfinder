@@ -220,8 +220,28 @@ void main() {
       expect(claudeErrorUserMessage(ClaudeErrorKind.transient), contains('429'));
       expect(
         claudeErrorUserMessage(ClaudeErrorKind.auth).toLowerCase(),
-        anyOf(contains('login'), contains('token'), contains('auth')),
+        anyOf(contains('login'), contains('credential'), contains('auth')),
       );
+      // `other` has no specific cause, but must still say *something* concrete
+      // rather than a blank — guard it so the group name doesn't overclaim.
+      expect(claudeErrorUserMessage(ClaudeErrorKind.other).toLowerCase(),
+          anyOf(contains('misfired'), contains('nick')));
+    });
+  });
+
+  group('redactSecrets', () {
+    test('masks tokens/keys/auth but keeps ordinary error text', () {
+      expect(redactSecrets('rate limit hit (429)'), 'rate limit hit (429)');
+      expect(redactSecrets('bad key sk-ant-abc12345defg'),
+          isNot(contains('sk-ant-abc12345defg')));
+      expect(redactSecrets('Authorization: Bearer xoxb-9999-deadbeefcafe'),
+          isNot(contains('deadbeefcafe')));
+      expect(
+        redactSecrets('connect https://user:hunter2@radicale.example/dav'),
+        isNot(contains('hunter2')),
+      );
+      // A long opaque blob is masked.
+      expect(redactSecrets('token=${'a' * 40}'), contains('<redacted'));
     });
   });
 }

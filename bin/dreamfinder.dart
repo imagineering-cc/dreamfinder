@@ -1249,10 +1249,14 @@ Future<void> main() async {
           // In-character AND informative in every case (Nick's ask): a
           // Claude failure gets River's kind-aware line + the technical cause;
           // any other processing error names itself as plumbing, not brain.
+          // Redact secret-looking substrings before the cause is shown in a
+          // room — error text can carry tokens/keys/auth headers (cage-match
+          // finding). The kind message stays informative; the raw cause is
+          // masked, not dumped.
           final userMessage = e is ClaudeCallFailure
-              ? '${claudeErrorUserMessage(e.kind)}\n\n(what broke: ${_shortError(e.cause)})'
+              ? '${claudeErrorUserMessage(e.kind)}\n\n(what broke: ${redactSecrets(_shortError(e.cause))})'
               : 'That broke on my end, not my brain — my plumbing, not my '
-                  'thinking. (what broke: ${_shortError(e)}) Give it another go.';
+                  'thinking. (what broke: ${redactSecrets(_shortError(e))}) Give it another go.';
           try {
             await matrixClient.sendMessage(
               roomId: event.roomId,
