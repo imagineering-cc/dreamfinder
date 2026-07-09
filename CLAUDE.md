@@ -158,14 +158,18 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
   (it is unset and silently falls back to the operator's admin `gh` keyring, disguising who
   acted). There is no real bot actor behind these commits unless a genuine org-authorized
   automation account + scoped token is provisioned.
-- **Merge gate — two adversarial approvals, enforced** (Nick, 2026-06-21): branch, push,
-  open the PR as yourself. Merging `main` requires **2 approving reviews from different
-  model families** — `kelvin-bit-brawler[bot]` (Gemini) and `carnotcodecarver[bot]` (GPT)
-  — and `main` branch protection enforces it (`required_approving_review_count: 2`,
-  `require_last_push_approval: true`). The session may merge once the gate is satisfied; it
-  must **never** `--admin`-bypass or lean on a same-instance approval, because the gate's
-  whole value is the different-inductive-bias adversary (which is why the count is 2 and
-  the reviewers are non-Claude).
+- **Merge gate — two adversarial approvals** (Nick, 2026-06-21): branch, push, open the PR
+  as yourself. Merging `main` requires **2 approving reviews from different model families**
+  — `kelvin-bit-brawler[bot]` (Gemini) and `carnotcodecarver[bot]` (GPT). **What the
+  substrate actually enforces is the *count*, not the *family*:** `main` branch protection
+  sets `required_approving_review_count: 2` + `require_last_push_approval: true`, so GitHub
+  guarantees two approvals from the latest push — but it does **not** verify the reviewers
+  are non-Claude / different-family (no CODEOWNERS or required-reviewer rule pins identity).
+  Family diversity is a **process invariant**, upheld by only ever seating the non-Claude
+  App reviewers, not something the substrate can currently check — so it's on the session to
+  honour it. The session may merge once the gate is satisfied; it must **never**
+  `--admin`-bypass or lean on a same-instance approval, because the gate's whole value is
+  the different-inductive-bias adversary.
 
 - **The enforced floor is two different-family approvals; only the ritual is tiered**
   (Nick, 2026-07-10): the floor above never relaxes — and the invariant is *two approvals
@@ -178,13 +182,20 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
   behaviour/security-critical), and in an agent-driven repo a "docs" edit to `CLAUDE.md` or
   a prompt *is* a behaviour change. The author-instance never classifies its own diff *down*
   — ambiguity resolves to FULL, and commit-type is at most a weak hint, never a deciding
-  signal (a risky change split into single-file "light" PRs is still FULL).
+  signal. Classify by the **aggregate intended change**, not the per-PR slice: a light PR
+  that is one mechanical split of a behaviour-changing sequence is FULL.
   - **Light tier → two `/pr-review` passes** (different families, satisfying the floor).
-    ONLY these, and only when the change is *exclusively*: (a) typo / formatting / prose
-    edits to **non-normative** docs (a doc that does not instruct agent behaviour — README
-    prose, not `CLAUDE.md`/prompts/runbooks); (b) code comments that cannot affect
-    generated or runtime behaviour; (c) inert metadata with no execution, release, security,
-    or review effect. If a change is not *entirely* inside this allowlist, it is FULL.
+    Because the substrate can't yet gate the tier (task #40), a light review only counts
+    when **both different-family reviewers explicitly attest the diff is entirely
+    light-tier** — reviewer-confirmed, not author-asserted. Eligible ONLY when the change is
+    *exclusively*: (a) typo / formatting / non-semantic wording in docs, with **no changed
+    instruction, command, contract, default, policy, or operational meaning** (so a README
+    edit that touches a setup command or an env default is FULL); (b) code comments that
+    cannot affect generated or runtime behaviour; (c) inert metadata with no execution,
+    release, security, or review effect. If a change is not *entirely* inside this allowlist
+    — or either reviewer declines to attest it light — it is FULL. (These predicates are
+    content-judgments, not pure path/size signals; that is why they are reviewer-attested
+    until #40's classifier makes them mechanical.)
   - **Full tier → `/cage-match`** (4-way): the default for everything else, explicitly
     including all `lib/**`, `bin/**`, `test/**`, `scripts/**`, `cli-tools/**`, `.github/**` /
     CI, `Dockerfile` / compose, `*.json` / `pubspec.yaml` / `analysis_options.yaml` config,
