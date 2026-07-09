@@ -118,8 +118,14 @@ class Alerter {
   final Duration _maintenanceCooldown;
   final DateTime Function() _clock;
 
-  /// Last time we alerted for each `kind`, for dedup.
-  final Map<String, DateTime> _lastAlertAt = {};
+  /// Last time we alerted for each `(kind, severity)`, for dedup.
+  ///
+  /// Keyed by the *pair*, not `kind` alone: a low-severity page must never be
+  /// able to suppress an urgent one that happens to share a `kind`. Today's
+  /// callers already namespace kinds per severity, but encoding the invariant in
+  /// the key type instead of a convention removes the landmine (Carnot/Tesla,
+  /// PR2c review).
+  final Map<(String, AlertSeverity), DateTime> _lastAlertAt = {};
 
   /// Escalates a failure of the given [kind] with a short [message], framed by
   /// [severity].
@@ -137,7 +143,8 @@ class Alerter {
   }) async {
     final now = _clock();
     final cooldown = _cooldownFor(severity);
-    final last = _lastAlertAt[kind];
+    final key = (kind, severity);
+    final last = _lastAlertAt[key];
     if (last != null && now.difference(last) < cooldown) {
       _log?.info('Alert suppressed (within cooldown)', extra: {
         'kind': kind,
@@ -147,11 +154,13 @@ class Alerter {
       return;
     }
 
-    // NOTE: dedup is keyed by `kind` alone, not `(kind, severity)`. Current
-    // callers namespace maintenance separately (`expired::<id>` vs a probe's
-    // bare `r.id` vs `billing`/`auth`), so a low-severity page can never suppress
-    // an urgent one. If a future caller reuses a `kind` across severities, this
-    // invariant breaks — key by `(kind, severity)` then. (Carnot/Tesla, PR2c.)
+    // Claim the window with a PROVISIONAL stamp *before* any await. Dart is
+    // single-isolate, so this check→stamp section is atomic: a concurrent
+    // escalate for the same key (e.g. a boot smoke run overlapping a scheduler
+    // tick) sees the stamp and is suppressed, closing the double-page race that
+    // a stamp-only-after-delivery would reopen. We revert below iff delivery
+    // totally fails, so a failed page still retries. (Carnot blocker / Tesla.)
+    _lastAlertAt[key] = now;
 
     // Match the log level to the severity: a maintenance nudge is not an error,
     // and logging it as one just rebuilds the alert fatigue we cured on the
@@ -174,27 +183,37 @@ class Alerter {
     }
 
     // Both channels are best-effort and independent. The room only fires for
-    // severities loud enough to earn it.
+    // severities loud enough to earn it. "Delivered" = a page landed on at least
+    // one channel; per-channel retry (operator-must-land even if the room did)
+    // is out of scope — a dual-channel severity that reaches the room but not
+    // Telegram counts as delivered and won't retry Telegram until the window
+    // expires. Fine for maintenance (single-channel); a named limit for the
+    // dual-channel severities (Tesla, PR2c).
     final telegramDelivered = await _alertTelegram(kind, message, severity);
     var roomDelivered = false;
     if (severity.reachesRoom) {
       roomDelivered = await _alertInRoom(severity);
     }
 
-    // Stamp the cooldown only on SUCCESSFUL delivery to at least one channel. A
-    // rate-limit lease must be earned by a page that actually landed, not by the
-    // intent to page — otherwise a failed first send (sidecar cold, 5xx) burns
-    // the whole cooldown and the operator hears silence, worst of all for the
-    // 24h maintenance window. On total delivery failure we leave the key unset
-    // so the next tick retries. (Carnot blocker / Tesla, PR2c review.)
+    // A rate-limit lease must be earned by a page that actually landed, not by
+    // the intent to page — otherwise a failed first send (sidecar cold, 5xx)
+    // burns the whole cooldown and the operator hears silence, worst at the 24h
+    // maintenance window. On TOTAL delivery failure, release the provisional
+    // lease so the next tick retries — but only if it is still ours (a later
+    // escalate may have re-stamped a fresher time we must not clobber).
     //
-    // NB: this dedup is process-local, so a standing maintenance condition still
+    // NB: dedup is process-local, so a standing maintenance condition still
     // re-pages once per process restart regardless of the window — the durable
     // cross-restart cadence (persist to bot_metadata) is deferred to task #41.
-    if (telegramDelivered || roomDelivered) {
-      _lastAlertAt[kind] = now;
-    } else {
-      _log?.warning('Alert not delivered on any channel; cooldown not stamped',
+    if (!telegramDelivered && !roomDelivered) {
+      if (_lastAlertAt[key] == now) {
+        if (last != null) {
+          _lastAlertAt[key] = last;
+        } else {
+          _lastAlertAt.remove(key);
+        }
+      }
+      _log?.warning('Alert not delivered on any channel; cooldown released',
           extra: {'kind': kind, 'severity': severity.name});
     }
   }

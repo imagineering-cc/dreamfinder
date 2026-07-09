@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dreamfinder/src/bot/alerter.dart';
@@ -221,6 +222,33 @@ void main() {
           severity: AlertSeverity.capabilityFailure,
         );
         expect(notifyCalls, hasLength(2));
+      });
+
+      test('concurrent same-key escalates page only once (no double-admit race)',
+          () async {
+        // Hold the first request in flight so the second escalate re-enters
+        // while the first is mid-await — the exact interleave a boot smoke run
+        // overlapping a scheduler tick produces.
+        final gate = Completer<void>();
+        var attempts = 0;
+        final alerter = Alerter(
+          notifyUrl: 'http://notify.test:8090',
+          notifyApiKey: 'secret',
+          announceRoomId: null,
+          httpClient: http_testing.MockClient((_) async {
+            attempts++;
+            await gate.future;
+            return http.Response('{"ok":true}', 200);
+          }),
+          clock: () => now,
+        );
+        final f1 = alerter.escalate(kind: 'billing', message: 'low');
+        final f2 = alerter.escalate(kind: 'billing', message: 'low');
+        gate.complete();
+        await Future.wait([f1, f2]);
+        // The provisional pre-await stamp meant the second call was suppressed
+        // before it hit the wire — one page, not two.
+        expect(attempts, 1);
       });
 
       test('a failed first delivery does NOT burn the cooldown', () async {
