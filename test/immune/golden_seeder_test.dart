@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dreamfinder/src/db/database.dart';
 import 'package:dreamfinder/src/db/queries.dart';
 import 'package:dreamfinder/src/immune/golden_seeder.dart';
@@ -6,6 +8,7 @@ import 'package:dreamfinder/src/immune/probe.dart';
 import 'package:dreamfinder/src/immune/probes/content_integrity_probe.dart';
 import 'package:dreamfinder/src/immune/sentinel.dart';
 import 'package:dreamfinder/src/memory/embedding_client.dart';
+import 'package:dreamfinder/src/memory/memory_record.dart';
 import 'package:dreamfinder/src/memory/memory_retriever.dart';
 import 'package:test/test.dart';
 
@@ -103,6 +106,78 @@ void main() {
       );
       final r = await probe.run();
       expect(r.status, ProbeStatus.ok);
+    });
+
+    // Insert a user/tool-writable cross_chat row whose text mimics the golden
+    // JSON — the denial-of-seed / false-page lever Carnot + Tesla flagged.
+    void insertCrossChatDecoy(String payload) => queries.insertMemoryEmbedding(
+          chatId: 'a-real-user-chat',
+          sourceType: MemorySourceType.message,
+          sourceText: jsonEncode(
+              {'id': golden.id, 'payload': payload, 'seal': 'attacker-seal'}),
+          visibility: MemoryVisibility.crossChat,
+          embedding: const [0.1, 0.2, 0.3],
+        );
+
+    List<MemoryRecord> immuneRows() => queries.getEmbeddedMemories(
+        chatId: immuneGoldenChatId,
+        visibilities: const [MemoryVisibility.sameChat]);
+
+    test(
+        'a cross_chat decoy with the golden id does NOT suppress the real seed',
+        () async {
+      insertCrossChatDecoy('DECOY');
+      final seeded = await seeder().seed(const [golden]);
+      // The real golden is still seeded into the immune-owned compartment.
+      expect(seeded, [golden.id]);
+      expect(immuneRows(), hasLength(1));
+      final parsed = parseSealedGolden(immuneRows().single.sourceText);
+      expect(parsed!.payload, golden.payload);
+      expect(sealer.verify(golden, parsed.seal), isTrue);
+    });
+
+    test('fetcher rejects a cross_chat decoy and returns the real golden',
+        () async {
+      insertCrossChatDecoy('DECOY');
+      await seeder().seed(const [golden]);
+      final retriever = MemoryRetriever(
+          client: client, loadMemories: queries.getVisibleMemories);
+      final fetch =
+          buildGoldenFetcher(retriever: retriever, goldens: const [golden]);
+      final got = await fetch(golden.id);
+      expect(got!.payload, golden.payload, reason: 'not the DECOY payload');
+      expect(sealer.verify(golden, got.seal), isTrue);
+    });
+
+    test('purges a stale/wrong-key row and re-seeds under the current key',
+        () async {
+      // Seed under an OLD key, then re-run under a rotated key.
+      await GoldenSeeder(
+              client: client,
+              queries: queries,
+              sealer: SentinelSealer('OLD-key'))
+          .seed(const [golden]);
+      expect(immuneRows(), hasLength(1));
+
+      // The live sealer no longer verifies the old row → purge + re-seed.
+      final reseeded = await seeder().seed(const [golden]);
+      expect(reseeded, [golden.id]);
+      final rows = immuneRows();
+      expect(rows, hasLength(1), reason: 'no stale duplicate left behind');
+      final parsed = parseSealedGolden(rows.single.sourceText);
+      expect(sealer.verify(golden, parsed!.seal), isTrue,
+          reason: 'row now verifies under the current key');
+    });
+
+    test('re-seeds after the golden row vanishes (self-heal)', () async {
+      await seeder().seed(const [golden]);
+      expect(client.callCount, 1);
+      queries.deleteMemoryEmbeddings([immuneRows().single.id]);
+
+      final reseeded = await seeder().seed(const [golden]);
+      expect(reseeded, [golden.id]);
+      expect(client.callCount, 2, reason: 'a vanished row is re-embedded');
+      expect(immuneRows(), hasLength(1));
     });
 
     test('fetcher returns null for an unknown sentinel id', () async {

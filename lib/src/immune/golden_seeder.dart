@@ -66,16 +66,48 @@ class GoldenSeeder {
   /// The reserved chatId golden rows are seeded under.
   final String chatId;
 
-  /// Seeds each of [goldens] not already present. Returns the ids actually
-  /// seeded this run (empty on a no-op re-seed).
+  /// Seeds each of [goldens] not already present as a CURRENT sealed row.
+  /// Returns the ids actually seeded this run (empty on a no-op re-seed).
+  ///
+  /// Admission predicate (measurement-integrity): a golden counts as present
+  /// only if a row in the IMMUNE-OWNED compartment ([chatId], `same_chat`)
+  /// parses to the same id, carries the same payload, AND verifies under the
+  /// CURRENT sealer. This is deliberately NOT "an id exists":
+  ///
+  /// * The lookup is [Queries.getEmbeddedMemories] scoped to [chatId] — NOT
+  ///   `getVisibleMemories`, which also returns user/tool-writable `cross_chat`
+  ///   rows, letting a planted `{"id":"…golden…"}` row suppress the real seed
+  ///   (a denial-of-seed lever, and it would silently kill self-healing).
+  /// * A row with the right id but a stale/forged/wrong-key payload does NOT
+  ///   satisfy the predicate — it is PURGED and the golden re-seeded. This heals
+  ///   a corrupt write, a key rotation (old seal no longer verifies), and a
+  ///   version bump (the seal is over id+payload+version, so a bumped version
+  ///   fails verification) without a manual delete.
+  ///
+  /// Not covered (named for PR2c): an embedding-model/dimension cutover leaves a
+  /// verifying row with a stale vector — the seal is over text, not the vector —
+  /// so it is treated as current. That needs an embedding-fingerprint, tracked
+  /// with the rest of the rotation/retirement mechanism.
   Future<List<String>> seed(List<Sentinel> goldens) async {
-    final existingIds = <String>{
-      for (final r in _queries.getVisibleMemories(chatId))
-        if (parseSealedGolden(r.sourceText) case final p?) p.id,
-    };
     final seeded = <String>[];
     for (final g in goldens) {
-      if (existingIds.contains(g.id)) continue;
+      final rows = _queries.getEmbeddedMemories(
+        chatId: chatId,
+        visibilities: const [MemoryVisibility.sameChat],
+      );
+      final stale = <int>[];
+      var current = false;
+      for (final r in rows) {
+        final p = parseSealedGolden(r.sourceText);
+        if (p == null || p.id != g.id) continue;
+        if (p.payload == g.payload && _sealer.verify(g, p.seal)) {
+          current = true;
+        } else {
+          stale.add(r.id);
+        }
+      }
+      if (stale.isNotEmpty) _queries.deleteMemoryEmbeddings(stale);
+      if (current) continue;
       final vec =
           (await _client.embed([g.payload], inputType: 'document')).first;
       _queries.insertMemoryEmbedding(
@@ -116,6 +148,11 @@ SealedFetcher buildGoldenFetcher({
     if (anchor == null) return null;
     final results = await retriever.retrieve(anchor, chatId, topK: 10);
     for (final r in results) {
+      // The retriever reads through getVisibleMemories, which also returns
+      // user/tool-writable `cross_chat` rows — reject anything not in the
+      // immune-owned compartment so a planted `cross_chat` decoy with the
+      // golden's id can't be handed to the probe (it would force a false page).
+      if (r.record.chatId != chatId) continue;
       final parsed = parseSealedGolden(r.record.sourceText);
       if (parsed != null && parsed.id == sentinelId) {
         return (payload: parsed.payload, seal: parsed.seal);

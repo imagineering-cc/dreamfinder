@@ -642,7 +642,7 @@ Future<void> main() async {
     // (no key ⇒ no sealer ⇒ no trustworthy check). Seeding is boot infra, not a
     // probe, so it lives here (outside the detect-only registry).
     final sentinelKey = env.immuneSentinelKey;
-    if (sentinelKey != null && sentinelKey.isNotEmpty) {
+    if (sentinelKey != null && sentinelKey.trim().isNotEmpty) {
       final sealer = SentinelSealer(sentinelKey);
       final store = FixtureSentinelStore.sealed(sealer, immuneGoldens);
       SealedFetcher? fetch;
@@ -650,12 +650,24 @@ Future<void> main() async {
       // nothing → the probe would `failed` (false page). Instead leave the
       // fetcher null so the probe reports `degraded` (a known-off capability).
       if (mr != null && voyageClient != null) {
-        await GoldenSeeder(
-          client: voyageClient,
-          queries: queries,
-          sealer: sealer,
-        ).seed(immuneGoldens);
-        fetch = buildGoldenFetcher(retriever: mr);
+        // Fail OPEN: the golden seed is a paid Voyage call, and the concrete
+        // client throws on a non-200 (rate-limit / 5xx). This is diagnostic
+        // infra — a dependency brownout must NOT abort River's boot. On any
+        // failure, log and leave the fetcher null so the probe reports
+        // `degraded`, never euthanising the organism it exists to protect.
+        try {
+          await GoldenSeeder(
+            client: voyageClient,
+            queries: queries,
+            sealer: sealer,
+          ).seed(immuneGoldens);
+          fetch = buildGoldenFetcher(retriever: mr);
+        } on Object catch (e) {
+          log.warning(
+            'Golden seed failed; content-integrity probe degraded (not paging)',
+            extra: {'error': e.toString()},
+          );
+        }
       }
       probes.add(
         ContentIntegrityProbe(
@@ -668,7 +680,7 @@ Future<void> main() async {
       );
       log.info(
         fetch == null
-            ? 'Content-integrity probe registered (degraded: embeddings off)'
+            ? 'Content-integrity probe registered (degraded: no live fetcher)'
             : 'Content-integrity probe registered + golden seeded',
       );
     } else {
