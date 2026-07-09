@@ -698,15 +698,34 @@ Future<void> main() async {
       for (final r in results) {
         health.recordProbeResult(r);
         if (r.shouldPage) {
+          // shouldPage is true iff status == failed (ProbeResult.shouldPage):
+          // River is up but a capability is returning wrong results — a
+          // capability failure, NOT a dead brain. degraded/unknown never reach
+          // here, so this frame always matches the observation.
           unawaited(
-            alerter.escalate(kind: r.id, message: r.detail ?? 'probe failed'),
+            alerter.escalate(
+              kind: r.id,
+              message: r.detail ?? 'probe failed',
+              severity: AlertSeverity.capabilityFailure,
+            ),
           );
         }
       }
-      // PR2b: surface (never page) antibodies whose recalibration deadline has
-      // passed. Runs on both the boot smoke run and every scheduler tick (both
-      // call this closure). Paging expired antibodies is PR2c.
-      health.recordExpired(registry.expired(DateTime.now().toUtc()));
+      // PR2c: page (operator-only, daily cadence) antibodies whose recalibration
+      // deadline has passed. Runs on both the boot smoke run and every scheduler
+      // tick (both call this closure); per-kind dedup keeps the first tick after
+      // boot from re-paging. Maintenance severity never disturbs the room.
+      final expired = registry.expired(DateTime.now().toUtc());
+      health.recordExpired(expired);
+      for (final id in expired) {
+        unawaited(
+          alerter.escalate(
+            kind: 'expired::$id',
+            message: 'antibody "$id" recalibration overdue',
+            severity: AlertSeverity.maintenance,
+          ),
+        );
+      }
     };
     // Boot smoke run — also serves the post-deploy smoke-test intent (a
     // silently-broken tool is caught at deploy, not weeks later).
