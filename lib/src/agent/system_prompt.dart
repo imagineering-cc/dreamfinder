@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:timezone/timezone.dart' as tz;
 
 import '../db/schema.dart';
@@ -54,6 +56,75 @@ const _traitLabels = <String, String>{
   'formality': 'Formality',
   'chaos': 'Chaos',
 };
+
+/// Formats the current-date anchor line, e.g.
+/// `Monday, 13 July 2026, 20:17 AEST`.
+///
+/// Renders in [eventTimeZone] (the community's IANA zone) when set and valid,
+/// falling back to UTC otherwise — mirroring the calendar events section so the
+/// anchor and event times share one clock. Date arithmetic (weekday, "tomorrow"
+/// reasoning downstream) is only reliable because this states an explicit origin.
+String _formatDateAnchor(DateTime now, String? eventTimeZone) {
+  // Hand-rolled English names are deliberate: keeps the anchor dependency-free
+  // and locale-STABLE (package:intl's DateFormat varies with the ambient
+  // locale, which we don't want for a fixed-language system prompt).
+  const weekdays = <String>[
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+  const months = <String>[
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  tz.Location? location;
+  if (eventTimeZone != null) {
+    try {
+      location = tz.getLocation(eventTimeZone);
+    } on tz.LocationNotFoundException {
+      // Known case: a bad IANA string in EVENT_TIMEZONE. Degrade to UTC, but
+      // LOG it — a misconfigured timezone should be audible, not silently
+      // masked. Any OTHER exception (e.g. uninitialised tz db) is unexpected
+      // and deliberately propagates rather than hiding behind a UTC fallback.
+      developer.log(
+        'Unknown EVENT_TIMEZONE "$eventTimeZone"; anchoring prompt time in UTC',
+        name: 'system_prompt',
+      );
+    }
+  }
+
+  final DateTime local;
+  final String zoneLabel;
+  if (location != null) {
+    final t = tz.TZDateTime.from(now.toUtc(), location);
+    local = t;
+    zoneLabel = t.timeZoneName;
+  } else {
+    local = now.toUtc();
+    zoneLabel = 'UTC';
+  }
+
+  final wd = weekdays[local.weekday - 1];
+  final mo = months[local.month - 1];
+  final hh = local.hour.toString().padLeft(2, '0');
+  final mm = local.minute.toString().padLeft(2, '0');
+  return '$wd, ${local.day} $mo ${local.year}, $hh:$mm $zoneLabel';
+}
 
 /// Builds the Voice section of the system prompt.
 ///
@@ -120,6 +191,11 @@ List<String> _buildVoiceSection(
 ///
 /// When [events] is provided, upcoming calendar events are injected so the
 /// agent can reference them naturally in conversation.
+///
+/// [now] is treated as an instant (converted via `toUtc()` before rendering in
+/// [eventTimeZone]), so passing either a UTC or a local `DateTime` is safe —
+/// don't pass a wall-clock-in-another-zone value expecting it verbatim. Defaults
+/// to `DateTime.now()`; injectable for deterministic tests.
 String buildSystemPrompt(
   AgentInput input, {
   String botName = 'Dreamfinder',
@@ -129,6 +205,7 @@ String buildSystemPrompt(
   List<CalendarEvent> events = const [],
   String? eventTimeZone,
   List<TrackedRepoSummary> trackedRepos = const [],
+  DateTime? now,
 }) {
   final name = identity?.name ?? botName;
   final pronouns = identity?.pronouns ?? 'they/them';
@@ -147,6 +224,13 @@ String buildSystemPrompt(
     ..._buildVoiceSection(tone, personalityTraits),
     '',
     '## Current Context',
+    // Always anchor River in the current date & time — unconditional, and
+    // independent of whether any calendar events exist. Without this anchor the
+    // model confabulates the date (it once claimed a Saturday on a Monday),
+    // which is a real hole for deadline/standup/nudge reasoning. Calendar
+    // events ground *events*; this grounds *time*.
+    '- Current date & time: '
+        '${_formatDateAnchor(now ?? DateTime.now(), eventTimeZone)}',
     if (input.isSystemInitiated)
       '- Sender: SYSTEM (scheduled task)'
     else
