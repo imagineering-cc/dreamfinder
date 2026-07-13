@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:timezone/timezone.dart' as tz;
 
 import '../db/schema.dart';
@@ -63,6 +65,9 @@ const _traitLabels = <String, String>{
 /// anchor and event times share one clock. Date arithmetic (weekday, "tomorrow"
 /// reasoning downstream) is only reliable because this states an explicit origin.
 String _formatDateAnchor(DateTime now, String? eventTimeZone) {
+  // Hand-rolled English names are deliberate: keeps the anchor dependency-free
+  // and locale-STABLE (package:intl's DateFormat varies with the ambient
+  // locale, which we don't want for a fixed-language system prompt).
   const weekdays = <String>[
     'Monday',
     'Tuesday',
@@ -91,8 +96,15 @@ String _formatDateAnchor(DateTime now, String? eventTimeZone) {
   if (eventTimeZone != null) {
     try {
       location = tz.getLocation(eventTimeZone);
-    } on Exception {
-      // Invalid timezone — fall through to UTC.
+    } on tz.LocationNotFoundException {
+      // Known case: a bad IANA string in EVENT_TIMEZONE. Degrade to UTC, but
+      // LOG it — a misconfigured timezone should be audible, not silently
+      // masked. Any OTHER exception (e.g. uninitialised tz db) is unexpected
+      // and deliberately propagates rather than hiding behind a UTC fallback.
+      developer.log(
+        'Unknown EVENT_TIMEZONE "$eventTimeZone"; anchoring prompt time in UTC',
+        name: 'system_prompt',
+      );
     }
   }
 
