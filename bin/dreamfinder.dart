@@ -581,6 +581,7 @@ Future<void> main() async {
         identity: id,
         personalityTraits:
             id != null ? queries.getPersonalityTraits(id.id) : const [],
+        eventTimeZone: env.eventTimeZone,
       );
     },
   );
@@ -770,6 +771,7 @@ Future<void> main() async {
           identity: id,
           personalityTraits:
               id != null ? queries.getPersonalityTraits(id.id) : const [],
+          eventTimeZone: env.eventTimeZone,
         ),
       );
     },
@@ -878,6 +880,7 @@ Future<void> main() async {
             identity: id,
             personalityTraits:
                 id != null ? queries.getPersonalityTraits(id.id) : const [],
+            eventTimeZone: env.eventTimeZone,
           ),
         );
       },

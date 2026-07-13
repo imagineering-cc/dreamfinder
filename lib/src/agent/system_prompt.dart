@@ -179,6 +179,11 @@ List<String> _buildVoiceSection(
 ///
 /// When [events] is provided, upcoming calendar events are injected so the
 /// agent can reference them naturally in conversation.
+///
+/// [now] is treated as an instant (converted via `toUtc()` before rendering in
+/// [eventTimeZone]), so passing either a UTC or a local `DateTime` is safe —
+/// don't pass a wall-clock-in-another-zone value expecting it verbatim. Defaults
+/// to `DateTime.now()`; injectable for deterministic tests.
 String buildSystemPrompt(
   AgentInput input, {
   String botName = 'Dreamfinder',

@@ -55,7 +55,10 @@ void main() {
         eventTimeZone: 'Invalid/Timezone',
       );
 
-      expect(prompt, contains('Monday, 13 July 2026, 10:17 UTC'));
+      expect(
+        prompt,
+        contains('Current date & time: Monday, 13 July 2026, 10:17 UTC'),
+      );
     });
 
     test('anchor is present even for system-initiated prompts (no events)', () {
@@ -73,8 +76,14 @@ void main() {
         eventTimeZone: 'Australia/Melbourne',
       );
 
-      // Grounding must not depend on a human sender or any calendar events.
-      expect(prompt, contains('Current date & time: Monday, 13 July 2026'));
+      // Grounding must not depend on a human sender or any calendar events —
+      // and system-initiated prompts (nudges, standups, dream cycle) must get
+      // the community-LOCAL time, not UTC. The proactive compose paths in
+      // bin/dreamfinder.dart thread `eventTimeZone` for exactly this reason.
+      expect(
+        prompt,
+        contains('Current date & time: Monday, 13 July 2026, 20:17 AEST'),
+      );
     });
   });
 }
