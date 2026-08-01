@@ -29,6 +29,21 @@ void main() {
     test('does not flag a real homeserver user', () {
       expect(isBridgePuppet(human), isFalse);
     });
+
+    test('honours an operator prefix override (WELCOME_PUPPET_PREFIXES)', () {
+      // A custom namespace not in the built-in defaults.
+      expect(
+        isBridgePuppet('@gmessages_1:imagineering.cc',
+            prefixes: const ['@gmessages_']),
+        isTrue,
+      );
+      // With the override active, a default prefix no longer matches.
+      expect(
+        isBridgePuppet('@whatsapp_1:imagineering.cc',
+            prefixes: const ['@gmessages_']),
+        isFalse,
+      );
+    });
   });
 
   group('welcomeMessage', () {

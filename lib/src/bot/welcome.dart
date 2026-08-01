@@ -31,15 +31,18 @@ const puppetMxidPrefixes = <String>[
 ///
 /// Checks, in order: the explicit bridge bot MXIDs ([bridgeBotIds]), River's
 /// own relayed puppets ([selfPuppetIds]), then the appservice namespace
-/// [puppetMxidPrefixes].
+/// prefixes ([prefixes], defaulting to [puppetMxidPrefixes] — an operator can
+/// override via `WELCOME_PUPPET_PREFIXES` to correct a namespace drift without
+/// a code deploy).
 bool isBridgePuppet(
   String sender, {
   Set<String> bridgeBotIds = const {},
   List<String> selfPuppetIds = const [],
+  List<String> prefixes = puppetMxidPrefixes,
 }) {
   if (bridgeBotIds.contains(sender)) return true;
   if (selfPuppetIds.contains(sender)) return true;
-  for (final prefix in puppetMxidPrefixes) {
+  for (final prefix in prefixes) {
     if (sender.startsWith(prefix)) return true;
   }
   return false;
@@ -121,6 +124,7 @@ String? welcomeMessage({
   String? displayName,
   Set<String> bridgeBotIds = const {},
   List<String> selfPuppetIds = const [],
+  List<String> puppetPrefixes = puppetMxidPrefixes,
   bool Function()? alreadyWelcomed,
 }) {
   if (!isMemberJoin) return null;
@@ -129,6 +133,7 @@ String? welcomeMessage({
     sender,
     bridgeBotIds: bridgeBotIds,
     selfPuppetIds: selfPuppetIds,
+    prefixes: puppetPrefixes,
   )) {
     return null;
   }

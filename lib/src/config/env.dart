@@ -40,6 +40,7 @@ class Env {
     this.eventTimeZone,
     this.adminIds = const [],
     this.selfPuppetIds = const [],
+    this.welcomePuppetPrefixes = const [],
     this.botName = 'Dreamfinder',
     this.databasePath = './data/bot.db',
     this.logLevel = 'info',
@@ -122,6 +123,7 @@ class Env {
       eventTimeZone: dotEnv['EVENT_TIMEZONE'],
       adminIds: _parseList(dotEnv['ADMIN_IDS'] ?? dotEnv['ADMIN_UUIDS']),
       selfPuppetIds: _parseList(dotEnv['SELF_PUPPET_IDS']),
+      welcomePuppetPrefixes: _parseList(dotEnv['WELCOME_PUPPET_PREFIXES']),
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
       databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
@@ -190,6 +192,7 @@ class Env {
     String? eventTimeZone,
     List<String> adminIds = const [],
     List<String> selfPuppetIds = const [],
+    List<String> welcomePuppetPrefixes = const [],
     String botName = 'Dreamfinder',
     String databasePath = './data/bot.db',
     String logLevel = 'info',
@@ -243,6 +246,7 @@ class Env {
         eventTimeZone: eventTimeZone,
         adminIds: adminIds,
         selfPuppetIds: selfPuppetIds,
+        welcomePuppetPrefixes: welcomePuppetPrefixes,
         botName: botName,
         databasePath: databasePath,
         logLevel: logLevel,
@@ -377,6 +381,15 @@ class Env {
   /// to its own echo (a feedback loop). These IDs are treated as "self" and
   /// dropped. See [isSelf].
   final List<String> selfPuppetIds;
+
+  /// Optional operator override for the bridge/relay puppet MXID namespace
+  /// prefixes used to filter member-join welcomes (from
+  /// `WELCOME_PUPPET_PREFIXES`, comma-separated). Empty → the built-in
+  /// `puppetMxidPrefixes` defaults apply. This exists so a live namespace
+  /// drift (a new bridge, a renamed localpart) can be corrected via config
+  /// without a code deploy, closing the fail-open gap the hardcoded list would
+  /// otherwise leave (Carnot, cage-match PR #126).
+  final List<String> welcomePuppetPrefixes;
 
   final String botName;
   final String databasePath;

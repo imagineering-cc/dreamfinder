@@ -935,6 +935,10 @@ Future<void> main() async {
   // Bridge/relay bot MXIDs — hoisted out of the per-event welcome path so a
   // member-join storm doesn't re-allocate the set on every event.
   final welcomeBridgeBotIds = env.bridgeBotIds.toSet();
+  // Operator override for the puppet namespace prefixes; empty → code defaults.
+  final welcomePuppetPrefixes = env.welcomePuppetPrefixes.isNotEmpty
+      ? env.welcomePuppetPrefixes
+      : puppetMxidPrefixes;
 
   // Retrieve the stored sync token for resumption across restarts.
   var nextBatch = queries.getMetadata('matrix_next_batch');
@@ -1025,6 +1029,7 @@ Future<void> main() async {
             displayName: event.memberDisplayName,
             bridgeBotIds: welcomeBridgeBotIds,
             selfPuppetIds: env.selfPuppetIds,
+            puppetPrefixes: welcomePuppetPrefixes,
             alreadyWelcomed: () => queries.getMetadata(dedupKey) != null,
           );
           if (welcome != null) {
