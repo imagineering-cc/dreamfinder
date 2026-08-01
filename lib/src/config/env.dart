@@ -382,13 +382,13 @@ class Env {
   /// dropped. See [isSelf].
   final List<String> selfPuppetIds;
 
-  /// Optional operator override for the bridge/relay puppet MXID namespace
-  /// prefixes used to filter member-join welcomes (from
-  /// `WELCOME_PUPPET_PREFIXES`, comma-separated). Empty → the built-in
-  /// `puppetMxidPrefixes` defaults apply. This exists so a live namespace
-  /// drift (a new bridge, a renamed localpart) can be corrected via config
-  /// without a code deploy, closing the fail-open gap the hardcoded list would
-  /// otherwise leave (Carnot, cage-match PR #126).
+  /// Optional operator-supplied bridge/relay puppet MXID namespace prefixes,
+  /// ADDED to (never replacing) the built-in `puppetMxidPrefixes` when
+  /// filtering member-join welcomes (from `WELCOME_PUPPET_PREFIXES`,
+  /// comma-separated). This lets a live namespace drift (a new bridge, a
+  /// renamed localpart) be covered via config without a code deploy — and
+  /// because it's additive, adding one prefix can never silently disable the
+  /// defaults and fail open into spam (Carnot, cage-match PR #126).
   final List<String> welcomePuppetPrefixes;
 
   final String botName;

@@ -30,18 +30,19 @@ void main() {
       expect(isBridgePuppet(human), isFalse);
     });
 
-    test('honours an operator prefix override (WELCOME_PUPPET_PREFIXES)', () {
-      // A custom namespace not in the built-in defaults.
+    test('operator prefixes ADD to the defaults, never replace them', () {
+      // The call site builds [...defaults, ...operator] — mirror that here.
+      final merged = [...puppetMxidPrefixes, '@gmessages_'];
+      // The operator-added namespace is filtered.
       expect(
-        isBridgePuppet('@gmessages_1:imagineering.cc',
-            prefixes: const ['@gmessages_']),
+        isBridgePuppet('@gmessages_1:imagineering.cc', prefixes: merged),
         isTrue,
       );
-      // With the override active, a default prefix no longer matches.
+      // AND the built-in defaults still filter — adding one prefix must not
+      // silently disable @whatsapp_ etc. (the fail-open footgun).
       expect(
-        isBridgePuppet('@whatsapp_1:imagineering.cc',
-            prefixes: const ['@gmessages_']),
-        isFalse,
+        isBridgePuppet('@whatsapp_1:imagineering.cc', prefixes: merged),
+        isTrue,
       );
     });
   });
