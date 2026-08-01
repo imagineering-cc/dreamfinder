@@ -14,6 +14,7 @@ import 'package:dreamfinder/src/bot/deploy_announcer.dart';
 import 'package:dreamfinder/src/bot/group_continuation.dart';
 import 'package:dreamfinder/src/bot/health_check.dart';
 import 'package:dreamfinder/src/bot/rate_limiter.dart';
+import 'package:dreamfinder/src/bot/welcome.dart';
 import 'package:dreamfinder/src/config/env.dart';
 import 'package:dreamfinder/src/config/oauth_client.dart';
 import 'package:dreamfinder/src/config/version.dart';
@@ -1001,24 +1002,37 @@ Future<void> main() async {
         // group and wrongly require a mention to get a reply.
         await matrixClient.ensureMemberCount(event.roomId);
 
-        // Welcome new members joining a group room.
-        if (event.isMemberJoin && !matrixClient.isDm(event.roomId)) {
-          final displayName = event.memberDisplayName ??
-              event.sender.split(':').first.substring(1);
-          log.info('New member joined', extra: {
-            'room': event.roomId,
-            'user': event.sender,
-            'name': displayName,
-          });
-
-          try {
-            await matrixClient.sendMessage(
-              roomId: event.roomId,
-              message: 'Welcome $displayName! '
-                  "Say 'kickstart' here and I'll walk us through setup. ✨",
-            );
-          } on Exception catch (e) {
-            log.warning('Failed to send welcome message: $e');
+        // Welcome new members — hub rooms only, real humans only, once each.
+        // Scoped to the always-respond (hub) rooms so churny bridge portals
+        // never trigger it; bridge/relay puppets (the "Welcome pvt pvt!" spam)
+        // are filtered by MXID namespace; a persisted dedup key means a bridge
+        // resync re-emitting an old join never re-welcomes.
+        if (event.isMemberJoin) {
+          final dedupKey = welcomeDedupKey(event.roomId, event.sender);
+          final welcome = welcomeMessage(
+            sender: event.sender,
+            roomId: event.roomId,
+            isMemberJoin: true,
+            hubRoomIds: alwaysRespondRooms,
+            displayName: event.memberDisplayName,
+            bridgeBotIds: env.bridgeBotIds.toSet(),
+            selfPuppetIds: env.selfPuppetIds,
+            alreadyWelcomed: queries.getMetadata(dedupKey) != null,
+          );
+          if (welcome != null) {
+            log.info('Welcoming new member', extra: {
+              'room': event.roomId,
+              'user': event.sender,
+            });
+            try {
+              await matrixClient.sendMessage(
+                roomId: event.roomId,
+                message: welcome,
+              );
+              queries.setMetadata(dedupKey, DateTime.now().toIso8601String());
+            } on Exception catch (e) {
+              log.warning('Failed to send welcome message: $e');
+            }
           }
           health.recordMessageDropped('member_join');
           continue;
