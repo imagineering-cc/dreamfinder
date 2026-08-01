@@ -87,7 +87,11 @@ String _fallbackLabel(String sender) {
 /// The `bot_metadata` dedup key for a welcomed (room, sender) pair.
 ///
 /// Persisting this means a bridge resync that re-emits an old join — or River
-/// restarting — never re-welcomes someone already greeted.
+/// restarting — never re-welcomes someone already greeted. This is
+/// intentionally once-per-(room, sender)-forever: a genuine leave→rejoin is
+/// not re-welcomed. That's the correct trade to kill resync spam; if
+/// per-stint re-onboarding is ever wanted, add a membership-generation
+/// component to the key rather than a TTL (Tesla, cage-match PR #126).
 String welcomeDedupKey(String roomId, String sender) =>
     'welcomed::$roomId::$sender';
 
@@ -127,8 +131,11 @@ String? welcomeMessage({
 
   final cleaned = displayName == null ? '' : _sanitizeName(displayName);
   var name = cleaned.isNotEmpty ? cleaned : _fallbackLabel(sender);
-  if (name.length > _maxWelcomeNameLength) {
-    name = '${name.substring(0, _maxWelcomeNameLength)}…';
+  // Truncate on rune boundaries, not UTF-16 code units, so an emoji or
+  // surrogate pair can't be split into mojibake at the cap (Tesla, PR #126).
+  final runes = name.runes.toList();
+  if (runes.length > _maxWelcomeNameLength) {
+    name = '${String.fromCharCodes(runes.take(_maxWelcomeNameLength))}…';
   }
   return "Welcome $name! Say 'kickstart' here and I'll walk us through setup. ✨";
 }

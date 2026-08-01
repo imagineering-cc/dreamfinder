@@ -932,6 +932,10 @@ Future<void> main() async {
   // Rooms where the bot responds to every message (no mention required).
   final alwaysRespondRooms = env.matrixAlwaysRespondRooms.toSet();
 
+  // Bridge/relay bot MXIDs — hoisted out of the per-event welcome path so a
+  // member-join storm doesn't re-allocate the set on every event.
+  final welcomeBridgeBotIds = env.bridgeBotIds.toSet();
+
   // Retrieve the stored sync token for resumption across restarts.
   var nextBatch = queries.getMetadata('matrix_next_batch');
   if (nextBatch != null) {
@@ -1008,6 +1012,13 @@ Future<void> main() async {
         // are filtered by MXID namespace; a persisted dedup key means a bridge
         // resync re-emitting an old join never re-welcomes.
         if (event.isMemberJoin) {
+          // Cheap gates first: a bridge resync storm lands hardest on non-hub
+          // portals, so short-circuit the `bot_metadata` read for any room not
+          // in the hub set — `getMetadata` only runs once we know it's a hub
+          // room (Tesla, cage-match PR #126). `welcomeMessage` re-checks hub
+          // authoritatively, so this guard is a performance gate, not the
+          // decision.
+          final inHub = alwaysRespondRooms.contains(event.roomId);
           final dedupKey = welcomeDedupKey(event.roomId, event.sender);
           final welcome = welcomeMessage(
             sender: event.sender,
@@ -1015,9 +1026,9 @@ Future<void> main() async {
             isMemberJoin: event.isMemberJoin,
             hubRoomIds: alwaysRespondRooms,
             displayName: event.memberDisplayName,
-            bridgeBotIds: env.bridgeBotIds.toSet(),
+            bridgeBotIds: welcomeBridgeBotIds,
             selfPuppetIds: env.selfPuppetIds,
-            alreadyWelcomed: queries.getMetadata(dedupKey) != null,
+            alreadyWelcomed: inHub && queries.getMetadata(dedupKey) != null,
           );
           if (welcome != null) {
             log.info('Welcoming new member', extra: {
