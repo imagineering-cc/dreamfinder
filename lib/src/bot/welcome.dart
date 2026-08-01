@@ -5,26 +5,29 @@
 /// puppets, producing repeating "Welcome pvt pvt!" spam).
 library;
 
-/// Bridge/relay puppet MXID namespace prefixes.
+/// MXID prefixes for members River must NOT welcome — the true non-humans.
 ///
-/// A member whose MXID begins with one of these is an appservice ghost — an
-/// unresolved WhatsApp/Signal/Telegram contact, or the superbridge relay
-/// puppet — never a real human River can onboard. Welcoming them is what
-/// produced the "Welcome pvt pvt!" spam: the puppet's contact name is
-/// unresolved (`pvt pvt`), and the bridge re-emits its join every resync, so
-/// the welcome fires again and again.
-///
-/// These mirror the mautrix appservice registration namespaces. The real
-/// prod prefixes MUST be verified against the live member list before deploy
-/// (see the PR description) — a namespace typo here silently re-opens the spam.
+/// CRITICAL TOPOLOGY NOTE (verified against the live prod hub, 2026-08-02):
+/// in the superbridge setup, real community members are bridged into the
+/// Matrix hub and therefore carry the per-user appservice namespaces
+/// `@signal_<uuid>`, `@whatsapp_<…>`, `@telegram_<…>`. Those ARE the people
+/// River should welcome — they must never be filtered. The only members that
+/// are not people are:
+///   - the superbridge relay puppets (`@_relay_…`),
+///   - the mautrix bridge BOTS (`@signalbot:…`, `@whatsappbot:…`, …), and
+///   - River itself (`@dreamfinder-bot:…`).
+/// The `pvt pvt` spam was one of these bridged HUMANS whose Signal contact
+/// name hadn't resolved yet, welcomed repeatedly on resync — a name-resolution
+/// + dedup problem, not a "puppet" problem. So the fix is dedup + hub-scope,
+/// and this list filters only the genuine non-humans.
 const puppetMxidPrefixes = <String>[
   '@_relay_',
-  '@whatsapp_',
-  '@signal_',
-  '@signalgo_',
-  '@telegram_',
-  '@discord_',
-  '@slack_',
+  '@signalbot:',
+  '@whatsappbot:',
+  '@telegrambot:',
+  '@discordbot:',
+  '@slackbot:',
+  '@dreamfinder-bot:',
 ];
 
 /// Returns `true` if [sender] is a bridge/relay puppet rather than a real user.
