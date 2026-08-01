@@ -50,6 +50,27 @@ bool isBridgePuppet(
 /// multi-kilobyte billboard in the welcome. Real names are far shorter.
 const _maxWelcomeNameLength = 80;
 
+/// Neutralises a room-bound display name so a joining member can't shape
+/// River's welcome: replaces control characters (C0/C1/DEL) and
+/// bidirectional-override codepoints with spaces, then collapses whitespace
+/// runs to a single space. Without this, a name containing newlines or bidi
+/// controls could make River post a multi-line, system-looking welcome
+/// (Carnot, cage-match PR #126). Codepoint-based rather than a regex with
+/// literal control chars in source.
+String _sanitizeName(String name) {
+  final buf = StringBuffer();
+  for (final rune in name.runes) {
+    final isC0OrDel = rune < 0x20 || rune == 0x7f;
+    final isC1 = rune >= 0x80 && rune <= 0x9f;
+    final isBidi = rune == 0x200e ||
+        rune == 0x200f ||
+        (rune >= 0x202a && rune <= 0x202e) ||
+        (rune >= 0x2066 && rune <= 0x2069);
+    buf.writeCharCode((isC0OrDel || isC1 || isBidi) ? 0x20 : rune);
+  }
+  return buf.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
 /// A safe, human-facing label for [sender], never throwing on malformed input.
 ///
 /// Matrix MXIDs are `@localpart:server`, but membership events cross the
@@ -80,9 +101,9 @@ String welcomeDedupKey(String roomId, String sender) =>
 /// - [sender] is a real human, not a bridge/relay puppet, and
 /// - the (room, sender) pair has not been welcomed before ([alreadyWelcomed]).
 ///
-/// The display name falls back to the MXID localpart only for real users, so a
-/// puppet's `pvt pvt` displayname can never surface — puppets are filtered out
-/// entirely one step earlier.
+/// The display name is sanitised and length-capped, and falls back to the MXID
+/// localpart only for real users — a puppet's `pvt pvt` displayname can never
+/// surface, since puppets are filtered out entirely one step earlier.
 String? welcomeMessage({
   required String sender,
   required String roomId,
@@ -104,10 +125,8 @@ String? welcomeMessage({
     return null;
   }
 
-  final trimmed = displayName?.trim();
-  var name = (trimmed != null && trimmed.isNotEmpty)
-      ? trimmed
-      : _fallbackLabel(sender);
+  final cleaned = displayName == null ? '' : _sanitizeName(displayName);
+  var name = cleaned.isNotEmpty ? cleaned : _fallbackLabel(sender);
   if (name.length > _maxWelcomeNameLength) {
     name = '${name.substring(0, _maxWelcomeNameLength)}…';
   }

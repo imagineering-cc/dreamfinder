@@ -128,6 +128,30 @@ void main() {
       expect(msg, contains('…'));
     });
 
+    test('sanitizes newlines / control / bidi chars in display name', () {
+      // 'Ali' + newline + 'ce' + U+202E (RTL override) + double space + 'evil'.
+      final evilName = 'Ali\nce${String.fromCharCode(0x202e)}  evil';
+      final msg = welcomeMessage(
+        sender: human,
+        roomId: hub,
+        isMemberJoin: true,
+        hubRoomIds: hubs,
+        displayName: evilName,
+      );
+      expect(msg, isNotNull);
+      // No control or bidi codepoint survives into the room-bound message.
+      expect(
+        msg!.runes.any((r) =>
+            r < 0x20 ||
+            r == 0x7f ||
+            (r >= 0x80 && r <= 0x9f) ||
+            (r >= 0x202a && r <= 0x202e)),
+        isFalse,
+      );
+      // Collapsed to a single line, single-spaced.
+      expect(msg, contains('Welcome Ali ce evil'));
+    });
+
     test('filters a sender in bridgeBotIds / selfPuppetIds via welcomeMessage',
         () {
       expect(
