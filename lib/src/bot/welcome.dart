@@ -45,6 +45,24 @@ bool isBridgePuppet(
   return false;
 }
 
+/// Longest display name we'll echo into a room. A bridge or a hostile client
+/// can set an arbitrarily long displayname; without a cap it becomes a
+/// multi-kilobyte billboard in the welcome. Real names are far shorter.
+const _maxWelcomeNameLength = 80;
+
+/// A safe, human-facing label for [sender], never throwing on malformed input.
+///
+/// Matrix MXIDs are `@localpart:server`, but membership events cross the
+/// untrusted homeserver/bridge boundary — an empty or non-`@` sender must not
+/// RangeError the sync loop (Carnot + Tesla, cage-match PR #126). Falls back to
+/// the raw sender when it isn't MXID-shaped.
+String _fallbackLabel(String sender) {
+  if (sender.startsWith('@') && sender.length > 1) {
+    return sender.substring(1).split(':').first;
+  }
+  return sender;
+}
+
 /// The `bot_metadata` dedup key for a welcomed (room, sender) pair.
 ///
 /// Persisting this means a bridge resync that re-emits an old join — or River
@@ -87,8 +105,11 @@ String? welcomeMessage({
   }
 
   final trimmed = displayName?.trim();
-  final name = (trimmed != null && trimmed.isNotEmpty)
+  var name = (trimmed != null && trimmed.isNotEmpty)
       ? trimmed
-      : sender.split(':').first.substring(1);
+      : _fallbackLabel(sender);
+  if (name.length > _maxWelcomeNameLength) {
+    name = '${name.substring(0, _maxWelcomeNameLength)}…';
+  }
   return "Welcome $name! Say 'kickstart' here and I'll walk us through setup. ✨";
 }

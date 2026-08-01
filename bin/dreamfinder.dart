@@ -1012,7 +1012,7 @@ Future<void> main() async {
           final welcome = welcomeMessage(
             sender: event.sender,
             roomId: event.roomId,
-            isMemberJoin: true,
+            isMemberJoin: event.isMemberJoin,
             hubRoomIds: alwaysRespondRooms,
             displayName: event.memberDisplayName,
             bridgeBotIds: env.bridgeBotIds.toSet(),
@@ -1029,7 +1029,8 @@ Future<void> main() async {
                 roomId: event.roomId,
                 message: welcome,
               );
-              queries.setMetadata(dedupKey, DateTime.now().toIso8601String());
+              queries.setMetadata(
+                  dedupKey, DateTime.now().toUtc().toIso8601String());
             } on Exception catch (e) {
               log.warning('Failed to send welcome message: $e');
             }

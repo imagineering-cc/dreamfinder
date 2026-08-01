@@ -99,6 +99,71 @@ void main() {
       );
       expect(msg, contains('Welcome alice'));
     });
+
+    test('does not throw on empty or malformed sender (untrusted boundary)',
+        () {
+      for (final bad in ['', '@', 'alice:server', 'no-at-sign']) {
+        expect(
+          () => welcomeMessage(
+            sender: bad,
+            roomId: hub,
+            isMemberJoin: true,
+            hubRoomIds: hubs,
+          ),
+          returnsNormally,
+          reason: 'sender "$bad" must not RangeError the sync loop',
+        );
+      }
+    });
+
+    test('caps an absurdly long display name', () {
+      final msg = welcomeMessage(
+        sender: human,
+        roomId: hub,
+        isMemberJoin: true,
+        hubRoomIds: hubs,
+        displayName: 'A' * 5000,
+      );
+      expect(msg!.length, lessThan(200));
+      expect(msg, contains('…'));
+    });
+
+    test('filters a sender in bridgeBotIds / selfPuppetIds via welcomeMessage',
+        () {
+      expect(
+        welcomeMessage(
+          sender: '@whatsappbot:imagineering.cc',
+          roomId: hub,
+          isMemberJoin: true,
+          hubRoomIds: hubs,
+          bridgeBotIds: {'@whatsappbot:imagineering.cc'},
+        ),
+        isNull,
+      );
+      expect(
+        welcomeMessage(
+          sender: '@relayed:imagineering.cc',
+          roomId: hub,
+          isMemberJoin: true,
+          hubRoomIds: hubs,
+          selfPuppetIds: ['@relayed:imagineering.cc'],
+        ),
+        isNull,
+      );
+    });
+
+    test('empty hubRoomIds silences all welcomes', () {
+      expect(
+        welcomeMessage(
+          sender: human,
+          roomId: hub,
+          isMemberJoin: true,
+          hubRoomIds: const {},
+          displayName: 'Alice',
+        ),
+        isNull,
+      );
+    });
   });
 
   test('welcomeDedupKey is per room and sender', () {
