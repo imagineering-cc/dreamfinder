@@ -14,6 +14,7 @@ import 'package:dreamfinder/src/bot/deploy_announcer.dart';
 import 'package:dreamfinder/src/bot/group_continuation.dart';
 import 'package:dreamfinder/src/bot/health_check.dart';
 import 'package:dreamfinder/src/bot/rate_limiter.dart';
+import 'package:dreamfinder/src/bot/welcome.dart';
 import 'package:dreamfinder/src/config/env.dart';
 import 'package:dreamfinder/src/config/oauth_client.dart';
 import 'package:dreamfinder/src/config/version.dart';
@@ -931,6 +932,19 @@ Future<void> main() async {
   // Rooms where the bot responds to every message (no mention required).
   final alwaysRespondRooms = env.matrixAlwaysRespondRooms.toSet();
 
+  // Bridge/relay bot MXIDs — hoisted out of the per-event welcome path so a
+  // member-join storm doesn't re-allocate the set on every event.
+  final welcomeBridgeBotIds = env.bridgeBotIds.toSet();
+  // Non-human MXID prefixes (bridge bots / relay puppets / self): the built-in
+  // defaults ALWAYS apply, and any operator-supplied prefixes are ADDED (not
+  // replaced) — so configuring one new bridge bot can never silently disable
+  // the defaults (Carnot, PR #126). Do NOT add a per-user bridged namespace
+  // (@signal_/@whatsapp_/@telegram_) here — those are real community members.
+  final welcomeNonHumanPrefixes = [
+    ...nonHumanMxidPrefixes,
+    ...env.welcomeNonHumanPrefixes,
+  ];
+
   // Retrieve the stored sync token for resumption across restarts.
   var nextBatch = queries.getMetadata('matrix_next_batch');
   if (nextBatch != null) {
@@ -1001,24 +1015,44 @@ Future<void> main() async {
         // group and wrongly require a mention to get a reply.
         await matrixClient.ensureMemberCount(event.roomId);
 
-        // Welcome new members joining a group room.
-        if (event.isMemberJoin && !matrixClient.isDm(event.roomId)) {
-          final displayName = event.memberDisplayName ??
-              event.sender.split(':').first.substring(1);
-          log.info('New member joined', extra: {
-            'room': event.roomId,
-            'user': event.sender,
-            'name': displayName,
-          });
-
-          try {
-            await matrixClient.sendMessage(
-              roomId: event.roomId,
-              message: 'Welcome $displayName! '
-                  "Say 'kickstart' here and I'll walk us through setup. ✨",
-            );
-          } on Exception catch (e) {
-            log.warning('Failed to send welcome message: $e');
+        // Welcome new members — hub rooms only, real people only, once each.
+        // Bridged community members (@signal_<uuid> etc.) ARE people and get
+        // welcomed; only bridge bots / relay puppets / self are filtered. The
+        // "Welcome pvt pvt!" spam was a bridged human with an unresolved name
+        // greeted on every resync — killed by hub-scope + the persisted dedup
+        // key, not by treating bridged users as non-human.
+        if (event.isMemberJoin) {
+          // `alreadyWelcomed` is a thunk: welcomeMessage evaluates it only
+          // after the cheap join/hub/non-human gates pass, so a resync storm
+          // (non-hub portal, or bridge bots) never hits `bot_metadata`
+          // (Tesla, cage-match PR #126).
+          final dedupKey = welcomeDedupKey(event.roomId, event.sender);
+          final welcome = welcomeMessage(
+            sender: event.sender,
+            roomId: event.roomId,
+            isMemberJoin: event.isMemberJoin,
+            hubRoomIds: alwaysRespondRooms,
+            displayName: event.memberDisplayName,
+            bridgeBotIds: welcomeBridgeBotIds,
+            selfPuppetIds: env.selfPuppetIds,
+            nonHumanPrefixes: welcomeNonHumanPrefixes,
+            alreadyWelcomed: () => queries.getMetadata(dedupKey) != null,
+          );
+          if (welcome != null) {
+            log.info('Welcoming new member', extra: {
+              'room': event.roomId,
+              'user': event.sender,
+            });
+            try {
+              await matrixClient.sendMessage(
+                roomId: event.roomId,
+                message: welcome,
+              );
+              queries.setMetadata(
+                  dedupKey, DateTime.now().toUtc().toIso8601String());
+            } on Exception catch (e) {
+              log.warning('Failed to send welcome message: $e');
+            }
           }
           health.recordMessageDropped('member_join');
           continue;

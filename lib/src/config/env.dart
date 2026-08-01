@@ -40,6 +40,7 @@ class Env {
     this.eventTimeZone,
     this.adminIds = const [],
     this.selfPuppetIds = const [],
+    this.welcomeNonHumanPrefixes = const [],
     this.botName = 'Dreamfinder',
     this.databasePath = './data/bot.db',
     this.logLevel = 'info',
@@ -122,6 +123,7 @@ class Env {
       eventTimeZone: dotEnv['EVENT_TIMEZONE'],
       adminIds: _parseList(dotEnv['ADMIN_IDS'] ?? dotEnv['ADMIN_UUIDS']),
       selfPuppetIds: _parseList(dotEnv['SELF_PUPPET_IDS']),
+      welcomeNonHumanPrefixes: _parseList(dotEnv['WELCOME_NON_HUMAN_PREFIXES']),
       botName: dotEnv['BOT_NAME'] ?? 'Dreamfinder',
       databasePath: dotEnv['DATABASE_PATH'] ?? './data/bot.db',
       logLevel: dotEnv['LOG_LEVEL'] ?? 'info',
@@ -190,6 +192,7 @@ class Env {
     String? eventTimeZone,
     List<String> adminIds = const [],
     List<String> selfPuppetIds = const [],
+    List<String> welcomeNonHumanPrefixes = const [],
     String botName = 'Dreamfinder',
     String databasePath = './data/bot.db',
     String logLevel = 'info',
@@ -243,6 +246,7 @@ class Env {
         eventTimeZone: eventTimeZone,
         adminIds: adminIds,
         selfPuppetIds: selfPuppetIds,
+        welcomeNonHumanPrefixes: welcomeNonHumanPrefixes,
         botName: botName,
         databasePath: databasePath,
         logLevel: logLevel,
@@ -377,6 +381,18 @@ class Env {
   /// to its own echo (a feedback loop). These IDs are treated as "self" and
   /// dropped. See [isSelf].
   final List<String> selfPuppetIds;
+
+  /// Optional operator-supplied NON-HUMAN MXID prefixes (bridge bots, relay
+  /// puppets), ADDED to — never replacing — the built-in `nonHumanMxidPrefixes`
+  /// when filtering member-join welcomes (from `WELCOME_NON_HUMAN_PREFIXES`,
+  /// comma-separated). Lets a new bridge bot be covered via config without a
+  /// code deploy; additive, so it can never silently disable the defaults
+  /// (Carnot, cage-match PR #126).
+  ///
+  /// DO NOT put a per-user bridged namespace (`@signal_`, `@whatsapp_`,
+  /// `@telegram_`) here: in the superbridge topology those are REAL community
+  /// members, and filtering them stops River welcoming the whole community.
+  final List<String> welcomeNonHumanPrefixes;
 
   final String botName;
   final String databasePath;
