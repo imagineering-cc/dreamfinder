@@ -105,6 +105,11 @@ String welcomeDedupKey(String roomId, String sender) =>
 /// - [sender] is a real human, not a bridge/relay puppet, and
 /// - the (room, sender) pair has not been welcomed before ([alreadyWelcomed]).
 ///
+/// [alreadyWelcomed] is a lazy thunk, evaluated only *after* the cheap join /
+/// hub / puppet gates pass — so a bridge resync storm (of puppets, or into a
+/// non-hub portal) never triggers the backing `bot_metadata` read (Tesla,
+/// cage-match PR #126). Defaults to "not welcomed".
+///
 /// The display name is sanitised and length-capped, and falls back to the MXID
 /// localpart only for real users — a puppet's `pvt pvt` displayname can never
 /// surface, since puppets are filtered out entirely one step earlier.
@@ -116,11 +121,10 @@ String? welcomeMessage({
   String? displayName,
   Set<String> bridgeBotIds = const {},
   List<String> selfPuppetIds = const [],
-  bool alreadyWelcomed = false,
+  bool Function()? alreadyWelcomed,
 }) {
   if (!isMemberJoin) return null;
   if (!hubRoomIds.contains(roomId)) return null;
-  if (alreadyWelcomed) return null;
   if (isBridgePuppet(
     sender,
     bridgeBotIds: bridgeBotIds,
@@ -128,6 +132,9 @@ String? welcomeMessage({
   )) {
     return null;
   }
+  // Expensive gate last: only now (real human, hub room) do we consult the
+  // dedup store.
+  if (alreadyWelcomed != null && alreadyWelcomed()) return null;
 
   final cleaned = displayName == null ? '' : _sanitizeName(displayName);
   var name = cleaned.isNotEmpty ? cleaned : _fallbackLabel(sender);

@@ -1012,13 +1012,10 @@ Future<void> main() async {
         // are filtered by MXID namespace; a persisted dedup key means a bridge
         // resync re-emitting an old join never re-welcomes.
         if (event.isMemberJoin) {
-          // Cheap gates first: a bridge resync storm lands hardest on non-hub
-          // portals, so short-circuit the `bot_metadata` read for any room not
-          // in the hub set — `getMetadata` only runs once we know it's a hub
-          // room (Tesla, cage-match PR #126). `welcomeMessage` re-checks hub
-          // authoritatively, so this guard is a performance gate, not the
-          // decision.
-          final inHub = alwaysRespondRooms.contains(event.roomId);
+          // `alreadyWelcomed` is a thunk: welcomeMessage evaluates it only
+          // after the cheap join/hub/puppet gates pass, so a resync storm
+          // (non-hub portal, or hub puppets) never hits `bot_metadata`
+          // (Tesla, cage-match PR #126).
           final dedupKey = welcomeDedupKey(event.roomId, event.sender);
           final welcome = welcomeMessage(
             sender: event.sender,
@@ -1028,7 +1025,7 @@ Future<void> main() async {
             displayName: event.memberDisplayName,
             bridgeBotIds: welcomeBridgeBotIds,
             selfPuppetIds: env.selfPuppetIds,
-            alreadyWelcomed: inHub && queries.getMetadata(dedupKey) != null,
+            alreadyWelcomed: () => queries.getMetadata(dedupKey) != null,
           );
           if (welcome != null) {
             log.info('Welcoming new member', extra: {

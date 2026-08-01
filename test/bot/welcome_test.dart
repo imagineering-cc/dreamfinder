@@ -73,9 +73,46 @@ void main() {
         isMemberJoin: true,
         hubRoomIds: hubs,
         displayName: 'Alice',
-        alreadyWelcomed: true,
+        alreadyWelcomed: () => true,
       );
       expect(msg, isNull);
+    });
+
+    test('does not consult the dedup store until join/hub/puppet gates pass',
+        () {
+      var thunkCalls = 0;
+      bool countingThunk() {
+        thunkCalls++;
+        return false;
+      }
+
+      // Non-hub room: rejected before the thunk.
+      welcomeMessage(
+        sender: human,
+        roomId: '!portal:imagineering.cc',
+        isMemberJoin: true,
+        hubRoomIds: hubs,
+        alreadyWelcomed: countingThunk,
+      );
+      // Puppet: rejected before the thunk.
+      welcomeMessage(
+        sender: '@whatsapp_1:imagineering.cc',
+        roomId: hub,
+        isMemberJoin: true,
+        hubRoomIds: hubs,
+        alreadyWelcomed: countingThunk,
+      );
+      expect(thunkCalls, 0);
+
+      // Real human in hub: the thunk IS consulted.
+      welcomeMessage(
+        sender: human,
+        roomId: hub,
+        isMemberJoin: true,
+        hubRoomIds: hubs,
+        alreadyWelcomed: countingThunk,
+      );
+      expect(thunkCalls, 1);
     });
 
     test('ignores non-join membership events (profile updates)', () {
