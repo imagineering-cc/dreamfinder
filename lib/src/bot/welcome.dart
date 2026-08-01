@@ -150,8 +150,14 @@ String? welcomeMessage({
   // dedup store.
   if (alreadyWelcomed != null && alreadyWelcomed()) return null;
 
-  final cleaned = displayName == null ? '' : _sanitizeName(displayName);
-  var name = cleaned.isNotEmpty ? cleaned : _fallbackLabel(sender);
+  // Sanitize the CHOSEN name uniformly — both the displayname and the MXID
+  // fallback cross the untrusted homeserver/bridge boundary, so control/bidi
+  // chars must be stripped from whichever we use (Carnot, cage-match PR #126).
+  final fromDisplay = displayName == null ? '' : _sanitizeName(displayName);
+  var name = fromDisplay.isNotEmpty
+      ? fromDisplay
+      : _sanitizeName(_fallbackLabel(sender));
+  if (name.isEmpty) name = 'there';
   // Truncate on rune boundaries, not UTF-16 code units, so an emoji or
   // surrogate pair can't be split into mojibake at the cap (Tesla, PR #126).
   final runes = name.runes.toList();

@@ -216,6 +216,23 @@ void main() {
       }
     });
 
+    test('sanitizes the MXID fallback path too (blank displayName)', () {
+      // Malformed sender with control chars, no displayname → fallback used.
+      final msg = welcomeMessage(
+        sender: '@a\nb${String.fromCharCode(0x202e)}c:imagineering.cc',
+        roomId: hub,
+        isMemberJoin: true,
+        hubRoomIds: hubs,
+        displayName: null,
+      );
+      expect(msg, isNotNull);
+      expect(
+        msg!.runes
+            .any((r) => r < 0x20 || r == 0x7f || (r >= 0x202a && r <= 0x202e)),
+        isFalse,
+      );
+    });
+
     test('caps an absurdly long display name', () {
       final msg = welcomeMessage(
         sender: human,
