@@ -20,7 +20,8 @@ void main() {
         groupId,
       );
       expect(section, contains('get_chat_config'));
-      expect(section, contains('kan_list_workspaces'));
+      expect(section, contains('run_cli'));
+      expect(section, contains('list-workspaces'));
     });
 
     test('workspace step includes advance instruction', () {
@@ -84,9 +85,13 @@ void main() {
         groupId,
       );
       expect(section, contains('Step 4 of 6: Project Seeding'));
-      expect(section, contains('kan_search'));
-      expect(section, contains('kan_create_card'));
-      expect(section, contains('outline_create_document'));
+      expect(section, contains('run_cli'));
+      expect(section, contains('search'));
+      expect(section, contains('create-card'));
+      expect(section, contains('documents.create'));
+      // Guard against the retired MCP tool names regressing back in.
+      expect(section, isNot(contains('kan_create_card')));
+      expect(section, isNot(contains('outline_create_document')));
     });
 
     test('knowledge step mentions save_memory', () {
@@ -96,7 +101,8 @@ void main() {
       );
       expect(section, contains('Step 5 of 6: Knowledge Dump'));
       expect(section, contains('save_memory'));
-      expect(section, contains('outline_create_document'));
+      expect(section, contains('documents.create'));
+      expect(section, isNot(contains('outline_create_document')));
     });
 
     test('primer step mentions complete_kickstart instead of advance', () {
