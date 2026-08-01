@@ -1,8 +1,9 @@
 /// Deciding whether — and how — to welcome a member who joined a room.
 ///
 /// Extracted from the main loop so the decision is unit-testable in isolation
-/// (the inline version welcomed every membership event, including bridge
-/// puppets, producing repeating "Welcome pvt pvt!" spam).
+/// (the inline version welcomed every membership event in any room, with no
+/// dedup — so a bridged member whose name hadn't resolved was greeted as
+/// "Welcome pvt pvt!" repeatedly on every bridge resync).
 library;
 
 /// MXID prefixes for members River must NOT welcome — the true non-humans.
@@ -20,7 +21,7 @@ library;
 /// name hadn't resolved yet, welcomed repeatedly on resync — a name-resolution
 /// + dedup problem, not a "puppet" problem. So the fix is dedup + hub-scope,
 /// and this list filters only the genuine non-humans.
-const puppetMxidPrefixes = <String>[
+const nonHumanMxidPrefixes = <String>[
   '@_relay_',
   '@signalbot:',
   '@whatsappbot:',
@@ -30,18 +31,22 @@ const puppetMxidPrefixes = <String>[
   '@dreamfinder-bot:',
 ];
 
-/// Returns `true` if [sender] is a bridge/relay puppet rather than a real user.
+/// Returns `true` if [sender] is NOT a person River should welcome — a bridge
+/// bot, a relay puppet, or River itself. Bridged community members (who carry
+/// per-user appservice namespaces like `@signal_<uuid>`) are people and return
+/// `false`. See [nonHumanMxidPrefixes] for the topology this depends on.
 ///
 /// Checks, in order: the explicit bridge bot MXIDs ([bridgeBotIds]), River's
-/// own relayed puppets ([selfPuppetIds]), then the appservice namespace
-/// prefixes ([prefixes], defaulting to [puppetMxidPrefixes] — an operator can
-/// override via `WELCOME_PUPPET_PREFIXES` to correct a namespace drift without
-/// a code deploy).
-bool isBridgePuppet(
+/// own relayed puppets ([selfPuppetIds]), then the non-human namespace
+/// prefixes ([prefixes], defaulting to [nonHumanMxidPrefixes]; an operator can
+/// ADD to them via `WELCOME_NON_HUMAN_PREFIXES` to cover a new bridge bot
+/// without a code deploy — never to add a per-user namespace, which would stop
+/// welcoming real people).
+bool isNonHumanMember(
   String sender, {
   Set<String> bridgeBotIds = const {},
   List<String> selfPuppetIds = const [],
-  List<String> prefixes = puppetMxidPrefixes,
+  List<String> prefixes = nonHumanMxidPrefixes,
 }) {
   if (bridgeBotIds.contains(sender)) return true;
   if (selfPuppetIds.contains(sender)) return true;
@@ -108,17 +113,18 @@ String welcomeDedupKey(String roomId, String sender) =>
 /// - the event is a genuine join ([isMemberJoin] — not a profile update),
 /// - the room is a hub room River converses in ([hubRoomIds], reusing
 ///   `MATRIX_ALWAYS_RESPOND_ROOMS`) so churny bridge portals never trigger it,
-/// - [sender] is a real human, not a bridge/relay puppet, and
+/// - [sender] is a person, not a bridge bot / relay puppet / River itself
+///   (bridged community members ARE people — see [isNonHumanMember]), and
 /// - the (room, sender) pair has not been welcomed before ([alreadyWelcomed]).
 ///
 /// [alreadyWelcomed] is a lazy thunk, evaluated only *after* the cheap join /
-/// hub / puppet gates pass — so a bridge resync storm (of puppets, or into a
+/// hub / non-human gates pass — so a resync storm (bots, or joins into a
 /// non-hub portal) never triggers the backing `bot_metadata` read (Tesla,
 /// cage-match PR #126). Defaults to "not welcomed".
 ///
 /// The display name is sanitised and length-capped, and falls back to the MXID
-/// localpart only for real users — a puppet's `pvt pvt` displayname can never
-/// surface, since puppets are filtered out entirely one step earlier.
+/// localpart when blank. An unresolved bridged name (the `pvt pvt` case) is
+/// welcomed once, as-is — dedup makes it one-time (Nick's call, PR #126).
 String? welcomeMessage({
   required String sender,
   required String roomId,
@@ -127,16 +133,16 @@ String? welcomeMessage({
   String? displayName,
   Set<String> bridgeBotIds = const {},
   List<String> selfPuppetIds = const [],
-  List<String> puppetPrefixes = puppetMxidPrefixes,
+  List<String> nonHumanPrefixes = nonHumanMxidPrefixes,
   bool Function()? alreadyWelcomed,
 }) {
   if (!isMemberJoin) return null;
   if (!hubRoomIds.contains(roomId)) return null;
-  if (isBridgePuppet(
+  if (isNonHumanMember(
     sender,
     bridgeBotIds: bridgeBotIds,
     selfPuppetIds: selfPuppetIds,
-    prefixes: puppetPrefixes,
+    prefixes: nonHumanPrefixes,
   )) {
     return null;
   }

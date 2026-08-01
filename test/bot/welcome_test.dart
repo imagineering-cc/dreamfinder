@@ -10,53 +10,54 @@ void main() {
   const bridgedHuman = '@signal_1f11a469-eb2d-4c50-a4aa-775e781e8911'
       ':imagineering.cc';
 
-  group('isBridgePuppet', () {
+  group('isNonHumanMember', () {
     test('flags relay puppets, bridge bots and self — the true non-humans', () {
-      expect(isBridgePuppet('@_relay_signal_abc:imagineering.cc'), isTrue);
-      expect(isBridgePuppet('@signalbot:imagineering.cc'), isTrue);
-      expect(isBridgePuppet('@whatsappbot:imagineering.cc'), isTrue);
-      expect(isBridgePuppet('@dreamfinder-bot:imagineering.cc'), isTrue);
+      expect(isNonHumanMember('@_relay_signal_abc:imagineering.cc'), isTrue);
+      expect(isNonHumanMember('@signalbot:imagineering.cc'), isTrue);
+      expect(isNonHumanMember('@whatsappbot:imagineering.cc'), isTrue);
+      expect(isNonHumanMember('@dreamfinder-bot:imagineering.cc'), isTrue);
     });
 
     test('does NOT flag bridged community members (they are people)', () {
-      expect(isBridgePuppet(bridgedHuman), isFalse);
-      expect(isBridgePuppet('@whatsapp_61400000000:imagineering.cc'), isFalse);
-      expect(isBridgePuppet('@telegram_12345:imagineering.cc'), isFalse);
+      expect(isNonHumanMember(bridgedHuman), isFalse);
+      expect(
+          isNonHumanMember('@whatsapp_61400000000:imagineering.cc'), isFalse);
+      expect(isNonHumanMember('@telegram_12345:imagineering.cc'), isFalse);
     });
 
     test('flags explicit bridge bots and self puppets via params', () {
       expect(
-        isBridgePuppet('@custombot:imagineering.cc',
+        isNonHumanMember('@custombot:imagineering.cc',
             bridgeBotIds: {'@custombot:imagineering.cc'}),
         isTrue,
       );
       expect(
-        isBridgePuppet('@_relay_x:imagineering.cc',
+        isNonHumanMember('@_relay_x:imagineering.cc',
             selfPuppetIds: ['@_relay_x:imagineering.cc']),
         isTrue,
       );
     });
 
     test('does not flag a real homeserver user', () {
-      expect(isBridgePuppet(human), isFalse);
+      expect(isNonHumanMember(human), isFalse);
     });
 
     test('operator prefixes ADD to the defaults, never replace them', () {
       // The call site builds [...defaults, ...operator] — mirror that here.
-      final merged = [...puppetMxidPrefixes, '@gmessages_'];
+      final merged = [...nonHumanMxidPrefixes, '@gmessages_'];
       // The operator-added namespace is filtered.
       expect(
-        isBridgePuppet('@gmessages_1:imagineering.cc', prefixes: merged),
+        isNonHumanMember('@gmessages_1:imagineering.cc', prefixes: merged),
         isTrue,
       );
       // AND the built-in defaults still filter — adding one prefix must not
       // silently disable @signalbot etc. (the fail-open footgun).
       expect(
-        isBridgePuppet('@signalbot:imagineering.cc', prefixes: merged),
+        isNonHumanMember('@signalbot:imagineering.cc', prefixes: merged),
         isTrue,
       );
       // A bridged human is still not filtered under the merged list.
-      expect(isBridgePuppet(bridgedHuman, prefixes: merged), isFalse);
+      expect(isNonHumanMember(bridgedHuman, prefixes: merged), isFalse);
     });
   });
 

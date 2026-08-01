@@ -935,13 +935,14 @@ Future<void> main() async {
   // Bridge/relay bot MXIDs — hoisted out of the per-event welcome path so a
   // member-join storm doesn't re-allocate the set on every event.
   final welcomeBridgeBotIds = env.bridgeBotIds.toSet();
-  // Puppet namespace prefixes: the built-in defaults ALWAYS apply, and any
-  // operator-supplied prefixes are ADDED (not replaced) — so configuring one
-  // new namespace can never silently disable filtering for the defaults and
-  // fail open into the spam this guards against (Carnot, cage-match PR #126).
-  final welcomePuppetPrefixes = [
-    ...puppetMxidPrefixes,
-    ...env.welcomePuppetPrefixes,
+  // Non-human MXID prefixes (bridge bots / relay puppets / self): the built-in
+  // defaults ALWAYS apply, and any operator-supplied prefixes are ADDED (not
+  // replaced) — so configuring one new bridge bot can never silently disable
+  // the defaults (Carnot, PR #126). Do NOT add a per-user bridged namespace
+  // (@signal_/@whatsapp_/@telegram_) here — those are real community members.
+  final welcomeNonHumanPrefixes = [
+    ...nonHumanMxidPrefixes,
+    ...env.welcomeNonHumanPrefixes,
   ];
 
   // Retrieve the stored sync token for resumption across restarts.
@@ -1014,15 +1015,16 @@ Future<void> main() async {
         // group and wrongly require a mention to get a reply.
         await matrixClient.ensureMemberCount(event.roomId);
 
-        // Welcome new members — hub rooms only, real humans only, once each.
-        // Scoped to the always-respond (hub) rooms so churny bridge portals
-        // never trigger it; bridge/relay puppets (the "Welcome pvt pvt!" spam)
-        // are filtered by MXID namespace; a persisted dedup key means a bridge
-        // resync re-emitting an old join never re-welcomes.
+        // Welcome new members — hub rooms only, real people only, once each.
+        // Bridged community members (@signal_<uuid> etc.) ARE people and get
+        // welcomed; only bridge bots / relay puppets / self are filtered. The
+        // "Welcome pvt pvt!" spam was a bridged human with an unresolved name
+        // greeted on every resync — killed by hub-scope + the persisted dedup
+        // key, not by treating bridged users as non-human.
         if (event.isMemberJoin) {
           // `alreadyWelcomed` is a thunk: welcomeMessage evaluates it only
-          // after the cheap join/hub/puppet gates pass, so a resync storm
-          // (non-hub portal, or hub puppets) never hits `bot_metadata`
+          // after the cheap join/hub/non-human gates pass, so a resync storm
+          // (non-hub portal, or bridge bots) never hits `bot_metadata`
           // (Tesla, cage-match PR #126).
           final dedupKey = welcomeDedupKey(event.roomId, event.sender);
           final welcome = welcomeMessage(
@@ -1033,7 +1035,7 @@ Future<void> main() async {
             displayName: event.memberDisplayName,
             bridgeBotIds: welcomeBridgeBotIds,
             selfPuppetIds: env.selfPuppetIds,
-            puppetPrefixes: welcomePuppetPrefixes,
+            nonHumanPrefixes: welcomeNonHumanPrefixes,
             alreadyWelcomed: () => queries.getMetadata(dedupKey) != null,
           );
           if (welcome != null) {
