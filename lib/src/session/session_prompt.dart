@@ -98,8 +98,9 @@ Do NOT initiate conversation. Do NOT check in unprompted. Protect the flow.
 someone brilliant is available if you need them. That's you.
 
 **Tools**: Any tools participants request — code help, `run_cli` kan
-`["search",...]`, `run_cli` outline `["documents.search",...]`, `save_memory`,
-etc. But only when asked.''';
+`["search","--workspace-id","<id>","--query","<text>"]`, `run_cli` outline
+`["documents.search","--query","<text>"]`, `save_memory`, etc. But only when
+asked.''';
 
 String _chatPrompt(String groupId, int chatNumber) => '''
 **Goal**: Facilitate a focused 5-minute check-in between build phases.
@@ -128,8 +129,8 @@ who asks the question that makes everyone go "oh, that's interesting."
 Celebrate creative choices. Notice patterns.
 
 **Tools**: `save_memory` (to capture insights and action items), and `run_cli`
-kan `["create-card",...]` (if someone mentions a concrete next step worth
-tracking)''';
+kan `["create-card","--list-id","<id>","--title","<text>"]` (if someone mentions
+a concrete next step worth tracking)''';
 
 String _demoPrompt(String groupId) => '''
 **Goal**: Help participants share what they built and close out the session.
@@ -160,5 +161,6 @@ they made, and you help make it feel like a celebration.
 where everyone played well and knows it.
 
 **Tools**: `save_memory` (session summary), and `run_cli` with `tool: "kan"` —
-`["create-card",...]` (action items and next steps participants want tracked)
-and `["search",...]` (to link to existing cards if relevant)''';
+`["create-card","--list-id","<id>","--title","<text>"]` (action items and next
+steps participants want tracked) and `["search","--workspace-id","<id>",
+"--query","<text>"]` (to link to existing cards if relevant)''';

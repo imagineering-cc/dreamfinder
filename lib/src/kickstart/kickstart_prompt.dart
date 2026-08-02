@@ -124,10 +124,15 @@ String _projectsPrompt(String groupId) => '''
 
 **Steps**:
 1. Ask: "Tell me about your active projects — what's the team working on right now?"
+First gather the IDs you'll need (the verbs below require them):
+- The linked **workspace id** and **default board id** are in `get_chat_config` for `$groupId` (set during the Workspace step).
+- Get a **list id** on the default board: `run_cli` kan `["get-board","--board-id","<default board id>"]` returns its lists.
+- Pick a **collection id**: `run_cli` outline `["collections.list"]`.
+
 2. For each project the user describes:
-   - Search Kan for existing cards: `run_cli` kan `["search","--workspace-id","<id>","--query","<project name>"]`.
-   - If no card exists, create one: `run_cli` kan `["create-card","--list-id","<a list on the default board>","--title","<project name>"]`.
-   - Create an Outline doc for the project: `run_cli` outline `["documents.create","--title","<project name>","--collection-id","<id>","--text","<summary>"]`.
+   - Search Kan for existing cards: `run_cli` kan `["search","--workspace-id","<workspace id>","--query","<project name>"]`.
+   - If no card exists, create one: `run_cli` kan `["create-card","--list-id","<list id>","--title","<project name>"]`.
+   - Create an Outline doc for the project: `run_cli` outline `["documents.create","--title","<project name>","--collection-id","<collection id>","--text","<summary>"]`.
 3. Summarize what was created after each project.
 4. When the user says they're done (or says "done", "next", "skip"), advance.
 
@@ -138,8 +143,10 @@ String _knowledgePrompt(String groupId) => '''
 
 **Steps**:
 1. Ask: "Any recent decisions, conventions, or context I should know about? Things like coding standards, deployment processes, or recent architectural decisions."
+Pick a target collection first: `run_cli` outline `["collections.list"]`.
+
 2. For each piece of knowledge the user shares:
-   - File it as an Outline document: `run_cli` outline `["documents.create","--title","<topic>","--collection-id","<id>","--text","<the knowledge>"]`.
+   - File it as an Outline document: `run_cli` outline `["documents.create","--title","<topic>","--collection-id","<collection id>","--text","<the knowledge>"]`.
    - Save key facts to memory: `save_memory` with `visibility` = `cross_chat`.
 3. When the user says they're done (or says "done", "next", "skip"), advance.
 

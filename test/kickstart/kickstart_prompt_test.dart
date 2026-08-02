@@ -1,9 +1,48 @@
 import 'package:dreamfinder/src/kickstart/kickstart_prompt.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_state.dart';
+import 'package:dreamfinder/src/session/session_prompt.dart';
+import 'package:dreamfinder/src/session/session_state.dart';
 import 'package:test/test.dart';
+
+/// Retired MCP tool names — after the Kan/Outline MCP→CLI migration (#100/#114)
+/// only `run_cli` exists. Any of these in a live prompt is a silent-failure
+/// regression (kickstart triggers but its guided step calls a dead tool).
+const _retiredMcpToolNames = <String>[
+  'kan_list_workspaces',
+  'kan_list_boards',
+  'kan_search',
+  'kan_create_card',
+  'kan_create_list',
+  'outline_create_document',
+  'outline_search',
+];
 
 void main() {
   const groupId = 'test-group-id';
+
+  // The invariant, guarded across the WHOLE prompt corpus (every kickstart
+  // step AND every session phase), so a retired name can't sneak back into any
+  // untested section.
+  group('no retired MCP tool names in any guided prompt', () {
+    for (final step in KickstartStep.values) {
+      test('kickstart ${step.name} uses run_cli, not retired MCP names', () {
+        final section = buildKickstartPromptSection(step, groupId);
+        for (final retired in _retiredMcpToolNames) {
+          expect(section, isNot(contains(retired)),
+              reason: '$retired is a dead tool; use run_cli');
+        }
+      });
+    }
+    for (final phase in SessionPhase.values) {
+      test('session ${phase.name} uses run_cli, not retired MCP names', () {
+        final section = buildSessionPromptSection(phase, groupId);
+        for (final retired in _retiredMcpToolNames) {
+          expect(section, isNot(contains(retired)),
+              reason: '$retired is a dead tool; use run_cli');
+        }
+      });
+    }
+  });
 
   group('buildKickstartPromptSection', () {
     test('workspace step includes step header', () {
