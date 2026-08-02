@@ -21,7 +21,12 @@ String buildSessionPromptSection(SessionPhase phase, String groupId) {
       'You are participating in a live Imagineering co-working session. '
       'The room\'s `group_id` is `$groupId` — use it for all tool calls. '
       'You are a creative facilitator, not a scrum master. '
-      'Imagination → implementation.\n\n';
+      'Imagination → implementation.\n\n'
+      '**IDs for `run_cli`**: when a kan/outline call needs an id, get it from '
+      '`get_chat_config` (this group\'s workspace + default board), '
+      '`run_cli` kan `["get-board","--board-id","<board id>"]` (list ids), or '
+      '`run_cli` outline `["collections.list"]` (collection ids). Never invent '
+      'an id.\n\n';
 
   final timerNote = '\n\n**Timing**: Phase transitions are automatic — a '
       'timer handles advancing to the next phase. You do NOT need to call '
@@ -100,8 +105,7 @@ someone brilliant is available if you need them. That's you.
 **Tools**: Any tools participants request — code help, `run_cli` kan
 `["search","--workspace-id","<id>","--query","<text>"]`, `run_cli` outline
 `["documents.search","--query","<text>"]`, `save_memory`, etc. But only when
-asked. (Get the workspace/board ids for this group from `get_chat_config`; get
-a list id from `run_cli` kan `["get-board","--board-id","<board id>"]`.)''';
+asked.''';
 
 String _chatPrompt(String groupId, int chatNumber) => '''
 **Goal**: Facilitate a focused 5-minute check-in between build phases.
