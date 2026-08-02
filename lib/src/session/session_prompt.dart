@@ -100,7 +100,8 @@ someone brilliant is available if you need them. That's you.
 **Tools**: Any tools participants request — code help, `run_cli` kan
 `["search","--workspace-id","<id>","--query","<text>"]`, `run_cli` outline
 `["documents.search","--query","<text>"]`, `save_memory`, etc. But only when
-asked.''';
+asked. (Get the workspace/board ids for this group from `get_chat_config`; get
+a list id from `run_cli` kan `["get-board","--board-id","<board id>"]`.)''';
 
 String _chatPrompt(String groupId, int chatNumber) => '''
 **Goal**: Facilitate a focused 5-minute check-in between build phases.
