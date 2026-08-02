@@ -1,9 +1,48 @@
 import 'package:dreamfinder/src/kickstart/kickstart_prompt.dart';
 import 'package:dreamfinder/src/kickstart/kickstart_state.dart';
+import 'package:dreamfinder/src/session/session_prompt.dart';
+import 'package:dreamfinder/src/session/session_state.dart';
 import 'package:test/test.dart';
+
+/// Retired MCP tool names — after the Kan/Outline MCP→CLI migration (#100/#114)
+/// only `run_cli` exists. Any of these in a live prompt is a silent-failure
+/// regression (kickstart triggers but its guided step calls a dead tool).
+const _retiredMcpToolNames = <String>[
+  'kan_list_workspaces',
+  'kan_list_boards',
+  'kan_search',
+  'kan_create_card',
+  'kan_create_list',
+  'outline_create_document',
+  'outline_search',
+];
 
 void main() {
   const groupId = 'test-group-id';
+
+  // The invariant, guarded across the WHOLE prompt corpus (every kickstart
+  // step AND every session phase), so a retired name can't sneak back into any
+  // untested section.
+  group('no retired MCP tool names in any guided prompt', () {
+    for (final step in KickstartStep.values) {
+      test('kickstart ${step.name} uses run_cli, not retired MCP names', () {
+        final section = buildKickstartPromptSection(step, groupId);
+        for (final retired in _retiredMcpToolNames) {
+          expect(section, isNot(contains(retired)),
+              reason: '$retired is a dead tool; use run_cli');
+        }
+      });
+    }
+    for (final phase in SessionPhase.values) {
+      test('session ${phase.name} uses run_cli, not retired MCP names', () {
+        final section = buildSessionPromptSection(phase, groupId);
+        for (final retired in _retiredMcpToolNames) {
+          expect(section, isNot(contains(retired)),
+              reason: '$retired is a dead tool; use run_cli');
+        }
+      });
+    }
+  });
 
   group('buildKickstartPromptSection', () {
     test('workspace step includes step header', () {
@@ -20,7 +59,8 @@ void main() {
         groupId,
       );
       expect(section, contains('get_chat_config'));
-      expect(section, contains('kan_list_workspaces'));
+      expect(section, contains('run_cli'));
+      expect(section, contains('list-workspaces'));
     });
 
     test('workspace step includes advance instruction', () {
@@ -84,9 +124,13 @@ void main() {
         groupId,
       );
       expect(section, contains('Step 4 of 6: Project Seeding'));
-      expect(section, contains('kan_search'));
-      expect(section, contains('kan_create_card'));
-      expect(section, contains('outline_create_document'));
+      expect(section, contains('run_cli'));
+      expect(section, contains('search'));
+      expect(section, contains('create-card'));
+      expect(section, contains('documents.create'));
+      // Guard against the retired MCP tool names regressing back in.
+      expect(section, isNot(contains('kan_create_card')));
+      expect(section, isNot(contains('outline_create_document')));
     });
 
     test('knowledge step mentions save_memory', () {
@@ -96,7 +140,8 @@ void main() {
       );
       expect(section, contains('Step 5 of 6: Knowledge Dump'));
       expect(section, contains('save_memory'));
-      expect(section, contains('outline_create_document'));
+      expect(section, contains('documents.create'));
+      expect(section, isNot(contains('outline_create_document')));
     });
 
     test('primer step mentions complete_kickstart instead of advance', () {

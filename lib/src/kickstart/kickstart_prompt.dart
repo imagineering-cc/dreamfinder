@@ -57,16 +57,16 @@ String _workspacePrompt(String groupId) => '''
 **Steps**:
 1. Call `get_chat_config` with `group_id` = `$groupId` to check if a workspace is already linked.
 2. If no workspace is linked:
-   - Call `kan_list_workspaces` to show available workspaces.
+   - Run `run_cli` kan `["list-workspaces"]` to show available workspaces.
    - Ask the user which workspace to link.
    - Call `set_chat_config` to link it.
 3. If a workspace is linked but no default board:
-   - Call `kan_list_boards` to show available boards in the workspace.
+   - Run `run_cli` kan `["list-boards","--workspace-id","<workspace public id>"]` to show available boards.
    - Ask the user which board to use as the default.
    - Call `set_chat_config` to set the default board.
 4. If both are set, confirm and advance.
 
-**Tools**: `get_chat_config`, `set_chat_config`, `kan_list_workspaces`, `kan_list_boards`''';
+**Tools**: `get_chat_config`, `set_chat_config`, and `run_cli` with `tool: "kan"` — subcommands `list-workspaces`, `list-boards` (run `["<subcommand>","--help"]` for exact flags).''';
 
 String _meetAndGreetPrompt(String groupId) => '''
 **Goal**: Go around the room. Get to know each person here and save a CardDAV
@@ -124,26 +124,33 @@ String _projectsPrompt(String groupId) => '''
 
 **Steps**:
 1. Ask: "Tell me about your active projects — what's the team working on right now?"
+First gather the IDs you'll need (the verbs below require them):
+- The linked **workspace id** and **default board id** are in `get_chat_config` for `$groupId` (set during the Workspace step).
+- Get a **list id** on the default board: `run_cli` kan `["get-board","--board-id","<default board id>"]` returns its lists.
+- Pick a **collection id**: `run_cli` outline `["collections.list"]`.
+
 2. For each project the user describes:
-   - Search Kan for existing cards: `kan_search` with the project name.
-   - If no card exists, create one: `kan_create_card` on the default board.
-   - Create an Outline doc for the project: `outline_create_document`.
+   - Search Kan for existing cards: `run_cli` kan `["search","--workspace-id","<workspace id>","--query","<project name>"]`.
+   - If no card exists, create one: `run_cli` kan `["create-card","--list-id","<list id>","--title","<project name>"]`.
+   - Create an Outline doc for the project: `run_cli` outline `["documents.create","--title","<project name>","--collection-id","<collection id>","--text","<summary>"]`.
 3. Summarize what was created after each project.
 4. When the user says they're done (or says "done", "next", "skip"), advance.
 
-**Tools**: `kan_search`, `kan_create_card`, `kan_create_list`, `outline_create_document`, `outline_search`''';
+**Tools**: `run_cli` with `tool: "kan"` — subcommands `search`, `create-card`, `create-list` — and `run_cli` with `tool: "outline"` — subcommands `documents.create`, `documents.search` (run `["<subcommand>","--help"]` for exact flags).''';
 
 String _knowledgePrompt(String groupId) => '''
 **Goal**: Capture recent decisions, context, and institutional knowledge.
 
 **Steps**:
 1. Ask: "Any recent decisions, conventions, or context I should know about? Things like coding standards, deployment processes, or recent architectural decisions."
+Pick a target collection first: `run_cli` outline `["collections.list"]`.
+
 2. For each piece of knowledge the user shares:
-   - File it as an Outline document: `outline_create_document`.
+   - File it as an Outline document: `run_cli` outline `["documents.create","--title","<topic>","--collection-id","<collection id>","--text","<the knowledge>"]`.
    - Save key facts to memory: `save_memory` with `visibility` = `cross_chat`.
 3. When the user says they're done (or says "done", "next", "skip"), advance.
 
-**Tools**: `outline_create_document`, `outline_search`, `save_memory`''';
+**Tools**: `run_cli` with `tool: "outline"` — subcommands `documents.create`, `documents.search` — and `save_memory` (run `["<subcommand>","--help"]` for exact flags).''';
 
 String _primerPrompt(String groupId) => '''
 **Goal**: Summarize what was set up and introduce the dream cycle.

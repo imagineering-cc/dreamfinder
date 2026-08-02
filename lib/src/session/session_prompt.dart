@@ -21,7 +21,12 @@ String buildSessionPromptSection(SessionPhase phase, String groupId) {
       'You are participating in a live Imagineering co-working session. '
       'The room\'s `group_id` is `$groupId` — use it for all tool calls. '
       'You are a creative facilitator, not a scrum master. '
-      'Imagination → implementation.\n\n';
+      'Imagination → implementation.\n\n'
+      '**IDs for `run_cli`**: when a kan/outline call needs an id, get it from '
+      '`get_chat_config` (this group\'s workspace + default board), '
+      '`run_cli` kan `["get-board","--board-id","<board id>"]` (list ids), or '
+      '`run_cli` outline `["collections.list"]` (collection ids). Never invent '
+      'an id.\n\n';
 
   final timerNote = '\n\n**Timing**: Phase transitions are automatic — a '
       'timer handles advancing to the next phase. You do NOT need to call '
@@ -97,8 +102,10 @@ Do NOT initiate conversation. Do NOT check in unprompted. Protect the flow.
 **Tone**: Minimal. A good build phase feels like a quiet library where
 someone brilliant is available if you need them. That's you.
 
-**Tools**: Any tools participants request — code help, `kan_search`,
-`outline_search`, `save_memory`, etc. But only when asked.''';
+**Tools**: Any tools participants request — code help, `run_cli` kan
+`["search","--workspace-id","<id>","--query","<text>"]`, `run_cli` outline
+`["documents.search","--query","<text>"]`, `save_memory`, etc. But only when
+asked.''';
 
 String _chatPrompt(String groupId, int chatNumber) => '''
 **Goal**: Facilitate a focused 5-minute check-in between build phases.
@@ -126,8 +133,9 @@ each other.
 who asks the question that makes everyone go "oh, that's interesting."
 Celebrate creative choices. Notice patterns.
 
-**Tools**: `save_memory` (to capture insights and action items), `kan_create_card`
-(if someone mentions a concrete next step worth tracking)''';
+**Tools**: `save_memory` (to capture insights and action items), and `run_cli`
+kan `["create-card","--list-id","<id>","--title","<text>"]` (if someone mentions
+a concrete next step worth tracking)''';
 
 String _demoPrompt(String groupId) => '''
 **Goal**: Help participants share what they built and close out the session.
@@ -157,6 +165,7 @@ they made, and you help make it feel like a celebration.
 **Tone**: Celebratory, reflective, warm. Like the end of a great jam session
 where everyone played well and knows it.
 
-**Tools**: `save_memory` (session summary), `kan_create_card` (action items
-and next steps participants want tracked), `kan_search` (to link to existing
-cards if relevant)''';
+**Tools**: `save_memory` (session summary), and `run_cli` with `tool: "kan"` —
+`["create-card","--list-id","<id>","--title","<text>"]` (action items and next
+steps participants want tracked) and `["search","--workspace-id","<id>",
+"--query","<text>"]` (to link to existing cards if relevant)''';
