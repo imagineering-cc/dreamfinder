@@ -42,6 +42,16 @@ if ! git -C "$SRC_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
+# jq is a hard dependency of the pre-build stamp assertion (structured, scoped,
+# exact — see below). Fail loudly here rather than letting a missing jq surface
+# downstream as a misleading "stamp desync" (empty RESOLVED_SHA). Docker + jq are
+# the tool contract for this script.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq not found — required for the pre-build stamp assertion." >&2
+  echo "       Install jq (e.g. 'apt-get install jq' / 'brew install jq') and re-run." >&2
+  exit 1
+fi
+
 if [ ! -f "$COMPOSE_DIR/docker-compose.yml" ]; then
   echo "ERROR: no docker-compose.yml in COMPOSE_DIR=$COMPOSE_DIR." >&2
   echo "       Run from the compose directory, or set COMPOSE_DIR to it." >&2
@@ -104,15 +114,17 @@ docker compose up -d --force-recreate "$SERVICE"
 
 # The terminal observable is "prod reports this commit", not "compose exited 0".
 # Poll /health, compare the reported commit, and — because a soft check that always
-# exits 0 can't gate automation or a glance at $? — FAIL NON-ZERO on a confirmed
-# persistent mismatch (STRICT_HEALTH, default on). A single early mismatch is NOT
-# fatal: during --force-recreate the old container can still be bound, so we keep
-# polling and only fail if the WRONG commit persists across every attempt. An
-# endpoint that never becomes reachable is a warning, not a failure — the health
-# port may be bound elsewhere and we can't prove the stamp either way; set
-# STRICT_HEALTH=0 to also downgrade a confirmed mismatch to a warning.
+# exits 0 can't gate automation or a glance at $? — under STRICT_HEALTH (default on)
+# BOTH a confirmed persistent mismatch AND a never-reachable endpoint FAIL non-zero:
+# "couldn't verify the one thing this script exists to verify" is not a free green.
+# A single early mismatch is NOT fatal — during --force-recreate the old container
+# can still be bound, so we keep polling and only fail if the WRONG commit persists.
+# Opt-outs: STRICT_HEALTH=0 downgrades everything to a warning; if health binds only
+# on a private interface, point HEALTH_URL at it, or set ALLOW_UNVERIFIED_HEALTH=1 to
+# treat *unreachable* (but not mismatch) as a warning.
 HEALTH_URL="${HEALTH_URL:-http://localhost:8081/health}"
 STRICT_HEALTH="${STRICT_HEALTH:-1}"
+ALLOW_UNVERIFIED_HEALTH="${ALLOW_UNVERIFIED_HEALTH:-0}"
 echo
 echo "Verifying the stamp at $HEALTH_URL (expect commit=$GIT_COMMIT)..."
 last_reported=""
@@ -143,6 +155,12 @@ if [ -n "$last_reported" ]; then
   echo "  (STRICT_HEALTH=0 — downgrading mismatch to a warning.)" >&2
   exit 0
 fi
-echo "  NOTE — /health at $HEALTH_URL never became reachable (wrong port/bind, or" >&2
-echo "         still starting). Could not confirm the stamp; verify manually:" >&2
-echo "         curl -s $HEALTH_URL | jq .commit" >&2
+echo "  UNVERIFIED — /health at $HEALTH_URL never became reachable (wrong port/bind," >&2
+echo "               or still starting). Could NOT confirm the stamp landed." >&2
+echo "               Verify manually: curl -s $HEALTH_URL | jq .commit" >&2
+if [ "$STRICT_HEALTH" = "1" ] && [ "$ALLOW_UNVERIFIED_HEALTH" != "1" ]; then
+  echo "               Failing (STRICT_HEALTH=1). Set HEALTH_URL to the real endpoint," >&2
+  echo "               or ALLOW_UNVERIFIED_HEALTH=1 (private bind) / STRICT_HEALTH=0 to allow." >&2
+  exit 1
+fi
+echo "               (Not failing — STRICT_HEALTH=$STRICT_HEALTH ALLOW_UNVERIFIED_HEALTH=$ALLOW_UNVERIFIED_HEALTH.)" >&2

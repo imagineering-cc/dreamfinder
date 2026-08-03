@@ -401,8 +401,9 @@ docker compose restart bot
 `scripts/deploy.sh` computes the git SHA and passes it into the build via the
 `VERSION` / `GIT_COMMIT` / `BUILD_TIME` env vars that `docker-compose.yml` reads,
 so the deployed commit is baked into `lib/src/config/version.dart` and surfaced at
-`/health.commit`. Building without it (or by exporting the wrong var names) silently
-produces a `dev+local` stamp — the tell that a deploy was un-stamped.
+`/health.commit`. **Bare `docker compose build` / `up -d` is unsupported for prod** —
+without the script's exports it silently produces a `dev+local` stamp (the tell that
+a deploy was un-stamped). Always deploy via `scripts/deploy.sh`.
 
 Deployed on an OCI VPS. The bot container connects to the Matrix homeserver over
 HTTPS — no sidecar containers needed for messaging.
