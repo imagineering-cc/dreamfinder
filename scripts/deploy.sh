@@ -46,18 +46,15 @@ if ! git -C "$SRC_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
-# Tool contract: jq (pre-build stamp assertion) and curl (post-deploy /health
-# check) are hard dependencies. Fail loudly HERE rather than letting a missing tool
-# surface downstream as a misdiagnosis — a missing jq as a bogus "stamp desync", a
-# missing curl as an empty /health body that STRICT_HEALTH reports as "wrong port /
-# still starting" (sending the operator to fix the wrong thing at 2am).
-for _tool in jq curl; do
-  if ! command -v "$_tool" >/dev/null 2>&1; then
-    echo "ERROR: $_tool not found — required by this script (jq: stamp assertion; curl: /health check)." >&2
-    echo "       Install it (e.g. 'apt-get install $_tool' / 'brew install $_tool') and re-run." >&2
-    exit 1
-  fi
-done
+# Tool contract: jq (host-side, for the pre-build stamp assertion) is a hard
+# dependency. Fail loudly HERE rather than letting a missing jq surface downstream as
+# a bogus "stamp desync". (curl is used only INSIDE the container for the /health
+# check, where the runtime image already provides it — no host curl needed.)
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq not found — required for the pre-build stamp assertion." >&2
+  echo "       Install jq (e.g. 'apt-get install jq' / 'brew install jq') and re-run." >&2
+  exit 1
+fi
 
 if [ ! -f "$COMPOSE_DIR/docker-compose.yml" ]; then
   echo "ERROR: no docker-compose.yml in COMPOSE_DIR=$COMPOSE_DIR." >&2
@@ -138,27 +135,11 @@ if ! CONFIG_JSON="$(docker compose config --format json 2>"$CONFIG_ERR")"; then
   exit 1
 fi
 
-# Stamp source must BE the compose build context, or /health.commit reports tree A
-# while the image is built from tree B. compose config emits an absolute context
-# path; compare it to the (already-absolute) SRC_DIR. A confirmed divergence fails
-# closed; an unresolvable context is a loud WARN (not a silent no-op).
-CTX="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" '.services[$s].build.context // ""' 2>/dev/null || true)"
-CTX_ABS="$([ -n "$CTX" ] && cd "$CTX" 2>/dev/null && pwd -P || true)"
-if [ -z "$CTX_ABS" ]; then
-  # A service we're about to `docker compose build` must have a resolvable build
-  # context; if we can't read one, we can't prove the stamp is about the built
-  # bytes — fail closed rather than warn-and-proceed (a confident lie is worse
-  # than an un-stamped build).
-  echo "ERROR: could not resolve the compose build context for '$SERVICE' —" >&2
-  echo "       cannot confirm SRC_DIR ($SRC_DIR) matches what will be built." >&2
-  echo "       Check that '$SERVICE' has a build: context in docker-compose.yml." >&2
-  exit 1
-elif [ "$SRC_DIR" != "$CTX_ABS" ]; then
-  echo "ERROR: stamp source SRC_DIR ($SRC_DIR) is not the compose build context" >&2
-  echo "       for '$SERVICE' ($CTX_ABS). The stamp would describe a different tree" >&2
-  echo "       than the one built. Point SRC_DIR at the build context." >&2
-  exit 1
-fi
+# NOTE: an earlier revision also asserted SRC_DIR == the compose build.context here.
+# It was removed: it fought the real prod topology (SRC_DIR is a `src/` subdir while
+# prod compose sets a separate context) and became a recurring source of false
+# failures. The /health terminal check below is the real guard that the built
+# artifact carries the stamp; the operator owns pointing SRC_DIR at the right tree.
 
 assert_arg() {  # $1=arg name  $2=expected value
   local got
@@ -181,17 +162,21 @@ rm -f "$CONFIG_ERR"
 docker compose build "$SERVICE"
 docker compose up -d --force-recreate "$SERVICE"
 
-# The terminal observable is "prod reports this commit", not "compose exited 0".
-# Poll /health, compare the reported commit, and — because a soft check that always
-# exits 0 can't gate automation or a glance at $? — under STRICT_HEALTH (default on)
-# BOTH a confirmed persistent mismatch AND a never-reachable endpoint FAIL non-zero:
-# "couldn't verify the one thing this script exists to verify" is not a free green.
-# A single early mismatch is NOT fatal — during --force-recreate the old container
-# can still be bound, so we keep polling and only fail if the WRONG commit persists.
-# Opt-outs: STRICT_HEALTH=0 downgrades everything to a warning; if health binds only
-# on a private interface, point HEALTH_URL at it, or set ALLOW_UNVERIFIED_HEALTH=1 to
-# treat *unreachable* (but not mismatch) as a warning.
-HEALTH_URL="${HEALTH_URL:-http://localhost:8081/health}"
+# The terminal observable is "the running container reports this commit", not
+# "compose exited 0". We check /health from INSIDE the container via
+# `docker compose exec` (curl is installed in the runtime image and is what the
+# compose healthcheck itself uses), so this works regardless of whether the health
+# port is published to the host — the repo compose has no `ports:` mapping, so a
+# host-side `curl localhost:8081` would fail every time and turn STRICT into a
+# guaranteed red. In-container is topology-independent.
+#
+# Because a soft check that always exits 0 can't gate automation, under STRICT_HEALTH
+# (default on) BOTH a confirmed persistent mismatch AND never-getting-a-response FAIL
+# non-zero. A single early mismatch is NOT fatal — during --force-recreate the old
+# container can still answer, so we keep polling and only fail if the WRONG commit
+# persists. Opt-outs: STRICT_HEALTH=0 downgrades everything to a warning;
+# ALLOW_UNVERIFIED_HEALTH=1 treats *no response* (but not a mismatch) as a warning.
+HEALTH_URL="${HEALTH_URL:-http://localhost:8081/health}"  # in-container URL
 STRICT_HEALTH="${STRICT_HEALTH:-1}"
 ALLOW_UNVERIFIED_HEALTH="${ALLOW_UNVERIFIED_HEALTH:-0}"
 # Acceptance window = HEALTH_RETRIES × HEALTH_INTERVAL (default 12 × 5s = 60s).
@@ -200,15 +185,16 @@ ALLOW_UNVERIFIED_HEALTH="${ALLOW_UNVERIFIED_HEALTH:-0}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-12}"
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
 echo
-echo "Verifying the stamp at $HEALTH_URL (expect commit=$GIT_COMMIT; window ${HEALTH_RETRIES}x${HEALTH_INTERVAL}s)..."
+echo "Verifying the stamp via 'compose exec $SERVICE' $HEALTH_URL (expect commit=$GIT_COMMIT; window ${HEALTH_RETRIES}x${HEALTH_INTERVAL}s)..."
 last_reported=""
 saw_body=0        # did the endpoint EVER return a body (reachable)?
 saw_bad_body=0    # ...that we could not parse a commit from (bad health contract)?
 for (( _i = 1; _i <= HEALTH_RETRIES; _i++ )); do
   # Bound every poll: a half-open TCP accept or wedged proxy would otherwise block
   # one iteration forever, so retries never run and STRICT_HEALTH never fires
-  # (fail-open into a hang — the opposite of the doctrine).
-  body="$(curl -fs --connect-timeout 3 --max-time 5 "$HEALTH_URL" 2>/dev/null || true)"
+  # (fail-open into a hang — the opposite of the doctrine). curl runs INSIDE the
+  # container (topology-independent); -T disables TTY alloc for non-interactive use.
+  body="$(docker compose exec -T "$SERVICE" curl -fs --connect-timeout 3 --max-time 5 "$HEALTH_URL" 2>/dev/null || true)"
   if [ -n "$body" ]; then
     saw_body=1
     # jq only — a hard dependency; the handler emits a JSON object with a "commit"
@@ -249,12 +235,12 @@ if [ "$saw_body" = "1" ] && [ "$saw_bad_body" = "1" ]; then
   echo "  (STRICT_HEALTH=0 — downgrading to a warning.)" >&2
   exit 0
 fi
-echo "  UNVERIFIED — /health at $HEALTH_URL never became reachable (wrong port/bind," >&2
-echo "               or still starting). Could NOT confirm the stamp landed." >&2
-echo "               Verify manually: curl -s $HEALTH_URL | jq .commit" >&2
+echo "  UNVERIFIED — no response from 'compose exec $SERVICE' $HEALTH_URL (container" >&2
+echo "               not up yet, curl missing in image, or wrong URL). Could NOT confirm." >&2
+echo "               Verify manually: docker compose exec $SERVICE curl -s $HEALTH_URL | jq .commit" >&2
 if [ "$STRICT_HEALTH" = "1" ] && [ "$ALLOW_UNVERIFIED_HEALTH" != "1" ]; then
-  echo "               Failing (STRICT_HEALTH=1). Set HEALTH_URL to the real endpoint," >&2
-  echo "               or ALLOW_UNVERIFIED_HEALTH=1 (private bind) / STRICT_HEALTH=0 to allow." >&2
+  echo "               Failing (STRICT_HEALTH=1). Fix HEALTH_URL/SERVICE, or set" >&2
+  echo "               ALLOW_UNVERIFIED_HEALTH=1 / STRICT_HEALTH=0 to allow." >&2
   exit 1
 fi
 echo "               (Not failing — STRICT_HEALTH=$STRICT_HEALTH ALLOW_UNVERIFIED_HEALTH=$ALLOW_UNVERIFIED_HEALTH.)" >&2

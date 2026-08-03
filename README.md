@@ -422,7 +422,7 @@ Environment knobs (all optional; defaults suit a local compose dir):
 | `SRC_DIR` | `.` | git checkout to stamp from (prod: `src`) |
 | `COMPOSE_DIR` | `.` | dir containing `docker-compose.yml` |
 | `SERVICE` | `bot` | compose service to build/recreate |
-| `HEALTH_URL` | `http://localhost:8081/health` | endpoint polled to confirm the stamp |
+| `HEALTH_URL` | `http://localhost:8081/health` | in-container URL polled (via `docker compose exec`) to confirm the stamp |
 | `STRICT_HEALTH` | `1` | fail non-zero if the stamp can't be confirmed (mismatch **or** unreachable) |
 | `ALLOW_UNVERIFIED_HEALTH` | `0` | `1` = treat *unreachable* health as a warning (private bind) but still fail on a confirmed mismatch |
 
