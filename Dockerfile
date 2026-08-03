@@ -23,6 +23,21 @@ ARG BUILD_SHA=local
 ARG BUILD_TIME=unknown
 ARG BUILD_CHANGELOG=
 ARG BUILD_DIFF_STAT=
+# Set to 1 for a deliberate un-stamped (dev) image; scripts/deploy.sh always stamps.
+ARG ALLOW_UNSTAMPED=0
+
+# FAIL CLOSED on an un-stamped build at the mutator itself. compose keeps soft
+# defaults (BUILD_SHA=local) so routine `docker compose logs/restart/ps/config`
+# still work when GIT_COMMIT is unset (a `${VAR:?}` in build.args breaks ALL of
+# those — verified) — but a bare `docker compose build` / `up -d --build` that
+# would ship a lying `dev+local` prod image now fails HERE unless the operator
+# explicitly opts into an un-stamped dev image with ALLOW_UNSTAMPED=1. This closes
+# the un-stamped path at the build boundary without a wrapper being the only guard.
+RUN if [ "$ALLOW_UNSTAMPED" != "1" ] && { [ "$BUILD_SHA" = "local" ] || [ -z "$BUILD_SHA" ]; }; then \
+      echo "REFUSING un-stamped build: BUILD_SHA='$BUILD_SHA'. Deploy via scripts/deploy.sh," >&2; \
+      echo "or pass --build-arg ALLOW_UNSTAMPED=1 for a deliberate dev image." >&2; \
+      exit 1; \
+    fi
 
 # Generate version.dart with build metadata and changelog baked in.
 # Uses raw triple-quoted strings (r'''...'''). Sanitize inputs to prevent

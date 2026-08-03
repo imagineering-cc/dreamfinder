@@ -13,10 +13,14 @@
 # compose reads ${VERSION} and ${GIT_COMMIT} — a name mismatch that silently
 # left every hand-built image un-stamped. This script is the stamped entrypoint:
 # it sets exactly the names compose reads, computed from git, and asserts compose
-# resolved them before building. SCOPE (proven, not overclaimed): running THIS
-# script always stamps correctly; a bare `docker compose build` still produces a
-# `dev+local` image — that unsafe path is not removed, only made avoidable. Deploy
-# via this script, not bare compose.
+# resolved them before building.
+#
+# The un-stamped path is now closed AT THE MUTATOR too: the Dockerfile FAILS a
+# build whose BUILD_SHA is the `local` default unless ALLOW_UNSTAMPED=1, so a bare
+# `docker compose build` / `up -d --build` can no longer silently ship a lying
+# `dev+local` prod image (compose keeps soft defaults so `logs`/`restart`/`ps`
+# still work — a `${VAR:?}` there would break them). This script simply supplies a
+# real stamp, so it always passes that guard.
 #
 # The tell that stamping is broken: `/health` shows version "dev+local".
 #

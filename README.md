@@ -401,9 +401,11 @@ docker compose restart bot
 `scripts/deploy.sh` computes the git SHA and passes it into the build via the
 `VERSION` / `GIT_COMMIT` / `BUILD_TIME` env vars that `docker-compose.yml` reads,
 so the deployed commit is baked into `lib/src/config/version.dart` and surfaced at
-`/health.commit`. **Bare `docker compose build` / `up -d` is unsupported for prod** —
-without the script's exports it silently produces a `dev+local` stamp (the tell that
-a deploy was un-stamped). Always deploy via `scripts/deploy.sh`.
+the `commit` field of the `/health` JSON. **A bare `docker compose build` now FAILS
+closed** — the Dockerfile refuses an un-stamped `BUILD_SHA` unless you pass
+`--build-arg ALLOW_UNSTAMPED=1` for a deliberate dev image — so a lying `dev+local`
+prod image can't be shipped by habit. Routine `docker compose logs/restart/ps` are
+unaffected (compose keeps soft defaults). Always deploy via `scripts/deploy.sh`.
 
 On the OCI prod box the git checkout lives in a `src/` subdir *beside* the compose
 file, so point the script at it:
