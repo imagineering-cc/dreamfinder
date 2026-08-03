@@ -68,7 +68,9 @@ fi
 # separate SRC_DIR input. Coupling the two invited a whole class of "stamp tree A,
 # build tree B" divergence (and a check that oscillated between false-fails and
 # gaps across review rounds). By stamping the exact tree compose will build, the
-# two are the same tree BY CONSTRUCTION — nothing left to check or get wrong.
+# two are the same PATH by construction — nothing to check or get wrong. (This is
+# path identity, not a TOCTOU guarantee: a tree edited between stamp and build start
+# is an accepted best-effort window, which `-dirty` already flags for the common case.)
 SRC_DIR="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" '.services[$s].build.context // ""' 2>/dev/null || true)"
 if [ -z "$SRC_DIR" ] || [ ! -d "$SRC_DIR" ]; then
   echo "ERROR: could not resolve a build context for service '$SERVICE' from compose." >&2
@@ -122,6 +124,11 @@ BUILD_TIME="$(git -C "$SRC_DIR" log -1 --format=%cI 2>/dev/null || true)"
 [ -z "$BUILD_TIME" ] && BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Compose reads exactly these three names (see docker-compose.yml build.args).
 export VERSION GIT_COMMIT BUILD_TIME
+# Force the fail-closed guard ON for the supported path, so a stray `ALLOW_UNSTAMPED=1`
+# left in the shell or .env can't silently reopen the un-stamped bypass on a deploy
+# run through this script. (deploy.sh always supplies a real stamp, so the guard just
+# passes — this only neutralizes a leaked opt-out.)
+export ALLOW_UNSTAMPED=0
 
 echo "Deploying $SERVICE"
 echo "  VERSION=$VERSION"
