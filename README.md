@@ -387,18 +387,25 @@ We use `mocktail` for mocking.
 ### Docker
 
 ```bash
-# Build and start
-docker compose up -d
+# Build and deploy WITH version stamping (use this — plain `docker compose build`
+# leaves /health.commit reporting "local" because the build args are unset).
+./scripts/deploy.sh
 
 # View logs
 docker compose logs -f bot
 
-# Restart bot only
+# Restart bot only (no rebuild)
 docker compose restart bot
 ```
 
-Deployed on GCP Compute Engine. The bot container connects to the Matrix homeserver
-over HTTPS — no sidecar containers needed for messaging.
+`scripts/deploy.sh` computes the git SHA and passes it into the build via the
+`VERSION` / `GIT_COMMIT` / `BUILD_TIME` env vars that `docker-compose.yml` reads,
+so the deployed commit is baked into `lib/src/config/version.dart` and surfaced at
+`/health.commit`. Building without it (or by exporting the wrong var names) silently
+produces a `dev+local` stamp — the tell that a deploy was un-stamped.
+
+Deployed on an OCI VPS. The bot container connects to the Matrix homeserver over
+HTTPS — no sidecar containers needed for messaging.
 
 ## License
 
