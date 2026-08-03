@@ -415,6 +415,10 @@ docker build --build-arg ALLOW_UNSTAMPED=1 -t dreamfinder:dev .
 ALLOW_UNSTAMPED=1 docker compose build
 ```
 
+`ALLOW_UNSTAMPED=1` is for these **direct build** paths only. `scripts/deploy.sh`
+ignores it (it forces `ALLOW_UNSTAMPED=0` and always stamps), so
+`ALLOW_UNSTAMPED=1 ./scripts/deploy.sh` still produces a stamped image by design.
+
 The tree to stamp is **derived from the compose service's `build.context`**, so the
 stamp always describes exactly the tree that gets built (on the prod box, where the
 compose context is `./src`, that's the `src/` checkout — nothing to configure).

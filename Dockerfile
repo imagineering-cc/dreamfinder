@@ -39,15 +39,24 @@ RUN if [ "$ALLOW_UNSTAMPED" != "1" ] && { [ "$BUILD_SHA" = "local" ] || [ -z "$B
       exit 1; \
     fi
 
-# Generate version.dart with build metadata and changelog baked in.
-# Uses raw triple-quoted strings (r'''...'''). Sanitize inputs to prevent
-# triple-quote sequences in commit messages from breaking the Dart literal.
-RUN SAFE_CHANGELOG=$(printf '%s' "$BUILD_CHANGELOG" | sed "s/'''/'' '/g") && \
+# Generate version.dart. This RUN is the TRUST BOUNDARY / single door: EVERY build
+# path (scripts/deploy.sh, bare `docker build --build-arg …`, CI) writes its args
+# here, so sanitization lives HERE, not only in the wrapper. All fields use Dart RAW
+# strings so `$` and `\` are literal (Dart interpolates `$name`/escapes `\` inside
+# NON-raw single quotes — a tag/arg like `v1-$x` would otherwise break the compile).
+# The one thing a raw string can't contain is its own quote delimiter, so scalar
+# fields strip `'` (and newlines) and use r'…'; the multi-line changelog/diff use
+# r'''…''' and defuse an embedded triple-quote run.
+RUN esc1() { printf '%s' "$1" | tr -d "'" | tr -d '\n\r'; } && \
+    S_VERSION="$(esc1 "$BUILD_VERSION")" && \
+    S_SHA="$(esc1 "$BUILD_SHA")" && \
+    S_TIME="$(esc1 "$BUILD_TIME")" && \
+    SAFE_CHANGELOG=$(printf '%s' "$BUILD_CHANGELOG" | sed "s/'''/'' '/g") && \
     SAFE_DIFF_STAT=$(printf '%s' "$BUILD_DIFF_STAT" | sed "s/'''/'' '/g") && \
     printf "/// Build version info — generated at Docker build time.\n" > lib/src/config/version.dart && \
-    printf "const String appVersion = '%s+%s';\n" "$BUILD_VERSION" "$BUILD_SHA" >> lib/src/config/version.dart && \
-    printf "const String appCommit = '%s';\n" "$BUILD_SHA" >> lib/src/config/version.dart && \
-    printf "const String appBuildTime = '%s';\n" "$BUILD_TIME" >> lib/src/config/version.dart && \
+    printf "const String appVersion = r'%s+%s';\n" "$S_VERSION" "$S_SHA" >> lib/src/config/version.dart && \
+    printf "const String appCommit = r'%s';\n" "$S_SHA" >> lib/src/config/version.dart && \
+    printf "const String appBuildTime = r'%s';\n" "$S_TIME" >> lib/src/config/version.dart && \
     printf "const String appChangelog = r'''\n%s\n''';\n" "$SAFE_CHANGELOG" >> lib/src/config/version.dart && \
     printf "const String appDiffStat = r'''\n%s\n''';\n" "$SAFE_DIFF_STAT" >> lib/src/config/version.dart
 
