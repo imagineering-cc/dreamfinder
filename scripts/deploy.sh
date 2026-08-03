@@ -61,6 +61,14 @@ if [ ! -f "$COMPOSE_DIR/docker-compose.yml" ]; then
   exit 1
 fi
 
+# Canonicalize BOTH to absolute paths ONCE, up front, before any `cd`. A relative
+# SRC_DIR would otherwise re-bind under COMPOSE_DIR after the `cd` below (stamping
+# tree A but comparing tree B in the context check). Fixing the data flow at the
+# root — rather than guarding each downstream use — is why every later reference
+# can be a plain absolute path.
+SRC_DIR="$(cd "$SRC_DIR" && pwd -P)"
+COMPOSE_DIR="$(cd "$COMPOSE_DIR" && pwd -P)"
+
 # Compute the stamp, THEN export — assigning first and exporting the finished
 # names on one line closes the export-before-assignment footgun (a command
 # inserted between a bare `export VERSION` and its later assignment would leak a
@@ -75,15 +83,16 @@ fi
 # HONEST about what was really built. NOTE: consumers of `commit` must tolerate a
 # `<short-sha>-dirty` value, not assume hex-only (health compare here is exact string,
 # so it's fine; a hex-only dashboard/label would need to strip the suffix).
-# ONE dirty source for BOTH legs. `git status --porcelain` (not `describe --dirty`,
-# which ignores untracked files) is the single truth function — appended to VERSION
-# and GIT_COMMIT identically so they can never disagree about dirtiness (a prior
-# revision used `describe --dirty` for VERSION and porcelain for GIT_COMMIT, so an
-# untracked-only tree stamped BUILD_VERSION clean but BUILD_SHA -dirty).
+# ONE dirty source (`git status --porcelain`, untracked-aware — not `describe
+# --dirty`, which misses untracked files). Applied to GIT_COMMIT only: appVersion
+# is baked as `BUILD_VERSION+BUILD_SHA`, so a single `-dirty` on the SHA leg already
+# surfaces in both appCommit AND the combined appVersion — putting it on both legs
+# just doubled the suffix (`v1.2.3-dirty+f065eb0-dirty`). Both legs still agree on
+# dirtiness (they share the one detection); only the display is de-duplicated.
 DIRTY=""
 [ -n "$(git -C "$SRC_DIR" status --porcelain 2>/dev/null)" ] && DIRTY="-dirty"
 [ -n "$DIRTY" ] && echo "WARNING: $SRC_DIR has uncommitted or untracked changes — stamping as '-dirty' so /health is honest." >&2
-VERSION="$(git -C "$SRC_DIR" describe --tags --always 2>/dev/null || echo dev)${DIRTY}"
+VERSION="$(git -C "$SRC_DIR" describe --tags --always 2>/dev/null || echo dev)"
 GIT_COMMIT="$(git -C "$SRC_DIR" rev-parse --short HEAD)${DIRTY}"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Compose reads exactly these three names (see docker-compose.yml build.args).
@@ -121,12 +130,15 @@ fi
 
 # Stamp source must BE the compose build context, or /health.commit reports tree A
 # while the image is built from tree B. compose config emits an absolute context
-# path; compare it to the canonical SRC_DIR and fail closed on a confirmed divergence.
+# path; compare it to the (already-absolute) SRC_DIR. A confirmed divergence fails
+# closed; an unresolvable context is a loud WARN (not a silent no-op).
 CTX="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" '.services[$s].build.context // ""' 2>/dev/null || true)"
-SRC_ABS="$(cd "$SRC_DIR" 2>/dev/null && pwd -P || true)"
 CTX_ABS="$([ -n "$CTX" ] && cd "$CTX" 2>/dev/null && pwd -P || true)"
-if [ -n "$SRC_ABS" ] && [ -n "$CTX_ABS" ] && [ "$SRC_ABS" != "$CTX_ABS" ]; then
-  echo "ERROR: stamp source SRC_DIR ($SRC_ABS) is not the compose build context" >&2
+if [ -z "$CTX_ABS" ]; then
+  echo "WARN: could not resolve the compose build context for '$SERVICE' — cannot" >&2
+  echo "      confirm SRC_DIR ($SRC_DIR) matches what will be built." >&2
+elif [ "$SRC_DIR" != "$CTX_ABS" ]; then
+  echo "ERROR: stamp source SRC_DIR ($SRC_DIR) is not the compose build context" >&2
   echo "       for '$SERVICE' ($CTX_ABS). The stamp would describe a different tree" >&2
   echo "       than the one built. Point SRC_DIR at the build context." >&2
   exit 1
@@ -199,7 +211,8 @@ for (( _i = 1; _i <= HEALTH_RETRIES; _i++ )); do
       saw_bad_body=1
     fi
   fi
-  sleep "$HEALTH_INTERVAL"
+  # Don't burn an interval after the final attempt.
+  [ "$_i" -lt "$HEALTH_RETRIES" ] && sleep "$HEALTH_INTERVAL"
 done
 
 if [ -n "$last_reported" ]; then
