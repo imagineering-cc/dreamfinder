@@ -111,7 +111,15 @@ DIRTY=""
 VERSION="$(git -C "$SRC_DIR" describe --tags --always 2>/dev/null | tr -d "'\\\\" | tr -d '\n' || true)"
 [ -z "$VERSION" ] && VERSION="dev"
 GIT_COMMIT="$(git -C "$SRC_DIR" rev-parse --short HEAD)${DIRTY}"
-BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# TREE-STABLE build time (committer date of HEAD), NOT wall-clock. The build ARGs
+# sit above `dart compile exe`, so a value that changes every run would cache-bust
+# the whole AOT compile on every redeploy — even a same-commit bounce — and that
+# latency is exactly what tempts operators toward ALLOW_UNSTAMPED bypasses. Commit
+# date means "same tree → same cache key → cache hit"; a real source edit still
+# busts the cache via the earlier `COPY lib/` layer, so correctness is unaffected.
+# Falls back to wall-clock only if the committer date can't be read.
+BUILD_TIME="$(git -C "$SRC_DIR" log -1 --format=%cI 2>/dev/null || true)"
+[ -z "$BUILD_TIME" ] && BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Compose reads exactly these three names (see docker-compose.yml build.args).
 export VERSION GIT_COMMIT BUILD_TIME
 
