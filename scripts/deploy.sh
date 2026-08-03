@@ -27,31 +27,24 @@
 # Usage (from the directory containing docker-compose.yml):
 #     ./scripts/deploy.sh
 #
-# On the prod box the git checkout lives in a `src/` subdir alongside the
-# compose file, so point the script at it:
-#     SRC_DIR=src ./src/scripts/deploy.sh
+# The tree to stamp is DERIVED from the compose service's build.context, so the
+# stamp always describes exactly the tree that gets built — no SRC_DIR to point,
+# and no way to stamp one tree while building another. On the prod box the compose
+# file's context is `./src`, so run it from the compose dir: `./src/scripts/deploy.sh`.
 #
 set -euo pipefail
 
-# Where the git checkout lives (default: current dir; prod: ./src).
-SRC_DIR="${SRC_DIR:-.}"
 # Where docker-compose.yml lives (default: current dir).
 COMPOSE_DIR="${COMPOSE_DIR:-.}"
 # Compose service to build/recreate.
 SERVICE="${SERVICE:-bot}"
 
-if ! git -C "$SRC_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-  echo "ERROR: $SRC_DIR is not a git checkout — cannot compute a commit stamp." >&2
-  echo "       Set SRC_DIR to the Dreamfinder source tree." >&2
-  exit 1
-fi
-
-# Tool contract: jq (host-side, for the pre-build stamp assertion) is a hard
-# dependency. Fail loudly HERE rather than letting a missing jq surface downstream as
-# a bogus "stamp desync". (curl is used only INSIDE the container for the /health
-# check, where the runtime image already provides it — no host curl needed.)
+# Tool contract: jq (host-side, for reading the compose model + the stamp
+# assertion) is a hard dependency. Fail loudly HERE rather than letting a missing
+# jq surface downstream as a bogus "stamp desync". (curl is used only INSIDE the
+# container for the /health check, where the runtime image already provides it.)
 if ! command -v jq >/dev/null 2>&1; then
-  echo "ERROR: jq not found — required for the pre-build stamp assertion." >&2
+  echo "ERROR: jq not found — required for the compose model read + stamp assertion." >&2
   echo "       Install jq (e.g. 'apt-get install jq' / 'brew install jq') and re-run." >&2
   exit 1
 fi
@@ -61,14 +54,31 @@ if [ ! -f "$COMPOSE_DIR/docker-compose.yml" ]; then
   echo "       Run from the compose directory, or set COMPOSE_DIR to it." >&2
   exit 1
 fi
+cd "$(cd "$COMPOSE_DIR" && pwd -P)"
 
-# Canonicalize BOTH to absolute paths ONCE, up front, before any `cd`. A relative
-# SRC_DIR would otherwise re-bind under COMPOSE_DIR after the `cd` below (stamping
-# tree A but comparing tree B in the context check). Fixing the data flow at the
-# root — rather than guarding each downstream use — is why every later reference
-# can be a plain absolute path.
-SRC_DIR="$(cd "$SRC_DIR" && pwd -P)"
-COMPOSE_DIR="$(cd "$COMPOSE_DIR" && pwd -P)"
+CONFIG_ERR="$(mktemp)"
+trap 'rm -f "$CONFIG_ERR"' EXIT
+if ! CONFIG_JSON="$(docker compose config --format json 2>"$CONFIG_ERR")"; then
+  echo "ERROR: 'docker compose config' failed — cannot read the build model." >&2
+  [ -s "$CONFIG_ERR" ] && sed 's/^/       /' "$CONFIG_ERR" >&2
+  exit 1
+fi
+
+# DERIVE the stamp source FROM the compose build context — do not take it as a
+# separate SRC_DIR input. Coupling the two invited a whole class of "stamp tree A,
+# build tree B" divergence (and a check that oscillated between false-fails and
+# gaps across review rounds). By stamping the exact tree compose will build, the
+# two are the same tree BY CONSTRUCTION — nothing left to check or get wrong.
+SRC_DIR="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" '.services[$s].build.context // ""' 2>/dev/null || true)"
+if [ -z "$SRC_DIR" ] || [ ! -d "$SRC_DIR" ]; then
+  echo "ERROR: could not resolve a build context for service '$SERVICE' from compose." >&2
+  echo "       Check that '$SERVICE' has a build: context in docker-compose.yml." >&2
+  exit 1
+fi
+if ! git -C "$SRC_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "ERROR: build context $SRC_DIR is not a git checkout — cannot compute a stamp." >&2
+  exit 1
+fi
 
 # Compute the stamp, THEN export — assigning first and exporting the finished
 # names on one line closes the export-before-assignment footgun (a command
@@ -110,36 +120,22 @@ echo "  VERSION=$VERSION"
 echo "  GIT_COMMIT=$GIT_COMMIT"
 echo "  BUILD_TIME=$BUILD_TIME"
 
-cd "$COMPOSE_DIR"
-
-# Trust → measurement: prove compose actually reads OUR exports into the build args
-# of the SELECTED service BEFORE building, so a name/context desync fails closed here
-# instead of silently baking a `dev+local` stamp.
+# Trust → measurement: RE-READ the compose model now that our stamp vars are
+# exported, and prove compose resolves them into the SELECTED service's build args
+# BEFORE building — so a name desync fails closed here instead of baking a
+# `dev+local` stamp. (The earlier CONFIG_JSON was read before export, only to
+# discover the build context; it carried the default args, so we refresh it here.)
 #
-# The original defect was a MULTI-name mismatch, so assert ALL THREE legs, not just
-# BUILD_SHA — a future compose drift on BUILD_VERSION or BUILD_TIME would otherwise
-# green-build. Each is a SCOPED, EXACT equality on `.services[$SERVICE].build.args.*`
-# (an earlier revision grepped the whole rendered project: unscoped — any service
-# matching passed a broken `bot` — and a prefix match — `f065eb0` satisfied
-# `f065eb0deadbeef`; the structured jq path closes both). Claim hygiene: this proves
-# compose PASSES the exports into the model — the *baked* artifact is confirmed later
-# by the /health gate, which is the real terminal check.
-CONFIG_ERR="$(mktemp)"
-trap 'rm -f "$CONFIG_ERR"' EXIT
-# Fail on a real `docker compose config` error (no daemon, bad compose file,
-# unsupported --format) instead of collapsing it into a misleading "not passing
-# our exports" arg-mismatch against an empty model.
+# The original defect was a MULTI-name mismatch, so assert ALL THREE legs. Each is a
+# SCOPED, EXACT equality on `.services[$SERVICE].build.args.*` (an earlier revision
+# grepped the whole rendered project: unscoped + prefix match; the structured jq
+# path closes both). Claim hygiene: this proves compose PASSES the exports into the
+# model — the *baked* artifact is confirmed by the /health gate below.
 if ! CONFIG_JSON="$(docker compose config --format json 2>"$CONFIG_ERR")"; then
   echo "ERROR: 'docker compose config' failed — cannot validate the build model." >&2
   [ -s "$CONFIG_ERR" ] && sed 's/^/       /' "$CONFIG_ERR" >&2
   exit 1
 fi
-
-# NOTE: an earlier revision also asserted SRC_DIR == the compose build.context here.
-# It was removed: it fought the real prod topology (SRC_DIR is a `src/` subdir while
-# prod compose sets a separate context) and became a recurring source of false
-# failures. The /health terminal check below is the real guard that the built
-# artifact carries the stamp; the operator owns pointing SRC_DIR at the right tree.
 
 assert_arg() {  # $1=arg name  $2=expected value
   local got

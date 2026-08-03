@@ -407,26 +407,22 @@ closed** — the Dockerfile refuses an un-stamped `BUILD_SHA` unless you pass
 prod image can't be shipped by habit. Routine `docker compose logs/restart/ps` are
 unaffected (compose keeps soft defaults). Always deploy via `scripts/deploy.sh`.
 
-On the OCI prod box the git checkout lives in a `src/` subdir *beside* the compose
-file, so point the script at it:
-
-```bash
-# from /home/nick/apps/dreamfinder (the compose dir)
-SRC_DIR=src ./src/scripts/deploy.sh
-```
+The tree to stamp is **derived from the compose service's `build.context`**, so the
+stamp always describes exactly the tree that gets built (on the prod box, where the
+compose context is `./src`, that's the `src/` checkout — nothing to configure).
 
 Environment knobs (all optional; defaults suit a local compose dir):
 
 | Var | Default | Purpose |
 |---|---|---|
-| `SRC_DIR` | `.` | git checkout to stamp from (prod: `src`) |
 | `COMPOSE_DIR` | `.` | dir containing `docker-compose.yml` |
-| `SERVICE` | `bot` | compose service to build/recreate |
+| `SERVICE` | `bot` | compose service to build/recreate (its `build.context` is the stamp source) |
 | `HEALTH_URL` | `http://localhost:8081/health` | in-container URL polled (via `docker compose exec`) to confirm the stamp |
-| `STRICT_HEALTH` | `1` | fail non-zero if the stamp can't be confirmed (mismatch **or** unreachable) |
-| `ALLOW_UNVERIFIED_HEALTH` | `0` | `1` = treat *unreachable* health as a warning (private bind) but still fail on a confirmed mismatch |
+| `STRICT_HEALTH` | `1` | fail non-zero if the stamp can't be confirmed (mismatch **or** no response) |
+| `ALLOW_UNVERIFIED_HEALTH` | `0` | `1` = treat *no response* as a warning (still fail on a confirmed mismatch) |
+| `HEALTH_RETRIES` / `HEALTH_INTERVAL` | `12` / `5` | health poll budget (default 60s window) |
 
-Requires `jq` (used for the scoped pre-build stamp assertion).
+Requires `jq` (used to read the compose model + the scoped pre-build stamp assertion).
 
 Deployed on an OCI VPS. The bot container connects to the Matrix homeserver over
 HTTPS — no sidecar containers needed for messaging.
