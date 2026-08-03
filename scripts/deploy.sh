@@ -92,7 +92,13 @@ COMPOSE_DIR="$(cd "$COMPOSE_DIR" && pwd -P)"
 DIRTY=""
 [ -n "$(git -C "$SRC_DIR" status --porcelain 2>/dev/null)" ] && DIRTY="-dirty"
 [ -n "$DIRTY" ] && echo "WARNING: $SRC_DIR has uncommitted or untracked changes — stamping as '-dirty' so /health is honest." >&2
-VERSION="$(git -C "$SRC_DIR" describe --tags --always 2>/dev/null || echo dev)"
+# Sanitize VERSION at the source: it comes from a git TAG (via describe), and a tag
+# may legally contain a single quote or backslash, which the Dockerfile writes
+# UNescaped into a single-quoted Dart string literal in version.dart — breaking the
+# build. SHA and timestamp are safe by construction; the tag-derived VERSION is the
+# only untrusted leg, so strip Dart-hostile chars here (sanitize once at the boundary).
+VERSION="$(git -C "$SRC_DIR" describe --tags --always 2>/dev/null | tr -d "'\\\\" | tr -d '\n' || true)"
+[ -z "$VERSION" ] && VERSION="dev"
 GIT_COMMIT="$(git -C "$SRC_DIR" rev-parse --short HEAD)${DIRTY}"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Compose reads exactly these three names (see docker-compose.yml build.args).
@@ -135,8 +141,14 @@ fi
 CTX="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" '.services[$s].build.context // ""' 2>/dev/null || true)"
 CTX_ABS="$([ -n "$CTX" ] && cd "$CTX" 2>/dev/null && pwd -P || true)"
 if [ -z "$CTX_ABS" ]; then
-  echo "WARN: could not resolve the compose build context for '$SERVICE' — cannot" >&2
-  echo "      confirm SRC_DIR ($SRC_DIR) matches what will be built." >&2
+  # A service we're about to `docker compose build` must have a resolvable build
+  # context; if we can't read one, we can't prove the stamp is about the built
+  # bytes — fail closed rather than warn-and-proceed (a confident lie is worse
+  # than an un-stamped build).
+  echo "ERROR: could not resolve the compose build context for '$SERVICE' —" >&2
+  echo "       cannot confirm SRC_DIR ($SRC_DIR) matches what will be built." >&2
+  echo "       Check that '$SERVICE' has a build: context in docker-compose.yml." >&2
+  exit 1
 elif [ "$SRC_DIR" != "$CTX_ABS" ]; then
   echo "ERROR: stamp source SRC_DIR ($SRC_DIR) is not the compose build context" >&2
   echo "       for '$SERVICE' ($CTX_ABS). The stamp would describe a different tree" >&2
