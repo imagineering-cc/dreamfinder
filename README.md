@@ -387,8 +387,8 @@ We use `mocktail` for mocking.
 ### Docker
 
 ```bash
-# Build and deploy WITH version stamping (use this — plain `docker compose build`
-# leaves /health.commit reporting "local" because the build args are unset).
+# Build and deploy WITH version stamping (use this — a bare `docker compose build`
+# now FAILS closed rather than shipping an un-stamped image; see below).
 ./scripts/deploy.sh
 
 # View logs
@@ -402,10 +402,18 @@ docker compose restart bot
 `VERSION` / `GIT_COMMIT` / `BUILD_TIME` env vars that `docker-compose.yml` reads,
 so the deployed commit is baked into `lib/src/config/version.dart` and surfaced at
 the `commit` field of the `/health` JSON. **A bare `docker compose build` now FAILS
-closed** — the Dockerfile refuses an un-stamped `BUILD_SHA` unless you pass
-`--build-arg ALLOW_UNSTAMPED=1` for a deliberate dev image — so a lying `dev+local`
+closed** — the Dockerfile refuses an un-stamped `BUILD_SHA` so a lying `dev+local`
 prod image can't be shipped by habit. Routine `docker compose logs/restart/ps` are
 unaffected (compose keeps soft defaults). Always deploy via `scripts/deploy.sh`.
+
+For a **deliberate un-stamped dev image** (a direct `docker build .` or
+`docker compose build`), opt in explicitly:
+
+```bash
+docker build --build-arg ALLOW_UNSTAMPED=1 -t dreamfinder:dev .
+# or, via compose:
+ALLOW_UNSTAMPED=1 docker compose build
+```
 
 The tree to stamp is **derived from the compose service's `build.context`**, so the
 stamp always describes exactly the tree that gets built (on the prod box, where the
