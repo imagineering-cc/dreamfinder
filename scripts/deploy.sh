@@ -42,15 +42,18 @@ if ! git -C "$SRC_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
-# jq is a hard dependency of the pre-build stamp assertion (structured, scoped,
-# exact — see below). Fail loudly here rather than letting a missing jq surface
-# downstream as a misleading "stamp desync" (empty RESOLVED_SHA). Docker + jq are
-# the tool contract for this script.
-if ! command -v jq >/dev/null 2>&1; then
-  echo "ERROR: jq not found — required for the pre-build stamp assertion." >&2
-  echo "       Install jq (e.g. 'apt-get install jq' / 'brew install jq') and re-run." >&2
-  exit 1
-fi
+# Tool contract: jq (pre-build stamp assertion) and curl (post-deploy /health
+# check) are hard dependencies. Fail loudly HERE rather than letting a missing tool
+# surface downstream as a misdiagnosis — a missing jq as a bogus "stamp desync", a
+# missing curl as an empty /health body that STRICT_HEALTH reports as "wrong port /
+# still starting" (sending the operator to fix the wrong thing at 2am).
+for _tool in jq curl; do
+  if ! command -v "$_tool" >/dev/null 2>&1; then
+    echo "ERROR: $_tool not found — required by this script (jq: stamp assertion; curl: /health check)." >&2
+    echo "       Install it (e.g. 'apt-get install $_tool' / 'brew install $_tool') and re-run." >&2
+    exit 1
+  fi
+done
 
 if [ ! -f "$COMPOSE_DIR/docker-compose.yml" ]; then
   echo "ERROR: no docker-compose.yml in COMPOSE_DIR=$COMPOSE_DIR." >&2
@@ -63,14 +66,18 @@ fi
 # inserted between a bare `export VERSION` and its later assignment would leak a
 # stale caller-provided VERSION into compose).
 #
-# `--dirty`: prod checkouts get hot-patched out-of-band (see the deployment
-# notes / "prod snowflake" lesson), so a clean HEAD short-SHA can misreport a
-# tree that actually carries uncommitted edits. `--dirty` appends a suffix so
-# /health.commit stays HONEST about what was really built — the whole point of
-# stamping is that the observable commit conserves information about the artifact.
+# `-dirty`: prod checkouts get hot-patched out-of-band (see the deployment notes /
+# "prod snowflake" lesson), so a clean HEAD short-SHA can misreport a tree that
+# actually carries edits. We use `git status --porcelain` (NOT just `git diff`),
+# because the Docker build context also ships UNTRACKED files unless .dockerignore
+# excludes them — a new untracked file changes the artifact but is invisible to
+# `git diff`. Any porcelain output → dirty. The `-dirty` suffix keeps /health.commit
+# HONEST about what was really built. NOTE: consumers of `commit` must tolerate a
+# `<short-sha>-dirty` value, not assume hex-only (health compare here is exact string,
+# so it's fine; a hex-only dashboard/label would need to strip the suffix).
 DIRTY=""
-git -C "$SRC_DIR" diff --quiet 2>/dev/null && git -C "$SRC_DIR" diff --cached --quiet 2>/dev/null || DIRTY="-dirty"
-[ -n "$DIRTY" ] && echo "WARNING: $SRC_DIR has uncommitted changes — stamping as '-dirty' so /health is honest." >&2
+[ -n "$(git -C "$SRC_DIR" status --porcelain 2>/dev/null)" ] && DIRTY="-dirty"
+[ -n "$DIRTY" ] && echo "WARNING: $SRC_DIR has uncommitted or untracked changes — stamping as '-dirty' so /health is honest." >&2
 VERSION="$(git -C "$SRC_DIR" describe --tags --always --dirty 2>/dev/null || echo dev)"
 GIT_COMMIT="$(git -C "$SRC_DIR" rev-parse --short HEAD)${DIRTY}"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -84,29 +91,36 @@ echo "  BUILD_TIME=$BUILD_TIME"
 
 cd "$COMPOSE_DIR"
 
-# Trust → measurement: prove compose actually resolved GIT_COMMIT into the build
-# args of the SELECTED service BEFORE building, so a name/context desync (compose
-# reading a different var, or a build context that doesn't see our exports) fails
-# closed here instead of silently baking a `local` stamp.
+# Trust → measurement: prove compose actually reads OUR exports into the build args
+# of the SELECTED service BEFORE building, so a name/context desync fails closed here
+# instead of silently baking a `dev+local` stamp.
 #
-# The check is a SCOPED, EXACT equality — `.services[$SERVICE].build.args.BUILD_SHA`
-# must EQUAL $GIT_COMMIT. An earlier revision grepped the whole rendered project for
-# `BUILD_SHA: <sha>`: unscoped (any other service matching passed a broken `bot`)
-# and a prefix match (`f065eb0` satisfied `f065eb0deadbeef`). The structured jq path
-# closes both holes. Stderr is captured and shown on failure so a compose error
-# isn't hidden behind the stamp-desync story.
+# The original defect was a MULTI-name mismatch, so assert ALL THREE legs, not just
+# BUILD_SHA — a future compose drift on BUILD_VERSION or BUILD_TIME would otherwise
+# green-build. Each is a SCOPED, EXACT equality on `.services[$SERVICE].build.args.*`
+# (an earlier revision grepped the whole rendered project: unscoped — any service
+# matching passed a broken `bot` — and a prefix match — `f065eb0` satisfied
+# `f065eb0deadbeef`; the structured jq path closes both). Claim hygiene: this proves
+# compose PASSES the exports into the model — the *baked* artifact is confirmed later
+# by the /health gate, which is the real terminal check.
 CONFIG_ERR="$(mktemp)"
-RESOLVED_SHA="$(docker compose config --format json 2>"$CONFIG_ERR" \
-  | jq -r --arg s "$SERVICE" '.services[$s].build.args.BUILD_SHA // ""' 2>/dev/null || true)"
-if [ "$RESOLVED_SHA" != "$GIT_COMMIT" ]; then
-  echo "ERROR: compose build arg BUILD_SHA for service '$SERVICE' resolved to" >&2
-  echo "       '${RESOLVED_SHA:-<empty/unparseable>}', expected '$GIT_COMMIT' — the stamp" >&2
-  echo "       would NOT land. Compose isn't reading \$GIT_COMMIT for this service/context." >&2
-  [ -s "$CONFIG_ERR" ] && { echo "       docker compose config stderr:" >&2; sed 's/^/         /' "$CONFIG_ERR" >&2; }
-  echo "       Inspect: docker compose config --format json | jq '.services.$SERVICE.build.args'" >&2
-  rm -f "$CONFIG_ERR"
-  exit 1
-fi
+CONFIG_JSON="$(docker compose config --format json 2>"$CONFIG_ERR" || true)"
+assert_arg() {  # $1=arg name  $2=expected value
+  local got
+  got="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" --arg k "$1" '.services[$s].build.args[$k] // ""' 2>/dev/null || true)"
+  if [ "$got" != "$2" ]; then
+    echo "ERROR: compose build arg $1 for service '$SERVICE' resolved to" >&2
+    echo "       '${got:-<empty/unparseable>}', expected '$2' — compose is NOT passing" >&2
+    echo "       our exports into this service/context; the stamp would be wrong." >&2
+    [ -s "$CONFIG_ERR" ] && { echo "       docker compose config stderr:" >&2; sed 's/^/         /' "$CONFIG_ERR" >&2; }
+    echo "       Inspect: docker compose config --format json | jq '.services.$SERVICE.build.args'" >&2
+    rm -f "$CONFIG_ERR"
+    exit 1
+  fi
+}
+assert_arg BUILD_SHA "$GIT_COMMIT"
+assert_arg BUILD_VERSION "$VERSION"
+assert_arg BUILD_TIME "$BUILD_TIME"
 rm -f "$CONFIG_ERR"
 
 docker compose build "$SERVICE"
@@ -125,10 +139,15 @@ docker compose up -d --force-recreate "$SERVICE"
 HEALTH_URL="${HEALTH_URL:-http://localhost:8081/health}"
 STRICT_HEALTH="${STRICT_HEALTH:-1}"
 ALLOW_UNVERIFIED_HEALTH="${ALLOW_UNVERIFIED_HEALTH:-0}"
+# Acceptance window = HEALTH_RETRIES × HEALTH_INTERVAL (default 12 × 5s = 60s).
+# A tired VPS doing a slow image load / migration may need a wider window — raise
+# these rather than reaching for STRICT_HEALTH=0 (which blinds the check entirely).
+HEALTH_RETRIES="${HEALTH_RETRIES:-12}"
+HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
 echo
-echo "Verifying the stamp at $HEALTH_URL (expect commit=$GIT_COMMIT)..."
+echo "Verifying the stamp at $HEALTH_URL (expect commit=$GIT_COMMIT; window ${HEALTH_RETRIES}x${HEALTH_INTERVAL}s)..."
 last_reported=""
-for _i in $(seq 1 12); do
+for _i in $(seq 1 "$HEALTH_RETRIES"); do
   body="$(curl -fs "$HEALTH_URL" 2>/dev/null || true)"
   if [ -n "$body" ]; then
     # jq only — it's a hard dependency (checked at startup) and the handler emits a
@@ -145,7 +164,7 @@ for _i in $(seq 1 12); do
       # Wrong commit — keep polling; the recreate may still be swapping containers.
     fi
   fi
-  sleep 5
+  sleep "$HEALTH_INTERVAL"
 done
 
 if [ -n "$last_reported" ]; then
