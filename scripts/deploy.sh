@@ -131,10 +131,11 @@ last_reported=""
 for _i in $(seq 1 12); do
   body="$(curl -fs "$HEALTH_URL" 2>/dev/null || true)"
   if [ -n "$body" ]; then
-    # Prefer jq (the handler emits a JSON object with a "commit" field); fall back
-    # to a scrape if jq is absent or the shape drifted.
+    # jq only — it's a hard dependency (checked at startup) and the handler emits a
+    # JSON object with a "commit" field. A body that doesn't parse as JSON with a
+    # commit is a fault, not a shape to tolerate: `reported` stays empty and we keep
+    # polling / eventually fail, rather than a grep fallback papering over broken JSON.
     reported="$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)"
-    [ -z "$reported" ] && reported="$(printf '%s' "$body" | grep -o '"commit"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/' || true)"
     if [ -n "$reported" ]; then
       last_reported="$reported"
       if [ "$reported" = "$GIT_COMMIT" ]; then
