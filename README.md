@@ -192,7 +192,7 @@ restart, and the tools are available. No code changes needed.
 | Knowledge Base  | Outline (vendored CLI via `run_cli`)   |
 | Calendar        | Radicale (vendored CLI via `run_cli`)  |
 | Web Automation  | Playwright (MCP)                       |
-| Deployment      | Docker + Docker Compose on GCP         |
+| Deployment      | Docker + Docker Compose on OCI VPS     |
 | Package Manager | dart pub                               |
 
 ## Getting Started
