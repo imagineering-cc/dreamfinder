@@ -68,9 +68,11 @@ fi
 # separate SRC_DIR input. Coupling the two invited a whole class of "stamp tree A,
 # build tree B" divergence (and a check that oscillated between false-fails and
 # gaps across review rounds). By stamping the exact tree compose will build, the
-# two are the same PATH by construction — nothing to check or get wrong. (This is
-# path identity, not a TOCTOU guarantee: a tree edited between stamp and build start
-# is an accepted best-effort window, which `-dirty` already flags for the common case.)
+# two are the same PATH by construction — nothing to check or get wrong. (Scope: this
+# is path identity, not a TOCTOU or file-level guarantee. A tree edited between stamp
+# and build is an accepted best-effort window; and `-dirty` reflects the git worktree,
+# so a docker-ignored file could read `-dirty` though it never enters the image — a
+# safe over-report, not an under-report.)
 SRC_DIR="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" '.services[$s].build.context // ""' 2>/dev/null || true)"
 if [ -z "$SRC_DIR" ] || [ ! -d "$SRC_DIR" ]; then
   echo "ERROR: could not resolve a build context for service '$SERVICE' from compose." >&2
@@ -105,12 +107,14 @@ fi
 DIRTY=""
 [ -n "$(git -C "$SRC_DIR" status --porcelain 2>/dev/null)" ] && DIRTY="-dirty"
 [ -n "$DIRTY" ] && echo "WARNING: $SRC_DIR has uncommitted or untracked changes — stamping as '-dirty' so /health is honest." >&2
-# Sanitize VERSION at the source: it comes from a git TAG (via describe), and a tag
-# may legally contain a single quote or backslash, which the Dockerfile writes
-# UNescaped into a single-quoted Dart string literal in version.dart — breaking the
-# build. SHA and timestamp are safe by construction; the tag-derived VERSION is the
-# only untrusted leg, so strip Dart-hostile chars here (sanitize once at the boundary).
-VERSION="$(git -C "$SRC_DIR" describe --tags --always 2>/dev/null | tr -d "'\\\\" | tr -d '\n' || true)"
+# Sanitize VERSION at the source with an ALLOWLIST (not a blocklist). It comes from a
+# git TAG (via describe), which the Dockerfile writes UNescaped into a single-quoted
+# Dart string literal in version.dart. Dart interpolates `$name` inside single quotes
+# (only r'...' raw strings don't), and `'`/`\`/newline also break the literal — a tag
+# may legally contain any of these. Rather than chase each hostile char, keep only the
+# characters real version tags use (alnum + . _ + / -), which strips $, quotes,
+# backslash, spaces, and control chars in one move. SHA/timestamp are safe by construction.
+VERSION="$(git -C "$SRC_DIR" describe --tags --always 2>/dev/null | tr -cd '[:alnum:]._+/-' || true)"
 [ -z "$VERSION" ] && VERSION="dev"
 GIT_COMMIT="$(git -C "$SRC_DIR" rev-parse --short HEAD)${DIRTY}"
 # TREE-STABLE build time (committer date of HEAD), NOT wall-clock. The build ARGs
