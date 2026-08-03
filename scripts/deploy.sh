@@ -75,10 +75,15 @@ fi
 # HONEST about what was really built. NOTE: consumers of `commit` must tolerate a
 # `<short-sha>-dirty` value, not assume hex-only (health compare here is exact string,
 # so it's fine; a hex-only dashboard/label would need to strip the suffix).
+# ONE dirty source for BOTH legs. `git status --porcelain` (not `describe --dirty`,
+# which ignores untracked files) is the single truth function — appended to VERSION
+# and GIT_COMMIT identically so they can never disagree about dirtiness (a prior
+# revision used `describe --dirty` for VERSION and porcelain for GIT_COMMIT, so an
+# untracked-only tree stamped BUILD_VERSION clean but BUILD_SHA -dirty).
 DIRTY=""
 [ -n "$(git -C "$SRC_DIR" status --porcelain 2>/dev/null)" ] && DIRTY="-dirty"
 [ -n "$DIRTY" ] && echo "WARNING: $SRC_DIR has uncommitted or untracked changes — stamping as '-dirty' so /health is honest." >&2
-VERSION="$(git -C "$SRC_DIR" describe --tags --always --dirty 2>/dev/null || echo dev)"
+VERSION="$(git -C "$SRC_DIR" describe --tags --always 2>/dev/null || echo dev)${DIRTY}"
 GIT_COMMIT="$(git -C "$SRC_DIR" rev-parse --short HEAD)${DIRTY}"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Compose reads exactly these three names (see docker-compose.yml build.args).
@@ -104,7 +109,29 @@ cd "$COMPOSE_DIR"
 # compose PASSES the exports into the model — the *baked* artifact is confirmed later
 # by the /health gate, which is the real terminal check.
 CONFIG_ERR="$(mktemp)"
-CONFIG_JSON="$(docker compose config --format json 2>"$CONFIG_ERR" || true)"
+trap 'rm -f "$CONFIG_ERR"' EXIT
+# Fail on a real `docker compose config` error (no daemon, bad compose file,
+# unsupported --format) instead of collapsing it into a misleading "not passing
+# our exports" arg-mismatch against an empty model.
+if ! CONFIG_JSON="$(docker compose config --format json 2>"$CONFIG_ERR")"; then
+  echo "ERROR: 'docker compose config' failed — cannot validate the build model." >&2
+  [ -s "$CONFIG_ERR" ] && sed 's/^/       /' "$CONFIG_ERR" >&2
+  exit 1
+fi
+
+# Stamp source must BE the compose build context, or /health.commit reports tree A
+# while the image is built from tree B. compose config emits an absolute context
+# path; compare it to the canonical SRC_DIR and fail closed on a confirmed divergence.
+CTX="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" '.services[$s].build.context // ""' 2>/dev/null || true)"
+SRC_ABS="$(cd "$SRC_DIR" 2>/dev/null && pwd -P || true)"
+CTX_ABS="$([ -n "$CTX" ] && cd "$CTX" 2>/dev/null && pwd -P || true)"
+if [ -n "$SRC_ABS" ] && [ -n "$CTX_ABS" ] && [ "$SRC_ABS" != "$CTX_ABS" ]; then
+  echo "ERROR: stamp source SRC_DIR ($SRC_ABS) is not the compose build context" >&2
+  echo "       for '$SERVICE' ($CTX_ABS). The stamp would describe a different tree" >&2
+  echo "       than the one built. Point SRC_DIR at the build context." >&2
+  exit 1
+fi
+
 assert_arg() {  # $1=arg name  $2=expected value
   local got
   got="$(printf '%s' "$CONFIG_JSON" | jq -r --arg s "$SERVICE" --arg k "$1" '.services[$s].build.args[$k] // ""' 2>/dev/null || true)"
@@ -147,21 +174,29 @@ HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
 echo
 echo "Verifying the stamp at $HEALTH_URL (expect commit=$GIT_COMMIT; window ${HEALTH_RETRIES}x${HEALTH_INTERVAL}s)..."
 last_reported=""
-for _i in $(seq 1 "$HEALTH_RETRIES"); do
-  body="$(curl -fs "$HEALTH_URL" 2>/dev/null || true)"
+saw_body=0        # did the endpoint EVER return a body (reachable)?
+saw_bad_body=0    # ...that we could not parse a commit from (bad health contract)?
+for (( _i = 1; _i <= HEALTH_RETRIES; _i++ )); do
+  # Bound every poll: a half-open TCP accept or wedged proxy would otherwise block
+  # one iteration forever, so retries never run and STRICT_HEALTH never fires
+  # (fail-open into a hang — the opposite of the doctrine).
+  body="$(curl -fs --connect-timeout 3 --max-time 5 "$HEALTH_URL" 2>/dev/null || true)"
   if [ -n "$body" ]; then
-    # jq only — it's a hard dependency (checked at startup) and the handler emits a
-    # JSON object with a "commit" field. A body that doesn't parse as JSON with a
-    # commit is a fault, not a shape to tolerate: `reported` stays empty and we keep
-    # polling / eventually fail, rather than a grep fallback papering over broken JSON.
+    saw_body=1
+    # jq only — a hard dependency; the handler emits a JSON object with a "commit"
+    # field. A body that doesn't parse to a commit is a broken contract, tracked
+    # separately (saw_bad_body) so it fails even when unreachable is tolerated.
     reported="$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)"
     if [ -n "$reported" ]; then
+      saw_bad_body=0
       last_reported="$reported"
       if [ "$reported" = "$GIT_COMMIT" ]; then
         echo "  OK — /health reports commit=$reported."
         exit 0
       fi
       # Wrong commit — keep polling; the recreate may still be swapping containers.
+    else
+      saw_bad_body=1
     fi
   fi
   sleep "$HEALTH_INTERVAL"
@@ -173,6 +208,16 @@ if [ -n "$last_reported" ]; then
   echo "             not land. Investigate before trusting this deploy." >&2
   [ "$STRICT_HEALTH" = "1" ] && exit 1
   echo "  (STRICT_HEALTH=0 — downgrading mismatch to a warning.)" >&2
+  exit 0
+fi
+if [ "$saw_body" = "1" ] && [ "$saw_bad_body" = "1" ]; then
+  # Reachable but never emitted a parseable commit — a broken health CONTRACT, NOT
+  # an unreachable bind. ALLOW_UNVERIFIED_HEALTH covers private/unreachable binds,
+  # not malformed responses, so it does NOT excuse this: fail under STRICT.
+  echo "  BAD CONTRACT — /health at $HEALTH_URL is reachable but returned no parseable" >&2
+  echo "                 '.commit' field. The stamp cannot be confirmed." >&2
+  [ "$STRICT_HEALTH" = "1" ] && exit 1
+  echo "  (STRICT_HEALTH=0 — downgrading to a warning.)" >&2
   exit 0
 fi
 echo "  UNVERIFIED — /health at $HEALTH_URL never became reachable (wrong port/bind," >&2

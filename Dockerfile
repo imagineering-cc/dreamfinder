@@ -14,6 +14,10 @@ RUN dart pub get
 COPY lib/ lib/
 COPY bin/ bin/
 
+# ARG ORDER IS LOAD-BEARING: these are declared immediately BEFORE the RUN that
+# consumes them, so a changed BUILD_SHA cache-busts the version.dart layer and the
+# stamp can never be a stale cached value. Do not move a cacheable COPY/RUN between
+# these ARGs and the generation step below, or a wrong stamp could survive in cache.
 ARG BUILD_VERSION=dev
 ARG BUILD_SHA=local
 ARG BUILD_TIME=unknown
