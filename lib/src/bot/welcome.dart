@@ -4,57 +4,15 @@
 /// (the inline version welcomed every membership event in any room, with no
 /// dedup — so a bridged member whose name hadn't resolved was greeted as
 /// "Welcome pvt pvt!" repeatedly on every bridge resync).
+///
+/// Who-is-a-person is decided by a single [ParticipantClassifier]
+/// (`lib/src/matrix/participant.dart`) — the one authoritative MXID→kind
+/// mapping. Bridged community members (`@signal_<uuid>` …) classify as
+/// [ParticipantKind.human] and ARE welcomed; only bridge bots, relay puppets,
+/// and River itself are filtered.
 library;
 
-/// MXID prefixes for members River must NOT welcome — the true non-humans.
-///
-/// CRITICAL TOPOLOGY NOTE (verified against the live prod hub, 2026-08-02):
-/// in the superbridge setup, real community members are bridged into the
-/// Matrix hub and therefore carry the per-user appservice namespaces
-/// `@signal_<uuid>`, `@whatsapp_<…>`, `@telegram_<…>`. Those ARE the people
-/// River should welcome — they must never be filtered. The only members that
-/// are not people are:
-///   - the superbridge relay puppets (`@_relay_…`),
-///   - the mautrix bridge BOTS (`@signalbot:…`, `@whatsappbot:…`, …), and
-///   - River itself (`@dreamfinder-bot:…`).
-/// The `pvt pvt` spam was one of these bridged HUMANS whose Signal contact
-/// name hadn't resolved yet, welcomed repeatedly on resync — a name-resolution
-/// + dedup problem, not a "puppet" problem. So the fix is dedup + hub-scope,
-/// and this list filters only the genuine non-humans.
-const nonHumanMxidPrefixes = <String>[
-  '@_relay_',
-  '@signalbot:',
-  '@whatsappbot:',
-  '@telegrambot:',
-  '@discordbot:',
-  '@slackbot:',
-  '@dreamfinder-bot:',
-];
-
-/// Returns `true` if [sender] is NOT a person River should welcome — a bridge
-/// bot, a relay puppet, or River itself. Bridged community members (who carry
-/// per-user appservice namespaces like `@signal_<uuid>`) are people and return
-/// `false`. See [nonHumanMxidPrefixes] for the topology this depends on.
-///
-/// Checks, in order: the explicit bridge bot MXIDs ([bridgeBotIds]), River's
-/// own relayed puppets ([selfPuppetIds]), then the non-human namespace
-/// prefixes ([prefixes], defaulting to [nonHumanMxidPrefixes]; an operator can
-/// ADD to them via `WELCOME_NON_HUMAN_PREFIXES` to cover a new bridge bot
-/// without a code deploy — never to add a per-user namespace, which would stop
-/// welcoming real people).
-bool isNonHumanMember(
-  String sender, {
-  Set<String> bridgeBotIds = const {},
-  List<String> selfPuppetIds = const [],
-  List<String> prefixes = nonHumanMxidPrefixes,
-}) {
-  if (bridgeBotIds.contains(sender)) return true;
-  if (selfPuppetIds.contains(sender)) return true;
-  for (final prefix in prefixes) {
-    if (sender.startsWith(prefix)) return true;
-  }
-  return false;
-}
+import '../matrix/participant.dart';
 
 /// Longest display name we'll echo into a room. A bridge or a hostile client
 /// can set an arbitrarily long displayname; without a cap it becomes a
@@ -113,8 +71,9 @@ String welcomeDedupKey(String roomId, String sender) =>
 /// - the event is a genuine join ([isMemberJoin] — not a profile update),
 /// - the room is a hub room River converses in ([hubRoomIds], reusing
 ///   `MATRIX_ALWAYS_RESPOND_ROOMS`) so churny bridge portals never trigger it,
-/// - [sender] is a person, not a bridge bot / relay puppet / River itself
-///   (bridged community members ARE people — see [isNonHumanMember]), and
+/// - [sender] classifies as [ParticipantKind.human] via [classifier] (bridged
+///   community members ARE people; only bots / relay puppets / self are not),
+///   and
 /// - the (room, sender) pair has not been welcomed before ([alreadyWelcomed]).
 ///
 /// [alreadyWelcomed] is a lazy thunk, evaluated only *after* the cheap join /
@@ -130,22 +89,14 @@ String? welcomeMessage({
   required String roomId,
   required bool isMemberJoin,
   required Set<String> hubRoomIds,
+  required ParticipantClassifier classifier,
   String? displayName,
-  Set<String> bridgeBotIds = const {},
-  List<String> selfPuppetIds = const [],
-  List<String> nonHumanPrefixes = nonHumanMxidPrefixes,
   bool Function()? alreadyWelcomed,
 }) {
   if (!isMemberJoin) return null;
   if (!hubRoomIds.contains(roomId)) return null;
-  if (isNonHumanMember(
-    sender,
-    bridgeBotIds: bridgeBotIds,
-    selfPuppetIds: selfPuppetIds,
-    prefixes: nonHumanPrefixes,
-  )) {
-    return null;
-  }
+  // Only real people get welcomed — the single classifier owns this decision.
+  if (classifier.classify(sender) != ParticipantKind.human) return null;
   // Expensive gate last: only now (real human, hub room) do we consult the
   // dedup store.
   if (alreadyWelcomed != null && alreadyWelcomed()) return null;
@@ -160,7 +111,7 @@ String? welcomeMessage({
   if (name.isEmpty) name = 'there';
   // Truncate on rune boundaries, not UTF-16 code units, so an emoji or
   // surrogate pair can't be split into mojibake at the cap (Tesla, PR #126).
-  final runes = name.runes.toList();
+  final runes = name.runes;
   if (runes.length > _maxWelcomeNameLength) {
     name = '${String.fromCharCodes(runes.take(_maxWelcomeNameLength))}…';
   }

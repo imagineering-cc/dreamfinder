@@ -480,12 +480,10 @@ class Env {
   /// Returns `true` if [userId] is in the configured admin list.
   bool isAdmin(String? userId) => userId != null && adminIds.contains(userId);
 
-  /// Whether [userId] is one of River's own identities — either the native bot
-  /// MXID ([botUserId]) or one of its relayed/bridged puppets ([selfPuppetIds]).
-  /// Used to drop self-echoes the superbridge relays back into the hub, which
-  /// would otherwise create a response feedback loop.
-  bool isSelf(String? userId, String botUserId) =>
-      userId == botUserId || (userId != null && selfPuppetIds.contains(userId));
+  // NOTE: self-detection moved to ParticipantClassifier.isSelf
+  // (lib/src/matrix/participant.dart) — the single authoritative MXID→kind
+  // mapping. [selfPuppetIds] and [bridgeBotIds] remain here as the CONFIG that
+  // seeds that classifier; they are no longer consulted ad-hoc per consumer.
 
   bool get kanEnabled => kanApiKey != null && kanApiKey!.isNotEmpty;
   bool get outlineEnabled => outlineApiKey != null && outlineApiKey!.isNotEmpty;

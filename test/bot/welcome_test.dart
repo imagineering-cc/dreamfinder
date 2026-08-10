@@ -1,4 +1,5 @@
 import 'package:dreamfinder/src/bot/welcome.dart';
+import 'package:dreamfinder/src/matrix/participant.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -10,56 +11,11 @@ void main() {
   const bridgedHuman = '@signal_1f11a469-eb2d-4c50-a4aa-775e781e8911'
       ':imagineering.cc';
 
-  group('isNonHumanMember', () {
-    test('flags relay puppets, bridge bots and self — the true non-humans', () {
-      expect(isNonHumanMember('@_relay_signal_abc:imagineering.cc'), isTrue);
-      expect(isNonHumanMember('@signalbot:imagineering.cc'), isTrue);
-      expect(isNonHumanMember('@whatsappbot:imagineering.cc'), isTrue);
-      expect(isNonHumanMember('@dreamfinder-bot:imagineering.cc'), isTrue);
-    });
-
-    test('does NOT flag bridged community members (they are people)', () {
-      expect(isNonHumanMember(bridgedHuman), isFalse);
-      expect(
-          isNonHumanMember('@whatsapp_61400000000:imagineering.cc'), isFalse);
-      expect(isNonHumanMember('@telegram_12345:imagineering.cc'), isFalse);
-    });
-
-    test('flags explicit bridge bots and self puppets via params', () {
-      expect(
-        isNonHumanMember('@custombot:imagineering.cc',
-            bridgeBotIds: {'@custombot:imagineering.cc'}),
-        isTrue,
-      );
-      expect(
-        isNonHumanMember('@_relay_x:imagineering.cc',
-            selfPuppetIds: ['@_relay_x:imagineering.cc']),
-        isTrue,
-      );
-    });
-
-    test('does not flag a real homeserver user', () {
-      expect(isNonHumanMember(human), isFalse);
-    });
-
-    test('operator prefixes ADD to the defaults, never replace them', () {
-      // The call site builds [...defaults, ...operator] — mirror that here.
-      final merged = [...nonHumanMxidPrefixes, '@gmessages_'];
-      // The operator-added namespace is filtered.
-      expect(
-        isNonHumanMember('@gmessages_1:imagineering.cc', prefixes: merged),
-        isTrue,
-      );
-      // AND the built-in defaults still filter — adding one prefix must not
-      // silently disable @signalbot etc. (the fail-open footgun).
-      expect(
-        isNonHumanMember('@signalbot:imagineering.cc', prefixes: merged),
-        isTrue,
-      );
-      // A bridged human is still not filtered under the merged list.
-      expect(isNonHumanMember(bridgedHuman, prefixes: merged), isFalse);
-    });
-  });
+  // The single classifier the welcome path consults. Who-is-a-person coverage
+  // lives in test/matrix/participant_test.dart; here we only need a real one.
+  final classifier = ParticipantClassifier(
+    botUserId: '@dreamfinder-bot:imagineering.cc',
+  );
 
   group('welcomeMessage', () {
     test('welcomes a real human joining the hub', () {
@@ -68,6 +24,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: 'Alice',
       );
       expect(msg, contains('Welcome Alice'));
@@ -80,6 +37,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: 'Rob Bob',
       );
       expect(msg, contains('Welcome Rob Bob'));
@@ -93,12 +51,13 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: 'pvt pvt',
       );
       expect(msg, contains('Welcome pvt pvt'));
     });
 
-    test('never welcomes a bridge bot / relay puppet', () {
+    test('never welcomes a bridge bot / relay puppet / self', () {
       for (final nonHuman in [
         '@signalbot:imagineering.cc',
         '@_relay_signal_x:imagineering.cc',
@@ -110,6 +69,7 @@ void main() {
             roomId: hub,
             isMemberJoin: true,
             hubRoomIds: hubs,
+            classifier: classifier,
             displayName: 'whatever',
           ),
           isNull,
@@ -124,6 +84,7 @@ void main() {
         roomId: '!portal:imagineering.cc',
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: 'Alice',
       );
       expect(msg, isNull);
@@ -135,6 +96,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: 'Alice',
         alreadyWelcomed: () => true,
       );
@@ -155,6 +117,7 @@ void main() {
         roomId: '!portal:imagineering.cc',
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         alreadyWelcomed: countingThunk,
       );
       // Bridge bot: rejected before the thunk.
@@ -163,6 +126,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         alreadyWelcomed: countingThunk,
       );
       expect(thunkCalls, 0);
@@ -173,6 +137,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         alreadyWelcomed: countingThunk,
       );
       expect(thunkCalls, 1);
@@ -184,6 +149,7 @@ void main() {
         roomId: hub,
         isMemberJoin: false,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: 'Alice',
       );
       expect(msg, isNull);
@@ -195,6 +161,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: '   ',
       );
       expect(msg, contains('Welcome alice'));
@@ -209,6 +176,7 @@ void main() {
             roomId: hub,
             isMemberJoin: true,
             hubRoomIds: hubs,
+            classifier: classifier,
           ),
           returnsNormally,
           reason: 'sender "$bad" must not RangeError the sync loop',
@@ -223,6 +191,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: null,
       );
       expect(msg, isNotNull);
@@ -239,6 +208,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: 'A' * 5000,
       );
       expect(msg!.length, lessThan(200));
@@ -253,6 +223,7 @@ void main() {
         roomId: hub,
         isMemberJoin: true,
         hubRoomIds: hubs,
+        classifier: classifier,
         displayName: evilName,
       );
       expect(msg, isNotNull);
@@ -274,6 +245,7 @@ void main() {
           roomId: hub,
           isMemberJoin: true,
           hubRoomIds: const {},
+          classifier: classifier,
           displayName: 'Alice',
         ),
         isNull,

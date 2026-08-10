@@ -43,6 +43,7 @@ import 'package:dreamfinder/src/livekit/livekit_server_client.dart';
 import 'package:dreamfinder/src/logging/logger.dart';
 import 'package:dreamfinder/src/matrix/matrix_auth.dart';
 import 'package:dreamfinder/src/matrix/matrix_client.dart';
+import 'package:dreamfinder/src/matrix/participant.dart';
 import 'package:dreamfinder/src/mcp/mcp_config.dart';
 import 'package:dreamfinder/src/mcp/mcp_manager.dart';
 import 'package:dreamfinder/src/memory/embedding_backfill.dart';
@@ -932,19 +933,6 @@ Future<void> main() async {
   // Rooms where the bot responds to every message (no mention required).
   final alwaysRespondRooms = env.matrixAlwaysRespondRooms.toSet();
 
-  // Bridge/relay bot MXIDs — hoisted out of the per-event welcome path so a
-  // member-join storm doesn't re-allocate the set on every event.
-  final welcomeBridgeBotIds = env.bridgeBotIds.toSet();
-  // Non-human MXID prefixes (bridge bots / relay puppets / self): the built-in
-  // defaults ALWAYS apply, and any operator-supplied prefixes are ADDED (not
-  // replaced) — so configuring one new bridge bot can never silently disable
-  // the defaults (Carnot, PR #126). Do NOT add a per-user bridged namespace
-  // (@signal_/@whatsapp_/@telegram_) here — those are real community members.
-  final welcomeNonHumanPrefixes = [
-    ...nonHumanMxidPrefixes,
-    ...env.welcomeNonHumanPrefixes,
-  ];
-
   // Retrieve the stored sync token for resumption across restarts.
   var nextBatch = queries.getMetadata('matrix_next_batch');
   if (nextBatch != null) {
@@ -955,6 +943,22 @@ Future<void> main() async {
 
   final botUserId = await matrixClient.whoAmI();
   log.info('Dreamfinder is running!', extra: {'user': botUserId});
+
+  // THE single authoritative participant classifier. Every human/bot/self/relay
+  // decision (self-echo drop, welcome filter) routes through this one mapping,
+  // seeded from config: River's own MXID + relay puppets (self), the explicit
+  // bridge-bot ids, and the mautrix bot prefixes (defaults) plus any additive
+  // operator override. A per-user bridged namespace (@signal_<uuid>) is NOT a
+  // prefix here — those classify as human and get welcomed.
+  final participantClassifier = ParticipantClassifier(
+    botUserId: botUserId,
+    selfPuppetIds: env.selfPuppetIds.toSet(),
+    bridgeBotIds: env.bridgeBotIds.toSet(),
+    bridgeBotPrefixes: [
+      ...defaultBridgeBotPrefixes,
+      ...env.welcomeNonHumanPrefixes,
+    ],
+  );
 
   var backoff = const Duration(seconds: 1);
 
@@ -1001,7 +1005,7 @@ Future<void> main() async {
         // back into the hub as relay/bridge puppets (whose MXIDs differ from
         // the native bot MXID). Without the puppet check, River's continuation
         // logic would respond to its own echo, creating a feedback loop.
-        if (env.isSelf(event.sender, botUserId)) {
+        if (participantClassifier.isSelf(event.sender)) {
           health.recordMessageDropped('own_message');
           continue;
         }
@@ -1032,10 +1036,8 @@ Future<void> main() async {
             roomId: event.roomId,
             isMemberJoin: event.isMemberJoin,
             hubRoomIds: alwaysRespondRooms,
+            classifier: participantClassifier,
             displayName: event.memberDisplayName,
-            bridgeBotIds: welcomeBridgeBotIds,
-            selfPuppetIds: env.selfPuppetIds,
-            nonHumanPrefixes: welcomeNonHumanPrefixes,
             alreadyWelcomed: () => queries.getMetadata(dedupKey) != null,
           );
           if (welcome != null) {
