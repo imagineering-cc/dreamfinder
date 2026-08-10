@@ -111,7 +111,7 @@ String? welcomeMessage({
   if (name.isEmpty) name = 'there';
   // Truncate on rune boundaries, not UTF-16 code units, so an emoji or
   // surrogate pair can't be split into mojibake at the cap (Tesla, PR #126).
-  final runes = name.runes.toList();
+  final runes = name.runes;
   if (runes.length > _maxWelcomeNameLength) {
     name = '${String.fromCharCodes(runes.take(_maxWelcomeNameLength))}…';
   }

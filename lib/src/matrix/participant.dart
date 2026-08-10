@@ -5,8 +5,11 @@
 /// human/non-human distinction was enforced by a bare `startsWith` prefix scan
 /// in three places — adding a bridge meant hand-editing a list, and a single
 /// mis-scoped prefix (`@signal_` read as a bot instead of a person) once made
-/// the welcome filter greet *nobody*. A structural kind, computed in ONE place
-/// every consumer routes through, makes that class of bug unrepresentable.
+/// the welcome filter greet *nobody*. Classification is still prefix-based (a
+/// homeserver exposes no cleaner authority at runtime), but it now happens in
+/// ONE typed place every consumer routes through: the catastrophe is a single
+/// reviewable decision instead of three scattered scans that could silently
+/// disagree — not "impossible", but no longer able to hide.
 ///
 /// TOPOLOGY (verified against the live prod mautrix registrations, 2026-08-10):
 /// each bridge registration exposes exactly two namespaces —
@@ -37,8 +40,14 @@ enum ParticipantKind {
 }
 
 /// Default bridge-bot MXID prefixes, from the live prod registrations. An
-/// operator adds a new bridge's bot prefix here (or via [bridgeBotPrefixes])
-/// without touching consumer logic. `@slackbot:` is included defensively.
+/// operator adds a new bridge's *bot* prefix via `WELCOME_NON_HUMAN_PREFIXES`
+/// (fed into [ParticipantClassifier.new]'s `bridgeBotPrefixes`) without a code
+/// deploy. `@slackbot:` is included defensively.
+///
+/// NEVER add a per-user bridged namespace (`@signal_`, `@whatsapp_`, …) here:
+/// those match real community members, and marking them non-human is exactly
+/// the "welcome nobody" catastrophe. Bridge BOTS end in `bot:`; puppets are
+/// `@<platform>_<id>` — keep only the former.
 const defaultBridgeBotPrefixes = <String>[
   '@signalbot:',
   '@whatsappbot:',
@@ -101,13 +110,13 @@ class ParticipantClassifier {
   /// True when [mxid] is a real person (the only kind River welcomes / counts).
   bool isHuman(String mxid) => classify(mxid) == ParticipantKind.human;
 
-  /// True when [mxid] is a mautrix bridge bot (the only trusted relay sender).
+  /// True when [mxid] is a mautrix bridge appservice bot. This is a KIND
+  /// predicate only — it says what the participant *is*, NOT that it is trusted
+  /// for any purpose. Relay/permalink trust is a separate, per-platform concern
+  /// owned by messaging_tools (a Telegram-room reply is only authoritative from
+  /// the *Telegram* bot); do not fold that into this coarse kind check.
   bool isBridgeBot(String mxid) => classify(mxid) == ParticipantKind.bridgeBot;
 
-  static bool _hasPrefix(String mxid, List<String> prefixes) {
-    for (final prefix in prefixes) {
-      if (mxid.startsWith(prefix)) return true;
-    }
-    return false;
-  }
+  static bool _hasPrefix(String mxid, List<String> prefixes) =>
+      prefixes.any(mxid.startsWith);
 }
