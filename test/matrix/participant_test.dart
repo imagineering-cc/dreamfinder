@@ -24,8 +24,8 @@ void main() {
     });
 
     test('native Matrix users are HUMAN', () {
-      expect(classifier.classify('@alice:imagineering.cc'),
-          ParticipantKind.human);
+      expect(
+          classifier.classify('@alice:imagineering.cc'), ParticipantKind.human);
       // A localpart that merely CONTAINS an underscore is not a puppet.
       expect(classifier.classify('@bob_smith:imagineering.cc'),
           ParticipantKind.human);
@@ -67,8 +67,7 @@ void main() {
         botUserId: '@dreamfinder-bot:imagineering.cc',
         selfPuppetIds: const {'@_relay_river:imagineering.cc'},
       );
-      expect(c.classify('@_relay_river:imagineering.cc'),
-          ParticipantKind.self);
+      expect(c.classify('@_relay_river:imagineering.cc'), ParticipantKind.self);
     });
 
     test('malformed / non-MXID senders fail safe to HUMAN', () {
