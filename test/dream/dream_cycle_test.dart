@@ -428,7 +428,7 @@ void main() {
     test('marks cycle as failed on exception and resets running', () async {
       final agentLoop = makeAgentLoop(
         createMessage: (m, t, s) async =>
-            throw Exception('MCP server unreachable'),
+            throw Exception('Outline CLI unreachable'),
       );
       final dreamCycle = makeDreamCycle(agentLoop);
 
@@ -442,7 +442,7 @@ void main() {
 
       final cycle = queries.getDreamCycle('group-1', '2026-03-14');
       expect(cycle!.status, equals(DreamCycleStatus.failed));
-      expect(cycle.errorMessage, contains('MCP server unreachable'));
+      expect(cycle.errorMessage, contains('Outline CLI unreachable'));
       expect(dreamCycle.isRunning, isFalse);
     });
   });

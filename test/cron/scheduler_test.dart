@@ -839,7 +839,7 @@ void main() {
         sendMessage: (groupId, message) async {},
         composeViaAgent: (groupId, taskDescription) async {
           if (taskDescription.contains('overdue')) {
-            throw Exception('Kan MCP unreachable');
+            throw Exception('Kan CLI unreachable');
           }
           return '';
         },
@@ -1017,7 +1017,7 @@ void main() {
         queries: queries,
         sendMessage: (groupId, message) async {},
         composeWithTools: (groupId, taskDescription) async {
-          throw Exception('MCP unreachable');
+          throw Exception('Kan CLI unreachable');
         },
         random: Random(42),
       );

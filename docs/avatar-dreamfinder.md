@@ -179,7 +179,7 @@ Matrix Room (text)                Element Call (voice)
  Dart Bot (existing)              LiveKit Server (new)
  - Matrix client                         |
  - Agent loop (Claude)                   v
- - MCP tools              Python Voice Agent (new sidecar)
+ - Dart tools             Python Voice Agent (new sidecar)
  - Memory/RAG              - LiveKit Agents framework
  - Database (SQLite)        - Deepgram STT (streaming)
       ^                     - Chatterbox TTS + HeadTTS visemes
@@ -204,7 +204,7 @@ Matrix Room (text)                Element Call (voice)
 5. EOU model determines if the speaker has finished their turn
 6. If Dreamfinder should respond:
    a. Transcript sent to Dart bot via HTTP API
-   b. Dart bot runs agent loop (same as text chat — Claude + MCP tools)
+   b. Dart bot runs agent loop (same as text chat — Claude + Dart tools)
    c. Response streamed back to Python agent
    d. Chatterbox generates speech audio + HeadTTS generates viseme data
    e. Audio published as WebRTC track via LiveKit
@@ -220,7 +220,7 @@ Matrix Room (text)                Element Call (voice)
 | --- | --- | --- |
 | Matrix text chat | Dart | Existing |
 | Agent loop (Claude API) | Dart | Existing |
-| MCP tools (Kan, Outline, Radicale) | Dart | Existing |
+| `run_cli` tools (Kan, Outline, Radicale) | Dart | Existing |
 | Database, RAG memory | Dart | Existing |
 | Dream cycle, standups, nudges | Dart | Existing |
 | HTTP API bridge | Dart | **New** (thin endpoint) |
@@ -283,7 +283,7 @@ plays TTS responses. **Audio only, no avatar.** Proves the full pipeline works.
 - [ ] Implement Chatterbox TTS (or Cartesia for faster iteration)
 - [ ] Wire up turn detection (EOU + VAD)
 - [ ] Auto-join when Element Call starts in a Dreamfinder room
-- [ ] Test: full voice conversation with MCP tool use
+- [ ] Test: full voice conversation with tool use
 
 ### Phase 2: Avatar (2-3 weeks)
 

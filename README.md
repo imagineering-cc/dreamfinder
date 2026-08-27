@@ -173,11 +173,6 @@ Track and discover GitHub repositories relevant to the org:
 - Daily digest via scheduler
 - Context injected into system prompt
 
-### MCP Configuration
-
-MCP servers are loaded from `mcp-config.json` — add a new MCP server to the config,
-restart, and the tools are available. No code changes needed.
-
 ## Tech Stack
 
 | Component       | Technology                             |
@@ -186,12 +181,10 @@ restart, and the tools are available. No code changes needed.
 | Runtime         | Dart VM                                |
 | Messaging       | Matrix (via Client-Server API)         |
 | LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart) |
-| MCP             | dart_mcp ^0.4.1                        |
 | Database        | SQLite (via sqlite3 package)           |
 | Task Management | Kan.bn (vendored CLI via `run_cli`)    |
 | Knowledge Base  | Outline (vendored CLI via `run_cli`)   |
 | Calendar        | Radicale (vendored CLI via `run_cli`)  |
-| Web Automation  | Playwright (MCP)                       |
 | Deployment      | Docker + Docker Compose on OCI VPS     |
 | Package Manager | dart pub                               |
 
@@ -208,12 +201,9 @@ restart, and the tools are available. No code changes needed.
 ### Installation
 
 ```bash
-# Clone the repo (--recurse-submodules pulls the shared MCP servers)
-git clone --recurse-submodules git@github.com:imagineering-cc/dreamfinder.git
+# Clone the repo
+git clone git@github.com:imagineering-cc/dreamfinder.git
 cd dreamfinder
-
-# If you already cloned without --recurse-submodules:
-git submodule update --init
 
 # Install Dart dependencies
 dart pub get
@@ -292,32 +282,27 @@ WhatsApp user ─puppet─┘
 - **Rooms**: Auto-join on invite, room member queries, DM detection via member count
 - **Mentions**: Matrix pills + name regex
 
-## MCP Integration
+## Tool Layer
 
-MCP (Model Context Protocol) support remains in the app: servers run as child
-processes managed by `McpManager`, with the `dart_mcp` package providing the
-Dart client over STDIO transport. Server configuration is loaded from
-`mcp-config.json` (currently `[]` — no MCP servers run by default).
-
-Kan, Outline, and Radicale are **no longer MCP-backed** — they are driven by
-vendored zero-dependency Node CLIs (`cli-tools/*.mjs`) through the single
-`run_cli` custom tool, which collapses ~50 MCP tool schemas into one and makes
-capability drift structurally impossible. The `mcp-servers/` submodule is kept
-only for the generic MCP framework / future servers, not these three.
+There is **no MCP layer** — it was removed once every consumer had migrated off
+it (PRs #114 Kan/Outline, #115 Radicale, #127 prompts). Kan, Outline and
+Radicale are driven by vendored zero-dependency Node CLIs (`cli-tools/*.mjs`)
+through the single `run_cli` custom tool, which collapses ~50 tool schemas into
+one and makes capability drift structurally impossible. Everything else is a
+native Dart tool.
 
 ### Available Tool Sets
 
-| Tool set   | Backed by        | Examples                                             |
-| ---------- | ---------------- | ---------------------------------------------------- |
-| Kan.bn     | vendored CLI     | List boards, create card, update card, manage labels |
-| Outline    | vendored CLI     | Search docs, create document, list collections       |
-| Radicale   | vendored CLI     | List events, calendar/contacts (CalDAV/CardDAV)      |
-| Playwright | MCP (if enabled) | Navigate, screenshot, fill form, click element       |
-| Custom     | native Dart      | Chat config, user mapping, standups, memory, radar   |
+| Tool set   | Backed by    | Examples                                             |
+| ---------- | ------------ | ---------------------------------------------------- |
+| Kan.bn     | vendored CLI | List boards, create card, update card, manage labels |
+| Outline    | vendored CLI | Search docs, create document, list collections       |
+| Radicale   | vendored CLI | List events, calendar/contacts (CalDAV/CardDAV)      |
+| Custom     | native Dart  | Chat config, user mapping, standups, memory, radar   |
 
 ### Custom Tools
 
-In addition to MCP server tools, the bot defines its own tools in `lib/src/tools/`:
+The bot defines its own tools in `lib/src/tools/`:
 
 - **chat_config** — Workspace linking, default board/list config per group
 - **user_mapping** — Map platform user IDs to Kan.bn users and display names
@@ -337,9 +322,7 @@ In addition to MCP server tools, the bot defines its own tools in `lib/src/tools
 lib/
   src/
     matrix/         # Matrix client, models, auth
-    signal/         # Signal client, message models (legacy, being replaced)
     agent/          # Agent loop, system prompt, tool registry, conversation history
-    mcp/            # MCP subprocess manager
     memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
     tools/          # Custom tool definitions (8 modules)
@@ -379,7 +362,7 @@ We follow **ATDD** (Acceptance Test-Driven Development):
 5. Refactor
 
 Tests are organized to mirror the `lib/src/` directory structure inside `test/`.
-Integration tests for MCP tools use recorded fixtures to avoid hitting live services.
+Integration tests for external tools use recorded fixtures to avoid hitting live services.
 We use `mocktail` for mocking.
 
 ## Deployment

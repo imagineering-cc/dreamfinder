@@ -1,18 +1,19 @@
 # Dreamfinder
 
 > See [README.md](README.md) for full project documentation, architecture diagrams,
-> MCP integration details, and deployment guide.
+> tool-layer details, and deployment guide.
 
 **Dreamfinder** is a chat-based PM bot for the Imagineering org running on Matrix.
-Every message flows through a Claude agent loop with access to MCP tools
-(Kan.bn, Outline, Radicale, Playwright) plus custom tools. No slash commands — natural
-language only. A separate "matrix chat superbridge" handles relay between Matrix and
-Signal/Discord/Telegram/WhatsApp using puppet accounts — Dreamfinder only connects to
-Matrix.
+Every message flows through a Claude agent loop with access to native Dart tools,
+including `run_cli`, which drives the vendored Kan.bn / Outline / Radicale CLIs.
+There is no MCP layer — it was removed once every consumer had migrated off it.
+No slash commands — natural language only. A separate "matrix chat superbridge"
+handles relay between Matrix and Signal/Discord/Telegram/WhatsApp using puppet
+accounts — Dreamfinder only connects to Matrix.
 
 Adapted from **xdeca-pm-bot** (Telegram).
 
-**Status**: Active development. 795+ tests.
+**Status**: Active development. 970+ tests.
 Speed is a primary concern. Prefer working code over perfect abstractions. Skip plan
 mode for straightforward tasks, minimize over-engineering, and keep momentum high.
 Still respect correctness and type safety, but bias toward shipping.
@@ -25,9 +26,8 @@ Still respect correctness and type safety, but bias toward shipping.
 | Runtime         | Dart VM                                |
 | Messaging       | Matrix                                 |
 | LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart) |
-| MCP             | dart_mcp ^0.4.1                        |
 | Database        | SQLite (via sqlite3 package)           |
-| MCP Tools       | Kan.bn, Outline, Radicale, Playwright  |
+| Tooling         | `run_cli` → vendored Kan/Outline/Radicale CLIs |
 | Deployment      | Docker on OCI                          |
 | Package Manager | dart pub                               |
 
@@ -38,7 +38,6 @@ lib/
   src/
     matrix/         # Matrix client, models, auth
     agent/          # Agent loop, system prompt, tool registry, conversation history
-    mcp/            # MCP subprocess manager
     memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
     tools/          # Custom tool definitions (identity, chat config, standup, kickstart)
@@ -110,7 +109,7 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
 
 ### Error Handling
 
-- Wrap external calls (Matrix API, MCP servers, Anthropic API) in try/catch with
+- Wrap external calls (Matrix API, vendored CLIs, Anthropic API) in try/catch with
   structured error logging. Never swallow errors silently.
 - Use custom exception classes implementing `Exception` for recoverable domain-specific
   failures (Dart convention: `Exception` for recoverable, `Error` for programmer bugs).
@@ -120,8 +119,8 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
 
 - **Write acceptance tests first**, then implement to make them pass.
 - Tests mirror the `lib/src/` directory structure inside `test/`.
-- Integration tests for MCP tools use recorded fixtures — never hit live services.
-- Unit test business logic in isolation; mock external boundaries (Matrix, MCP, DB).
+- Integration tests for external tools use recorded fixtures — never hit live services.
+- Unit test business logic in isolation; mock external boundaries (Matrix, CLIs, DB).
 - Use `mocktail` for mocking.
 
 ### Imports & Modules

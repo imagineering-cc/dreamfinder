@@ -26,7 +26,7 @@ these, you still have a working agent core:</p>
 <table>
 <tr><th>File</th><th>Class</th><th>Job</th></tr>
 <tr><td><span class="path">agent_loop.dart</span></td><td><code>AgentLoop</code></td><td>The finite-state loop: call the model, run any tools it asks for, loop, return the final text.</td></tr>
-<tr><td><span class="path">tool_registry.dart</span></td><td><code>ToolRegistry</code></td><td>Where tools are registered and looked up. Merges your custom tools with MCP-server tools into one list.</td></tr>
+<tr><td><span class="path">tool_registry.dart</span></td><td><code>ToolRegistry</code></td><td>Where tools are registered and looked up. Holds every tool the model can call, in one list.</td></tr>
 <tr><td><span class="path">conversation_history.dart</span></td><td><code>ConversationHistory</code></td><td>Per-chat memory, stored and replayed as atomic turns so tool-call blocks never get orphaned.</td></tr>
 </table>
 
@@ -60,8 +60,8 @@ handler. Register as many as you like:
   handler: (args) async =&gt; doorService.open(args['door'] as String),
 ));</code></pre>
 The loop calls your handler when the model asks for the tool, feeds the result back, and
-continues. You can also point the registry at MCP servers (next section) to get whole
-tool suites without writing Dart.
+continues. To expose a whole external surface without writing a tool per endpoint, see
+the <code>run_cli</code> pattern in the next section.
 </div>
 
 <div class="seam">
@@ -76,17 +76,18 @@ Matrix client (<span class="path">lib/src/matrix/matrix_client.dart</span>) is j
 implementation; swap it and the loop is untouched.
 </div>
 
-<h2>Tools without code: MCP</h2>
-<p>The fastest way to add capability is not to write Dart at all. Drop a server into
-<span class="path">mcp-config.json</span>:</p>
-<pre><code>[
-  { "name": "kan", "command": "node", "args": ["mcp-servers/kan/index.js"],
-    "env": { "KAN_API_KEY": "$KAN_API_KEY" } }
-]</code></pre>
-<p><code>McpManager</code> (<span class="path">lib/src/mcp/mcp_manager.dart</span>) spawns
-each server, discovers its tools, and the registry merges them in. Adding a capability
-becomes: write (or grab) an MCP server, add a line, restart. This is how River talks to
-Kan.bn and Outline.</p>
+<h2>A whole API in one tool: <code>run_cli</code></h2>
+<p>Rather than declaring one tool per endpoint, River exposes a single constrained
+executor (<span class="path">lib/src/tools/cli_tools.dart</span>) that shells out to
+vendored zero-dependency Node CLIs:</p>
+<pre><code>run_cli(tool: "kan", args: ["search", "--query", "sprint"])</code></pre>
+<p>The CLIs (<span class="path">cli-tools/*.mjs</span>) wrap the <em>full</em> Kan.bn and
+Outline REST surfaces and self-document via <code>--help</code>, so one tool schema
+replaces ~50 and capability drift is structurally impossible. This is how River talks to
+Kan.bn, Outline and Radicale.</p>
+<p><strong>Note:</strong> an earlier version of this engine ran MCP servers as
+subprocesses. That layer was removed once every consumer had migrated to
+<code>run_cli</code>; there is no MCP in the codebase today.</p>
 
 <h2 id="minimal">A minimal bot, end to end</h2>
 <p>Strip away River's features and the skeleton of <em>any</em> bot on this engine is
@@ -128,9 +129,10 @@ platform exposing roughly: receive events, send a message, join a room, send typ
 Translate each inbound event into an <code>AgentInput</code>.</p>
 </details>
 <details>
-<summary>Step 3 - Register your tools and/or MCP servers</summary>
+<summary>Step 3 - Register your tools</summary>
 <p>Delete River's tool registrations (everything in <span class="path">lib/src/tools/</span>
-is River-specific) and register your own. Or wire in MCP servers via the config file.</p>
+is River-specific) and register your own. For an external API, consider the
+<code>run_cli</code> pattern instead of a tool per endpoint.</p>
 </details>
 <details>
 <summary>Step 4 - Write your system prompt</summary>
@@ -160,7 +162,7 @@ hardened against.</p>
   Next: <a href="body.html">The Body &rarr;</a> &middot;
   <a href="roadmap.html">What would make it more engine-like?</a><br>
   Engine core: <span class="path">dreamfinder/lib/src/agent/</span> +
-  <span class="path">lib/src/mcp/</span>
+  <span class="path">lib/src/tools/</span>
 </div>
 
 </div>
