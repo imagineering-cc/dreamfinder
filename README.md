@@ -8,8 +8,8 @@ imaginative mentor who dreamed Figment into existence — **Dreamfinder** turns 
 of ideas into organized tasks, docs, and team coordination.
 
 Every message flows through a Claude LLM agent loop with access to ~75 tools across
-task management (Kan.bn), knowledge base (Outline), calendar (Radicale), web
-automation (Playwright), and custom bot tools. No slash commands — just natural
+task management (Kan.bn), knowledge base (Outline), calendar (Radicale),
+and custom bot tools. No slash commands — just natural
 language.
 
 > 🧠✨ **New here? Read the [Dreamfinder Engine guide](https://imagineering.cc/engine/)** — a
@@ -18,7 +18,7 @@ language.
 > build your own bot on it, and what would make it more engine-like. Read it live at
 > [imagineering.cc/engine](https://imagineering.cc/engine/) (source under `docs/engine/`).
 
-> **Status**: Deployed and running. 710+ tests, 16 domain tables, schema v7.
+> **Status**: Deployed and running. 970+ tests, 21 domain tables, schema v10.
 > Migrating from Signal to Matrix — a
 > [matrix chat superbridge](https://github.com/imagineering-cc/matrix-chat-superbridge)
 > relays between Matrix and Signal/Discord/Telegram/WhatsApp using puppet accounts,
@@ -61,10 +61,10 @@ language.
 │  ┌───────────────────────────┼─────────────────────────┼──────────┐  │
 │  │                     Tool Layer                                  │  │
 │  │                                                                 │  │
-│  │  ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐   │  │
-│  │  │  Kan.bn  │ │ Outline │ │ Radicale │ │    Playwright     │   │  │
-│  │  │  (Tasks) │ │ (Wiki)  │ │ (Cal)    │ │    (Browser)      │   │  │
-│  │  └──────────┘ └─────────┘ └──────────┘ └───────────────────┘   │  │
+│  │  ┌──────────┐ ┌─────────┐ ┌──────────┐                         │  │
+│  │  │  Kan.bn  │ │ Outline │ │ Radicale │                         │  │
+│  │  │  (Tasks) │ │ (Wiki)  │ │ (Cal)    │                         │  │
+│  │  └──────────┘ └─────────┘ └──────────┘                         │  │
 │  │                                                                 │  │
 │  │  ┌───────────────────────────────────────────────────────────┐  │  │
 │  │  │ Custom Tools: chat config, user mapping, standups,       │  │  │
@@ -73,7 +73,7 @@ language.
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │  SQLite (sqlite3 package) — 16 domain tables, schema v7        │  │
+│  │  SQLite (sqlite3 package) — 21 domain tables, schema v10       │  │
 │  │  Conversations, config, user mappings, standups, dreams,       │  │
 │  │  radar repos, bot state, RAG memory                            │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
@@ -326,7 +326,7 @@ lib/
     memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
     tools/          # Custom tool definitions (8 modules)
-    db/             # SQLite database, schema, queries (12 mixins), message repository
+    db/             # SQLite database, schema, queries (14 mixins), message repository
     dream/          # Dream cycle orchestrator, sleep stage prompts
     session/        # Session facilitation state machine, prompts
     kickstart/      # Guided onboarding detection, state, prompts

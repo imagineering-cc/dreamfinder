@@ -111,7 +111,7 @@ await for (final msg in myPlatform.incoming()) {
   await myPlatform.send(msg.room, reply);
 }</code></pre>
 <p>That is the whole contract. River's <span class="path">bin/dreamfinder.dart</span> is
-1090 lines, but almost all of it is <em>feature wiring</em> (kickstart, dream cycle,
+1566 lines, but almost all of it is <em>feature wiring</em> (kickstart, dream cycle,
 standup cron, repo radar, RAG memory) layered on top of exactly this skeleton.</p>
 
 <h2>How to build your own bot on it</h2>

@@ -41,7 +41,7 @@ lib/
     memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
     tools/          # Custom tool definitions (identity, chat config, standup, kickstart)
-    db/             # SQLite database, schema, queries (11 mixins), message repository
+    db/             # SQLite database, schema, queries (14 mixins), message repository
     dream/          # Dream cycle orchestrator, sleep stage prompts
     kickstart/      # Guided onboarding detection, state, prompts
     cron/           # Scheduled jobs (standup orchestration)
@@ -134,7 +134,7 @@ RATE_LIMIT_GROUP_WINDOW_SECONDS= # Rolling window for group rate limit in second
 - SQLite via the `sqlite3` package (synchronous API). No ORM — raw SQL with
   parameterized queries in `Queries` class and `MessageRepository`.
 - Schema defined in `database.dart` with versioned migrations (`_migrateToV1()` through
-  `_migrateToV7()`). Version tracked in `schema_version` table. Current: v7.
+  `_migrateToV10()`). Version tracked in `schema_version` table. Current: v10.
 - V6 migration renamed Signal-specific tables/columns to platform-agnostic names (historical — must never be removed).
 - Never store secrets or API keys in SQLite.
 
