@@ -56,7 +56,10 @@ it just is not yet a type the compiler enforces.</p>
 expose <code>DreamfinderBot.builder()</code> taking <code>(platformClient, llmFn, tools,
 systemPromptBuilder)</code> and running the loop, so an app's <code>main()</code> is a
 short, declarative assembly. The feature modules (kickstart, dream cycle, radar) become
-opt-in plugins discovered from config - the same pattern the vendored CLIs already use.</p>
+opt-in plugins discovered from config. Note that this repo currently has <em>no</em>
+runtime-discovery seam: MCP provided one and was removed, and <code>run_cli</code> is a
+deliberately closed allowlist, not a discovery mechanism. Building this means reopening
+that decision on purpose.</p>
 </details>
 
 <h2>Body: from "constants in app.js" to "character as data"</h2>
