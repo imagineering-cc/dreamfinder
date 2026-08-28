@@ -76,18 +76,26 @@ Matrix client (<span class="path">lib/src/matrix/matrix_client.dart</span>) is j
 implementation; swap it and the loop is untouched.
 </div>
 
-<h2>A whole API in one tool: <code>run_cli</code></h2>
-<p>Rather than declaring one tool per endpoint, River exposes a single constrained
+<h2>Wrapping a whole API: the <code>run_cli</code> pattern</h2>
+<p><strong>The engine's extension seam is <code>registerCustomTool</code></strong> (Seam 2
+above) — that is the generic mechanism, and it lives in
+<span class="path">lib/src/agent/</span>. What follows is not a second seam but a
+<em>pattern</em> River uses on top of it, and it is glue, not engine.</p>
+<p>Rather than declaring one tool per endpoint, River registers a single constrained
 executor (<span class="path">lib/src/tools/cli_tools.dart</span>) that shells out to
 vendored zero-dependency Node CLIs:</p>
 <pre><code>run_cli(tool: "kan", args: ["search", "--query", "sprint"])</code></pre>
 <p>The CLIs (<span class="path">cli-tools/*.mjs</span>) wrap the <em>full</em> Kan.bn and
 Outline REST surfaces and self-document via <code>--help</code>, so one tool schema
-replaces ~50 and capability drift is structurally impossible. This is how River talks to
-Kan.bn, Outline and Radicale.</p>
-<p><strong>Note:</strong> an earlier version of this engine ran MCP servers as
-subprocesses. That layer was removed once every consumer had migrated to
-<code>run_cli</code>; there is no MCP in the codebase today.</p>
+replaces ~50. Note the tradeoff: <code>run_cli</code> is a <em>closed allowlist</em> of
+named CLIs, deliberately — it buys a small schema and no capability drift, and it costs
+runtime extensibility. Your character adds a capability by registering a tool in Dart, not
+by dropping a config line.</p>
+<p><strong>Historical note:</strong> an earlier version of this engine ran MCP servers as
+subprocesses, which <em>was</em> a generic runtime-discovery seam. It was removed once
+every consumer had migrated; there is no MCP in the codebase today. If you need runtime
+tool discovery for your own character, you are re-opening a decision this repo closed —
+that is a design choice to make deliberately, not a gap to patch.</p>
 
 <h2 id="minimal">A minimal bot, end to end</h2>
 <p>Strip away River's features and the skeleton of <em>any</em> bot on this engine is
@@ -162,7 +170,7 @@ hardened against.</p>
   Next: <a href="body.html">The Body &rarr;</a> &middot;
   <a href="roadmap.html">What would make it more engine-like?</a><br>
   Engine core: <span class="path">dreamfinder/lib/src/agent/</span> +
-  <span class="path">lib/src/tools/</span>
+  <span class="path">lib/src/db/</span>
 </div>
 
 </div>

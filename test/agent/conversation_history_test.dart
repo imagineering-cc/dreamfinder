@@ -307,7 +307,7 @@ void main() {
             'toolUseBlocks': <Map<String, dynamic>>[
               {
                 'id': 't2',
-                'name': 'kan_list_boards',
+                'name': 'list_things',
                 'input': <String, dynamic>{}
               },
             ],

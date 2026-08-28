@@ -7,8 +7,8 @@ void main() {
   test('Matrix message → agent loop → tool call → response', () async {
     final reg = ToolRegistry()
       ..registerCustomTool(CustomToolDef(
-        name: 'kan_list_boards',
-        description: 'List boards',
+        name: 'list_things',
+        description: 'List things',
         inputSchema: const <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{},
@@ -27,7 +27,7 @@ void main() {
             toolUseBlocks: [
               ToolUseContent(
                 id: 'c1',
-                name: 'kan_list_boards',
+                name: 'list_things',
                 input: <String, dynamic>{},
               ),
             ],
