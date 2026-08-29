@@ -51,12 +51,15 @@ it just is not yet a type the compiler enforces.</p>
 </details>
 
 <details>
-<summary>Builder - shrink <code>main()</code> from 1090 lines to ~30</summary>
+<summary>Builder - shrink <code>main()</code> from 1566 lines to ~30</summary>
 <p>The entry point mixes wiring, feature orchestration, and the sync loop. An engine would
 expose <code>DreamfinderBot.builder()</code> taking <code>(platformClient, llmFn, tools,
 systemPromptBuilder)</code> and running the loop, so an app's <code>main()</code> is a
 short, declarative assembly. The feature modules (kickstart, dream cycle, radar) become
-opt-in plugins discovered from config - the same pattern MCP servers already use.</p>
+opt-in plugins discovered from config. Note that this repo currently has <em>no</em>
+runtime-discovery seam: MCP provided one and was removed, and <code>run_cli</code> is a
+deliberately closed allowlist, not a discovery mechanism. Building this means reopening
+that decision on purpose.</p>
 </details>
 
 <h2>Body: from "constants in app.js" to "character as data"</h2>

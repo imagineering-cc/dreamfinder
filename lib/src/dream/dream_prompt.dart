@@ -3,7 +3,7 @@
 /// The dream cycle is an autonomous multi-round agent session where
 /// Dreamfinder replays recent chat history and organizes knowledge into
 /// Outline docs and Kan cards. Unlike standup prompts (single-round, no
-/// tools), the dream cycle has full MCP tool access.
+/// tools), the dream cycle has full tool access.
 ///
 /// Modeled after real sleep, the dream runs through phases of increasing
 /// depth, then *branches* — like how dreams fork into parallel threads

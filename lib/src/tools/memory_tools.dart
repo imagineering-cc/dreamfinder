@@ -273,7 +273,7 @@ CustomToolDef _deepSearchTool(
           : List<String>.from(_allSources);
 
       // A source is available when its backing creds are configured. Outline
-      // and Kan are searched via the vendored CLIs (not MCP); Kan's `search`
+      // and Kan are searched via the vendored CLIs; Kan's `search`
       // also requires a workspace id, so the Kan arm needs [kanWorkspaceId].
       bool present(String? v) => v != null && v.trim().isNotEmpty;
       final hasMemory = retriever != null;

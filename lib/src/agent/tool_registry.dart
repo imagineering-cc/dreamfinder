@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import '../mcp/mcp_manager.dart';
-
 /// Per-request context set before processing each message.
 ///
 /// Allows tool handlers to check admin status without changing their signature.
@@ -19,7 +17,7 @@ class ToolContext {
   final bool isGroup;
 }
 
-/// A custom (non-MCP) tool definition with its handler function.
+/// A tool definition with its handler function.
 class CustomToolDef {
   const CustomToolDef({
     required this.name,
@@ -53,10 +51,9 @@ class ToolDefinition {
   final Map<String, dynamic> inputSchema;
 }
 
-/// Merges MCP-discovered tools and custom tools into a single registry.
+/// Registry of the agent's tools, keyed by tool name.
 class ToolRegistry {
   final Map<String, CustomToolDef> _customTools = {};
-  McpManager? _mcpManager;
 
   /// Current per-request context. Set via [setContext] before each message.
   ToolContext? _context;
@@ -70,10 +67,6 @@ class ToolRegistry {
     _customTools[tool.name] = tool;
   }
 
-  void setMcpManager(McpManager manager) {
-    _mcpManager = manager;
-  }
-
   /// Sets the per-request context (sender, admin status) before processing
   /// a message. Tool handlers with [CustomToolDef.requiresAdmin] will be
   /// rejected if [ToolContext.isAdmin] is `false`.
@@ -83,15 +76,6 @@ class ToolRegistry {
 
   List<ToolDefinition> getAllToolDefinitions() {
     final tools = <ToolDefinition>[];
-    if (_mcpManager != null) {
-      for (final mcpTool in _mcpManager!.getAllTools()) {
-        tools.add(ToolDefinition(
-          name: mcpTool.name,
-          description: mcpTool.description,
-          inputSchema: mcpTool.inputSchema,
-        ));
-      }
-    }
     for (final custom in _customTools.values) {
       tools.add(ToolDefinition(
         name: custom.name,
@@ -116,7 +100,6 @@ class ToolRegistry {
       }
       return custom.handler(args);
     }
-    if (_mcpManager != null) return _mcpManager!.callTool(toolName, args);
     throw Exception('Tool not found: $toolName');
   }
 }

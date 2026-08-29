@@ -106,12 +106,12 @@ void main() {
         id,
         status: DreamCycleStatus.failed,
         completedAt: '2026-03-14T23:30:00',
-        errorMessage: 'MCP server unreachable',
+        errorMessage: 'Outline CLI unreachable',
       );
 
       final cycle = queries.getDreamCycle('group-1', '2026-03-14');
       expect(cycle!.status, equals(DreamCycleStatus.failed));
-      expect(cycle.errorMessage, equals('MCP server unreachable'));
+      expect(cycle.errorMessage, equals('Outline CLI unreachable'));
     });
 
     test('getLastCompletedDreamCycle returns most recent completed', () {

@@ -305,11 +305,7 @@ void main() {
           content: <String, dynamic>{
             'textBlocks': <Map<String, String>>[],
             'toolUseBlocks': <Map<String, dynamic>>[
-              {
-                'id': 't2',
-                'name': 'kan_list_boards',
-                'input': <String, dynamic>{}
-              },
+              {'id': 't2', 'name': 'list_things', 'input': <String, dynamic>{}},
             ],
           },
         ),

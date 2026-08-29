@@ -7,9 +7,9 @@ Matrix. Named after the Dreamfinder from EPCOT's Journey Into Imagination — th
 imaginative mentor who dreamed Figment into existence — **Dreamfinder** turns sparks
 of ideas into organized tasks, docs, and team coordination.
 
-Every message flows through a Claude LLM agent loop with access to ~75 tools across
-task management (Kan.bn), knowledge base (Outline), calendar (Radicale), web
-automation (Playwright), and custom bot tools. No slash commands — just natural
+Every message flows through a Claude LLM agent loop with access to native Dart tools spanning
+task management (Kan.bn), knowledge base (Outline), calendar (Radicale),
+and custom bot tools. No slash commands — just natural
 language.
 
 > 🧠✨ **New here? Read the [Dreamfinder Engine guide](https://imagineering.cc/engine/)** — a
@@ -18,7 +18,7 @@ language.
 > build your own bot on it, and what would make it more engine-like. Read it live at
 > [imagineering.cc/engine](https://imagineering.cc/engine/) (source under `docs/engine/`).
 
-> **Status**: Deployed and running. 710+ tests, 16 domain tables, schema v7.
+> **Status**: Deployed and running. 970+ tests, 21 domain tables, schema v10.
 > Migrating from Signal to Matrix — a
 > [matrix chat superbridge](https://github.com/imagineering-cc/matrix-chat-superbridge)
 > relays between Matrix and Signal/Discord/Telegram/WhatsApp using puppet accounts,
@@ -61,10 +61,10 @@ language.
 │  ┌───────────────────────────┼─────────────────────────┼──────────┐  │
 │  │                     Tool Layer                                  │  │
 │  │                                                                 │  │
-│  │  ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐   │  │
-│  │  │  Kan.bn  │ │ Outline │ │ Radicale │ │    Playwright     │   │  │
-│  │  │  (Tasks) │ │ (Wiki)  │ │ (Cal)    │ │    (Browser)      │   │  │
-│  │  └──────────┘ └─────────┘ └──────────┘ └───────────────────┘   │  │
+│  │  ┌──────────┐ ┌─────────┐ ┌──────────┐                         │  │
+│  │  │  Kan.bn  │ │ Outline │ │ Radicale │                         │  │
+│  │  │  (Tasks) │ │ (Wiki)  │ │ (Cal)    │                         │  │
+│  │  └──────────┘ └─────────┘ └──────────┘                         │  │
 │  │                                                                 │  │
 │  │  ┌───────────────────────────────────────────────────────────┐  │  │
 │  │  │ Custom Tools: chat config, user mapping, standups,       │  │  │
@@ -73,7 +73,7 @@ language.
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │  SQLite (sqlite3 package) — 16 domain tables, schema v7        │  │
+│  │  SQLite (sqlite3 package) — 21 domain tables, schema v10       │  │
 │  │  Conversations, config, user mappings, standups, dreams,       │  │
 │  │  radar repos, bot state, RAG memory                            │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
@@ -173,11 +173,6 @@ Track and discover GitHub repositories relevant to the org:
 - Daily digest via scheduler
 - Context injected into system prompt
 
-### MCP Configuration
-
-MCP servers are loaded from `mcp-config.json` — add a new MCP server to the config,
-restart, and the tools are available. No code changes needed.
-
 ## Tech Stack
 
 | Component       | Technology                             |
@@ -186,12 +181,10 @@ restart, and the tools are available. No code changes needed.
 | Runtime         | Dart VM                                |
 | Messaging       | Matrix (via Client-Server API)         |
 | LLM             | Claude Sonnet 4.6 (anthropic_sdk_dart) |
-| MCP             | dart_mcp ^0.4.1                        |
 | Database        | SQLite (via sqlite3 package)           |
 | Task Management | Kan.bn (vendored CLI via `run_cli`)    |
 | Knowledge Base  | Outline (vendored CLI via `run_cli`)   |
 | Calendar        | Radicale (vendored CLI via `run_cli`)  |
-| Web Automation  | Playwright (MCP)                       |
 | Deployment      | Docker + Docker Compose on OCI VPS     |
 | Package Manager | dart pub                               |
 
@@ -208,12 +201,9 @@ restart, and the tools are available. No code changes needed.
 ### Installation
 
 ```bash
-# Clone the repo (--recurse-submodules pulls the shared MCP servers)
-git clone --recurse-submodules git@github.com:imagineering-cc/dreamfinder.git
+# Clone the repo
+git clone git@github.com:imagineering-cc/dreamfinder.git
 cd dreamfinder
-
-# If you already cloned without --recurse-submodules:
-git submodule update --init
 
 # Install Dart dependencies
 dart pub get
@@ -292,32 +282,27 @@ WhatsApp user ─puppet─┘
 - **Rooms**: Auto-join on invite, room member queries, DM detection via member count
 - **Mentions**: Matrix pills + name regex
 
-## MCP Integration
+## Tool Layer
 
-MCP (Model Context Protocol) support remains in the app: servers run as child
-processes managed by `McpManager`, with the `dart_mcp` package providing the
-Dart client over STDIO transport. Server configuration is loaded from
-`mcp-config.json` (currently `[]` — no MCP servers run by default).
-
-Kan, Outline, and Radicale are **no longer MCP-backed** — they are driven by
-vendored zero-dependency Node CLIs (`cli-tools/*.mjs`) through the single
-`run_cli` custom tool, which collapses ~50 MCP tool schemas into one and makes
-capability drift structurally impossible. The `mcp-servers/` submodule is kept
-only for the generic MCP framework / future servers, not these three.
+There is **no MCP layer** — it was removed once every consumer had migrated off
+it (PRs #114 Kan/Outline, #115 Radicale, #127 prompts). Kan, Outline and
+Radicale are driven by vendored zero-dependency Node CLIs (`cli-tools/*.mjs`)
+through the single `run_cli` custom tool, which collapses ~50 tool schemas into
+one and makes capability drift structurally impossible. Everything else is a
+native Dart tool.
 
 ### Available Tool Sets
 
-| Tool set   | Backed by        | Examples                                             |
-| ---------- | ---------------- | ---------------------------------------------------- |
-| Kan.bn     | vendored CLI     | List boards, create card, update card, manage labels |
-| Outline    | vendored CLI     | Search docs, create document, list collections       |
-| Radicale   | vendored CLI     | List events, calendar/contacts (CalDAV/CardDAV)      |
-| Playwright | MCP (if enabled) | Navigate, screenshot, fill form, click element       |
-| Custom     | native Dart      | Chat config, user mapping, standups, memory, radar   |
+| Tool set   | Backed by    | Examples                                             |
+| ---------- | ------------ | ---------------------------------------------------- |
+| Kan.bn     | vendored CLI | List boards, create card, update card, manage labels |
+| Outline    | vendored CLI | Search docs, create document, list collections       |
+| Radicale   | vendored CLI | List events, calendar/contacts (CalDAV/CardDAV)      |
+| Custom     | native Dart  | Chat config, user mapping, standups, memory, radar   |
 
 ### Custom Tools
 
-In addition to MCP server tools, the bot defines its own tools in `lib/src/tools/`:
+The bot defines its own tools in `lib/src/tools/`:
 
 - **chat_config** — Workspace linking, default board/list config per group
 - **user_mapping** — Map platform user IDs to Kan.bn users and display names
@@ -337,22 +322,19 @@ In addition to MCP server tools, the bot defines its own tools in `lib/src/tools
 lib/
   src/
     matrix/         # Matrix client, models, auth
-    signal/         # Signal client, message models (legacy, being replaced)
     agent/          # Agent loop, system prompt, tool registry, conversation history
-    mcp/            # MCP subprocess manager
     memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
-    tools/          # Custom tool definitions (8 modules)
-    db/             # SQLite database, schema, queries (12 mixins), message repository
+    tools/          # Custom tool definitions (11 modules)
+    db/             # SQLite database, schema, queries (14 mixins), message repository
     dream/          # Dream cycle orchestrator, sleep stage prompts
     session/        # Session facilitation state machine, prompts
     kickstart/      # Guided onboarding detection, state, prompts
     cron/           # Scheduled jobs (standup, nudges, radar digest)
     bot/            # Message handler, rate limiting, health check, deploy announcer
     logging/        # Structured logging
-    meetup/         # Meetup event integration
 bin/                # Entry point (dreamfinder.dart)
-test/               # Tests mirroring lib/src/ structure (54 test files)
+test/               # Tests mirroring lib/src/ structure
 data/               # SQLite database (gitignored)
 docker/             # Dockerfiles and compose configs
 ```
@@ -379,7 +361,7 @@ We follow **ATDD** (Acceptance Test-Driven Development):
 5. Refactor
 
 Tests are organized to mirror the `lib/src/` directory structure inside `test/`.
-Integration tests for MCP tools use recorded fixtures to avoid hitting live services.
+Integration tests for external tools use recorded fixtures to avoid hitting live services.
 We use `mocktail` for mocking.
 
 ## Deployment

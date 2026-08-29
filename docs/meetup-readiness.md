@@ -148,7 +148,7 @@ ssh nick@149.118.69.221 'curl -s http://localhost:8081/health' | python3 -c \
 minutes if the test message in step 5 worked).
 
 **Fail — error_count > 0:** `docker logs dreamfinder --tail 100 | grep ERROR` to see
-what failed. Common causes: expired OAuth token, MCP server crash, malformed tool call.
+what failed. Common causes: expired OAuth token, vendored CLI failure, malformed tool call.
 
 **Fail — last_claude_success null:** Claude API has never responded since last start.
 Check `ANTHROPIC_API_KEY` or `CLAUDE_REFRESH_TOKEN`. Verify with:

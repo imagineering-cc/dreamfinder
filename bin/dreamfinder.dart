@@ -44,8 +44,6 @@ import 'package:dreamfinder/src/logging/logger.dart';
 import 'package:dreamfinder/src/matrix/matrix_auth.dart';
 import 'package:dreamfinder/src/matrix/matrix_client.dart';
 import 'package:dreamfinder/src/matrix/participant.dart';
-import 'package:dreamfinder/src/mcp/mcp_config.dart';
-import 'package:dreamfinder/src/mcp/mcp_manager.dart';
 import 'package:dreamfinder/src/memory/embedding_backfill.dart';
 import 'package:dreamfinder/src/memory/embedding_client.dart';
 import 'package:dreamfinder/src/memory/embedding_pipeline.dart';
@@ -132,25 +130,8 @@ Future<void> main() async {
     exit(1);
   }
 
-  final mcpManager = McpManager();
-
-  // Load MCP servers from config file. Servers with unresolved env vars
-  // are silently skipped — this lets the same config work across
-  // environments (dev without Kan, prod with everything).
-  final mcpConfigs = loadMcpConfig();
-  if (mcpConfigs.isNotEmpty) {
-    for (final config in mcpConfigs) {
-      await mcpManager.startServer(config);
-    }
-  }
-
-  final serverNames = mcpManager.getServerNames();
-  log.info(
-      'MCP servers: ${serverNames.isEmpty ? "(none)" : serverNames.join(", ")}');
-
   // Set up calendar event awareness — optional, enabled when CALENDAR_URL is
-  // set. Calendar reads go through the vendored `radicale` CLI (not the MCP),
-  // so this no longer depends on an MCP server being up.
+  // set. Calendar reads go through the vendored `radicale` CLI.
   CalendarRetriever? calendarRetriever;
   if (env.calendarUrl != null &&
       env.radicaleBaseUrl != null &&
@@ -178,12 +159,11 @@ Future<void> main() async {
           limit: limit, excludeChatId: excludeChatId);
 
   final toolRegistry = ToolRegistry();
-  toolRegistry.setMcpManager(mcpManager);
   registerBotIdentityTools(toolRegistry, queries);
   registerChatConfigTools(toolRegistry, queries);
   registerStandupTools(toolRegistry, queries);
-  // Kan + Outline are driven via the `run_cli` executor (vendored CLIs),
-  // not MCP servers — one tool, full CLI surface, including onboarding.
+  // Kan + Outline are driven via the `run_cli` executor (vendored CLIs) —
+  // one tool, full CLI surface, including onboarding.
   registerCliTools(
     toolRegistry,
     kanApiKey: env.kanApiKey,
@@ -337,8 +317,7 @@ Future<void> main() async {
   health.apiKey = env.apiKey;
 
   // deep_search fans out to Outline + Kan via the vendored CLIs (same path as
-  // run_cli), not MCP — the Outline/Kan MCP servers were retired in the run_cli
-  // migration. Outline arm needs its creds; Kan arm also needs a workspace id.
+  // run_cli). Outline arm needs its creds; Kan arm also needs a workspace id.
   registerMemoryTools(
     toolRegistry,
     embeddingPipeline,
@@ -815,7 +794,7 @@ Future<void> main() async {
           senderId: 'system',
           isGroup: true,
         ),
-        // Task radar queries multiple MCP sources (Kan, Outline, Radicale,
+        // Task radar queries multiple sources (Kan, Outline, Radicale,
         // memory) — 10 default rounds may be tight for cross-source synthesis.
         maxToolRounds: 20,
       );
@@ -906,7 +885,6 @@ Future<void> main() async {
     liveKitClient?.close();
     health.stop();
     database.close();
-    mcpManager.shutdown();
     anthropicClient.endSession();
     exit(0);
   }

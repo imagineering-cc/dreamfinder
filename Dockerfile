@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Dreamfinder (Dart)
 #
 # Stage 1: Compile Dart to native AOT binary
-# Stage 2: Minimal runtime with Node.js (for MCP server subprocesses)
+# Stage 2: Minimal runtime with Node.js (for the vendored CLI subprocesses)
 
 # --- Build stage ---
 FROM dart:stable AS build
@@ -72,15 +72,12 @@ WORKDIR /app
 
 # Kan + Outline + Radicale are driven by the vendored zero-dependency CLIs (no
 # npm install needed — they import only node builtins). The `run_cli` tool
-# shells out to these; CLI_TOOLS_DIR tells it where to find them. The radicale
-# MCP server is fully retired (mcp-config.json is []), so it is no longer copied
-# or npm-installed into the image.
+# shells out to these; CLI_TOOLS_DIR tells it where to find them.
 COPY cli-tools/ /app/cli-tools/
 ENV CLI_TOOLS_DIR=/app/cli-tools
 
-# Copy compiled binary and MCP config from build stage.
+# Copy compiled binary from build stage.
 COPY --from=build /app/bin/dreamfinder /app/bin/dreamfinder
-COPY mcp-config.json /app/mcp-config.json
 
 RUN mkdir -p /app/data
 

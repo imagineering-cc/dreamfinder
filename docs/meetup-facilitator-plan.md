@@ -1,5 +1,11 @@
 # Meetup Facilitator — Dreamfinder in Google Meet
 
+> **Status: unbuilt vision, no code.** A prototype (`lib/src/meetup/`) existed but
+> had zero production callers and was removed along with the MCP layer it was
+> built on. The Playwright-MCP approach described below is therefore *not*
+> available — any future build needs a new browser-automation decision. The
+> product vision is kept because it is still wanted.
+
 ## Vision
 
 Dreamfinder joins a Google Meet call as a live participant, facilitates a structured

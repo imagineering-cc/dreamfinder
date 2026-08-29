@@ -19,9 +19,10 @@ data/
 # Signal
 signal-cli-config/
 
-# Playwright
-.playwright-mcp/
 
 # Claude Code
 .claude/worktrees/
 .claude/settings.local.json
+
+# Playwright debug artifacts (local only; dir predates the MCP layer removal)
+.playwright-mcp/

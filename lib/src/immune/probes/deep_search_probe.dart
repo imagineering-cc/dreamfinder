@@ -8,7 +8,7 @@ import 'dart:convert';
 import '../probe.dart';
 
 /// Signature of `ToolRegistry.executeTool`, injected so the probe is testable
-/// without a live agent/MCP stack.
+/// without a live agent stack.
 typedef ToolExecutor = Future<String> Function(
   String toolName,
   Map<String, dynamic> args,

@@ -72,8 +72,8 @@ brain with your avatar, or both replaced.</p>
 <tr><th>Half</th><th><span class="tag engine">engine</span></th><th><span class="tag glue">glue</span></th></tr>
 <tr>
   <td>Brain</td>
-  <td><code>lib/src/agent/</code> (AgentLoop, ToolRegistry, ConversationHistory, system-prompt builder), <code>lib/src/mcp/</code>, <code>lib/src/db/</code></td>
-  <td>everything in <code>lib/src/tools/</code>, the 1090-line <code>bin/dreamfinder.dart</code> wiring, the Matrix client</td>
+  <td><code>lib/src/agent/</code> (AgentLoop, ToolRegistry, ConversationHistory, system-prompt builder), <code>lib/src/db/</code></td>
+  <td>everything in <code>lib/src/tools/</code>, the 1566-line <code>bin/dreamfinder.dart</code> wiring, the Matrix client</td>
 </tr>
 <tr>
   <td>Body</td>
@@ -88,7 +88,7 @@ brain with your avatar, or both replaced.</p>
 <summary>I want to build my own chat bot (different platform, different character)</summary>
 <p>Go to <a href="brain.html">The Brain</a>. You will implement two small interfaces
 (an LLM call and a platform client), register your own tools, and write a system prompt.
-The agent loop, conversation history, tool routing, and MCP integration come for free.
+The agent loop, conversation history, and tool routing come for free.
 The <a href="brain.html#minimal">minimal-bot sketch</a> is ~40 lines.</p>
 </details>
 
