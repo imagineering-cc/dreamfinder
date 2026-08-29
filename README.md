@@ -7,7 +7,7 @@ Matrix. Named after the Dreamfinder from EPCOT's Journey Into Imagination — th
 imaginative mentor who dreamed Figment into existence — **Dreamfinder** turns sparks
 of ideas into organized tasks, docs, and team coordination.
 
-Every message flows through a Claude LLM agent loop with access to ~75 tools across
+Every message flows through a Claude LLM agent loop with access to native Dart tools spanning
 task management (Kan.bn), knowledge base (Outline), calendar (Radicale),
 and custom bot tools. No slash commands — just natural
 language.
@@ -325,7 +325,7 @@ lib/
     agent/          # Agent loop, system prompt, tool registry, conversation history
     memory/         # RAG long-term memory (embedding client, pipeline, retriever)
     config/         # Environment config
-    tools/          # Custom tool definitions (8 modules)
+    tools/          # Custom tool definitions (11 modules)
     db/             # SQLite database, schema, queries (14 mixins), message repository
     dream/          # Dream cycle orchestrator, sleep stage prompts
     session/        # Session facilitation state machine, prompts
@@ -333,9 +333,8 @@ lib/
     cron/           # Scheduled jobs (standup, nudges, radar digest)
     bot/            # Message handler, rate limiting, health check, deploy announcer
     logging/        # Structured logging
-    meetup/         # Meetup event integration
 bin/                # Entry point (dreamfinder.dart)
-test/               # Tests mirroring lib/src/ structure (54 test files)
+test/               # Tests mirroring lib/src/ structure
 data/               # SQLite database (gitignored)
 docker/             # Dockerfiles and compose configs
 ```
