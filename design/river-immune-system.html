@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>River's Immune System — Self-Healer Design Doc</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;background:#0a0b10;color:#cdd5dd;font:15px/1.65 ui-sans-serif,system-ui,sans-serif;display:flex;justify-content:center}
+  main{width:min(820px,92vw);padding:40px 0 100px}
+  h1{font-size:26px;color:#ffd479;margin:0 0 4px;font-weight:700;letter-spacing:.2px}
+  h2{font-size:19px;color:#9fdcb0;margin:34px 0 8px;border-bottom:1px solid #1c2433;padding-bottom:5px}
+  h3{font-size:15px;color:#bcd;margin:20px 0 6px}
+  h4{font-size:14px;color:#9db;margin:16px 0 4px}
+  a{color:#ffd479}
+  code,pre{font-family:ui-monospace,Menlo,monospace}
+  code{background:#11131b;border:1px solid #20283a;border-radius:5px;padding:1px 5px;font-size:13px;color:#aee}
+  pre{background:#0d0f17;border:1px solid #1d2334;border-radius:9px;padding:14px 16px;overflow:auto;font-size:12.5px;line-height:1.5}
+  .tldr{background:#0d1a12;border:1px solid #1c3a28;border-radius:11px;padding:16px 18px;margin:18px 0;color:#bfe;font-size:15px}
+  blockquote{border-left:3px solid #ffd479;margin:14px 0;padding:6px 16px;color:#cbd;background:#11131b}
+  details{margin:10px 0;border:1px solid #1d2334;border-radius:9px;padding:10px 14px;background:#0d0f17}
+  summary{cursor:pointer;color:#9fdcb0;font-weight:600}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.5px}
+  th,td{border:1px solid #20283a;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#11131b;color:#9fb}
+  .nav{font-size:13px;color:#7b8a9a;margin-bottom:22px}
+  .verdict{border-radius:9px;padding:12px 15px;margin:10px 0;font-size:13.5px}
+  .verdict.approve{background:#0d1a12;border:1px solid #1c3a28}
+  .verdict.revise{background:#1a160d;border:1px solid #3a3018}
+  .sev-high{color:#f3a0a0}.sev-med{color:#ffd479}.sev-low{color:#9fb}
+  .cls{font-size:11px;color:#7b8a9a;font-variant:small-caps;letter-spacing:.5px}
+  .fix{background:#0d141a;border:1px solid #1c2c3a;border-radius:9px;padding:11px 14px;margin:10px 0;font-size:13.5px;color:#bcd}
+</style>
+</head>
+<body>
+<main>
+<div class="nav">Design docs · <a href="index.html">hub</a> · sibling: <a href="dreamfinder-spine.html">Night-Loop Spine (offense)</a></div>
+
+<h1>River's Immune System</h1>
+<div class="tldr">
+A <strong>defense</strong> engine that keeps River <em>actually working</em>, not just <em>running</em>. River's current self-healer (PR&nbsp;#99) is an excellent <strong>crash</strong> detector — but in 24 catalogued production incidents, <strong>crashes accounted for zero of them.</strong> The pain is entirely in failures where River was <em>up, healthy, and wrong</em>: 8 days silently on the metered API, <code>deep_search</code> hollow for 11 commits, a 33-minute invisible Signal socket during a live meetup, a wrong calendar URL for weeks. This doc designs the missing sense organ: a <strong>ProbeRegistry</strong> of deterministic <em>antibodies</em> (each past scar becomes a permanent probe for that <em>shape</em> of failure), a boot layer that <em>degrades loud</em> rather than <em>failing quiet</em>, and — gated hard behind the existing #110 safety rails plus the new controls below — an <strong>agentic remediation</strong> layer where River diagnoses and repairs from an <em>allowlisted</em> action set with <em>bounded-provenance values</em>.
+<br><br>
+<strong>Scope of the claim (corrected after cage-match):</strong> this is <strong>immune <em>memory</em>, not general immunity.</strong> A deterministic probe makes a <em>known shape</em> of silent-semantic failure visible; it does not catch novel semantic failures (wrong-ranking, stale-corpus, wrong-tenant, calendar-wrong-but-nonempty, delivery-to-wrong-room). Those are enumerated as a <a href="#taxonomy">coverage taxonomy</a>, not claimed as covered.
+<br><br>
+<strong>Honest status:</strong> <em>nothing here is built.</em> This is a design grounded in two evidence artifacts (a 24-incident failure catalogue and a full current-coverage map, both mined this session from the repo + memory graph). The incident catalogue is <em>archaeology</em> — durations and root causes are best-effort, not audited — so the <a href="#backtest">backtest</a> gates on <em>synthetic fault injection + healthy-baseline runs</em>, not history replay alone. The agentic-remediation layer is a real <strong>trust boundary + blast-radius surface</strong> and its safety gates are a <strong>merge prerequisite, not a follow-up</strong>. Build order is forced: <strong>you cannot remediate what you cannot sense</strong>, so the sensing spine ships and is backtested (positively <em>and</em> negatively) before River is given hands.
+</div>
+
+<div class="verdict revise">
+<strong>Cage-match revision log (2026-07-08, PR #118).</strong> This doc was adversarially reviewed by four model families before any code: <strong>Maxwell</strong> (Claude, COMMENT), <strong>Kelvin</strong> (Gemini, APPROVE), <strong>Carnot</strong> (GPT, REQUEST_CHANGES), <strong>Tesla</strong> (Grok, REQUEST_CHANGES). Every finding is folded in below; the changes cluster around one principle (<a href="#impedance">the observation–actuation impedance match</a>). Headline changes: Layer&nbsp;0 now <em>degrades</em> rather than bricks (§<a href="#layer0">L0</a>); the diagnosis-context trust boundary is pinned to structured, non-string inputs (§<a href="#layer2">L2</a>); a <em>global</em> thrash-breaker + energy budget join the per-probe breaker; probes carry a read-only-by-default side-effect contract; the self-check tick is <em>exempted from the crash-health signal</em> so the immune system can't trip PR&nbsp;#99's restart arc; and the backtest adds negative fixtures as an equal merge gate.
+<br><br>
+<strong>Round 2 (same PR)</strong> re-ran the four adversaries against the revision. They graded 7 of 8 round-1 findings <em>genuinely fixed</em> and surfaced deeper gaps that only became visible once the shallow ones closed. Folded in here: <strong>probe measurement-integrity</strong> — sentinels must be structurally unreachable from any user-writable store, and invariants assert <em>identity</em> (UID/ETag/tenant), not mere non-emptiness (§<a href="#probe-integrity">probe integrity</a>); a first-class <strong>maintenance mode</strong> resolving the OAuth-off-boot contradiction (§<a href="#layer0">L0</a>); and explicit <strong>health-surface partitioning</strong> (<code>/ready</code> vs <code>/health</code> vs <code>/immune</code>) making the crash-arc isolation concrete (§<a href="#health-surfaces">health surfaces</a>). The remaining round-2 items are captured as <a href="#round2-open">build-time acceptance criteria</a>, not silently deferred.
+</div>
+
+<h2 id="purpose">Purpose</h2>
+<p>
+The <a href="dreamfinder-spine.html">Night-Loop Spine</a> opens by declaring itself the <em>offense</em> engine and dismissing "watch, detect, audit, reconcile" as mere defense. This is that defense — and it turns out defense is not a solved problem River can take for granted. River breaks in production <em>often</em>, and the breaks that hurt are precisely the ones his current healer cannot see. The two engines are the poles of one nervous system: the night-loop <strong>manufactures what should exist</strong>; the immune system <strong>keeps what exists alive.</strong> They can eventually share a substrate — an antibody is a "standing fire" that glows when its probe trips — but they must <em>not</em> share a single failure-coupled tick (see <a href="#shared-cavity">shared-cavity risk</a>).
+</p>
+<p><strong>Who/what it is for:</strong> River (the dreamfinder bot) in production on OCI, plus its bridge mesh. The beneficiary of a working immune system is Nick — it removes his current job of <em>being</em> River's failure detector (he found the metered drift, the hollow <code>deep_search</code>, and the empty calendar by hand). This is design-for-subtraction: the human stops being the monitor — <em>provided the system does not turn him into its false-positive filter instead</em> (see <a href="#layer1">probe specificity</a>).</p>
+
+<h2 id="diagnosis">The diagnosis: the healer is aimed at the empty wall</h2>
+<p>Two scouts mapped (a) every production incident River has had and (b) exactly what the current healer detects. They triangulate to one finding.</p>
+
+<h3>Failure-class histogram (24 incidents)</h3>
+<pre>(a) Crash / Exception        0   ·
+(b) Silent-semantic         14   ███████████████████████████   up but WRONG
+(c) Config-drift             5   ██████████               looks deployed, artifact wrong
+(d) Integration-hollow       4   ████████                 tool returns [] after a migration
+(e) Connection-half-dead     1   ██
+(f) Feedback-loop            2   ████
+(g) Auth / credential        1   ██</pre>
+<p class="cls">These classes are <em>symptom</em> categories, not mutually-exclusive root causes — a single incident can be both config-drift and integration-hollow (e.g. #19, the calendar path). The histogram justifies <em>where the pain is</em>, not a causal taxonomy; coverage accounting uses the per-probe <a href="#taxonomy">taxonomy</a> instead.</p>
+<blockquote>River's current self-healer is exquisitely tuned for category (a) — the one class that has never once hurt him. The PR&nbsp;#99 machinery (retry, degrade, Docker-restart, escalate) fires on crashes; the histogram's crash column is empty. The healer answers <em>"am I running?"</em> flawlessly and <em>"am I actually working?"</em> not at all.</blockquote>
+
+<details>
+<summary>Current-healer coverage &amp; the incidents that hurt most</summary>
+<table>
+<tr><th>Mechanism (PR #99 &amp; around it)</th><th>Catches</th><th>Blind to</th></tr>
+<tr><td><strong>Honest health</strong> — poll-stale, processing-stuck, 3-consecutive-Claude-failures → <code>degraded</code> → Docker restart</td><td>brain crash, sync death, billing wall</td><td>anything that returns a clean, wrong result</td></tr>
+<tr><td><strong>Classify + retry + fallback</strong> — transient/auth/billing/other, 1/2/4s backoff</td><td>429 / 5xx / network / auth</td><td>a 200 with an empty or wrong body</td></tr>
+<tr><td><strong>Escalate</strong> — Telegram + in-room, deduped</td><td>unrecoverable <em>brain</em> failures</td><td>MCP/CLI/DB/scheduler/tool failures</td></tr>
+</table>
+<table>
+<tr><th>Incident</th><th>Undetected for</th><th>Why the healer missed it</th><th class="cls">class</th></tr>
+<tr><td>Silently on metered API</td><td>~8 days</td><td>River was up and answering; nothing crashed</td><td class="cls">c</td></tr>
+<tr><td><code>deep_search</code> hollow after MCP→CLI migration</td><td>11 commits</td><td>returned <code>[]</code> cleanly — a 200, not an error</td><td class="cls">d</td></tr>
+<tr><td>Bridge deaf (<code>@_relay_</code> filter)</td><td>~5 days</td><td><code>messages_processed:0</code> but no error logged</td><td class="cls">b</td></tr>
+<tr><td>Signal send-socket nil (live meetup)</td><td>~33 min</td><td>receive-socket healthy → container looked fine</td><td class="cls">e</td></tr>
+<tr><td>Calendar wrong path</td><td>weeks</td><td>read a calendar; it was the empty one, 403 failed closed</td><td class="cls">c</td></tr>
+</table>
+<p class="cls">Source: incident catalogue mined 2026-07-08 from the dreamfinder memory graph + <code>git log</code>. Durations/root-causes are best-effort archaeology, not an audited incident log — hence the <a href="#backtest">negative-fixture</a> gate.</p>
+</details>
+
+<h2 id="impedance">The organising principle: observation–actuation impedance match</h2>
+<p>The four reviewers independently circled one shape. Carnot named it: <em>"the danger is the gradient between uncertain observations and real-world actuation, and that gradient is not yet safely constrained."</em> Every serious finding is an instance:</p>
+<blockquote><strong>An action's power must be constrained to match the certainty of the observation driving it.</strong> A boot-assert (a blocking action) fired on an uncertain semantic read bricks the host. A <code>repointConfig</code> (an irreversible write) fired on a possibly-poisoned sentinel manufactures confident drift. An auto-revendor (a high-mutation act) fired on a flaky probe thrashes the artifact bare. The immune system itself (overhead) read as "unhealthy" trips the crash arc. The whole design is now organised so that <strong>uncertain reads may only <em>degrade</em> — never block or actuate — and every write carries bounded provenance, reversibility, and a budget.</strong></blockquote>
+
+<h2 id="architecture">Architecture: three layers + an immune memory</h2>
+<p>Autonomic reflexes are deterministic and always-on; conscious self-examination is periodic and agentic. Detection is <em>never</em> agentic (an LLM sensor can be fooled by River's own hallucination — or by a poisoned corpus); only diagnosis and repair are, and those run on <em>structured</em> inputs, never raw content.</p>
+
+<h3 id="layer0">Layer 0 — Autonomic reflexes (boot + always-on): <em>degrade loud, don't fail quiet — and don't fail-to-boot</em></h3>
+<p>The Docker-healthcheck→restart arc stays. Boot checks are split into two tiers, because <strong>"fail loud" must not mean "fail to start"</strong> — a semantic probe that hard-blocks readiness turns a legitimately-empty calendar or a quiet week into a self-inflicted total outage (trading 8-day-silent-wrong for 8-day-silent-<em>dead</em>).</p>
+<table>
+<tr><th>Tier</th><th>Checks</th><th>On violation</th></tr>
+<tr><td><strong>Hard invariant</strong> (local, deterministic, no external dependency)</td><td><code>auth mode resolves to OAuth <em>or</em> an explicit <code>MaintenanceMode</code> is set</code>; required env vars present &amp; well-formed; DB opens at expected schema</td><td><strong>withhold readiness</strong> — these are true prerequisites to serving correctly</td></tr>
+<tr><td><strong>Degraded-readiness</strong> (remote / semantic / dependency-bound)</td><td><code>calendar.events &gt; 0</code>; <code>deep_search</code> non-hollow; RAG retrieval non-empty</td><td><strong>start anyway</strong>, mark the capability <code>degraded</code> in <code>/health</code>, escalate once — never block boot</td></tr>
+</table>
+<blockquote>Distinguish <em>misconfiguration</em> from <em>legitimate emptiness</em>. An empty calendar might be a wrong URL (bad) or a quiet week (fine); Layer 0 cannot tell, so it must <em>degrade</em> the calendar capability and alert, not refuse to run. Only checks that are <em>certainly</em> a misconfiguration when they fail (auth mode, env presence) are allowed to gate startup.</blockquote>
+
+<h4 id="health-surfaces">Three health surfaces, three consumers (making crash-arc isolation concrete)</h4>
+<p>The first revision claimed the self-check tick is "isolated from the crash signal" but still reported semantic degradation to <code>/health</code> — a contradiction (Carnot r2 #1): if Docker's healthcheck consumes <code>/health</code>, a <code>degraded</code> there still fires PR&nbsp;#99's restart arc. Resolved by <strong>three distinct endpoints with named consumers</strong>:</p>
+<table>
+<tr><th>Endpoint</th><th>Reports</th><th>Consumed by</th></tr>
+<tr><td><code>/ready</code></td><td>hard invariants only (auth-or-maintenance, env, DB)</td><td>readiness gate — refuses traffic until true</td></tr>
+<tr><td><code>/health</code></td><td>crash liveness only (poll-stale, processing-stuck) — <em>never</em> semantic or immune-tick state</td><td>Docker healthcheck → PR&nbsp;#99 restart arc</td></tr>
+<tr><td><code>/immune</code></td><td>per-probe semantic degradation + immune-system self-liveness</td><td>escalation/alerting — <strong>no restart power</strong></td></tr>
+</table>
+<blockquote>The immune system reports its own health on <code>/immune</code>, watched by something with <em>no authority to restart the container</em> — so a slow or degraded probe can never trip the crash arc. Corollary (Maxwell r2): a <em>wedged</em> self-check tick must still be caught — <code>/immune</code> carries the immune system's own liveness on a separate watchdog timer, so removing it from <code>/health</code> does not create a silent-deadlock blind spot.</blockquote>
+
+<h3 id="layer1">Layer 1 — Behavioral senses (deterministic probing — the missing organ)</h3>
+<p>A <strong><code>ProbeRegistry</code></strong>: a declarative library where each entry carries a probe, an invariant, a <em>side-effect class</em>, a <em>coverage tag</em>, a <em>healthy-baseline fixture</em>, and a Layer-2 remediation hook.</p>
+<pre>Probe {
+  id:            "deep_search_lore",
+  invocation:    () => deepSearch(FIXTURE_QUERY),   // fixed test query, not live user text
+  invariant:     (r) => r.contains(KNOWN_SENTINEL), // deterministic assert, NO LLM
+  sideEffect:    SideEffect.pureRead,               // see contract below
+  covers:        [Failure.hollow],                  // NOT stale/wrong-tenant/wrong-recipient
+  healthyBaseline: FIXTURE_HEALTHY_CORPUS,          // must NOT trip on this — specificity gate
+  failureClass:  "integration-hollow",
+  remediation:   Action.reVendorClis,
+  autonomy:      AutonomyLevel.detectOnly,          // per-probe; promoted only after PR3 sign-off
+  timeoutMs:     3000, costCeiling: 0,              // bounded; a slow probe degrades to "unknown"
+}</pre>
+
+<h4>The probe contract (Tesla + Carnot: "the antibody must not become the pathogen")</h4>
+<ul>
+<li><strong>Read-only by default.</strong> Every probe declares a <code>SideEffect</code> ∈ {<code>pureRead</code>, <code>idempotentWrite</code>, <code>externalSend</code>, <code>paidCall</code>, <code>cacheMutating</code>}. Anything past <code>pureRead</code> requires an explicit sandbox target (a shadow room, a fixture doc, a dry-run flag) and Nick sign-off — a heartbeat probe must never append sentinels to the real Outline, spend metered credits, perturb <code>messages_processed</code>, or send over a live bridge.</li>
+<li><strong>Bounded.</strong> Hard per-probe timeout and a cost ceiling; a probe that exceeds either degrades to <code>unknown</code> (not <code>failed</code>) and never blocks the tick.</li>
+<li><strong>Specificity is a first-class gate, not an afterthought.</strong> Every probe ships with a <em>healthy-baseline fixture</em> it must <em>not</em> trip on. The <code>messages_processed</code>-delta antibody in particular must define a legitimate-quiet steady state (night/holiday/demo-ended) or it converts Nick back into the human false-positive filter.</li>
+</ul>
+
+<h4 id="taxonomy">Per-probe coverage taxonomy (what "visible" actually means)</h4>
+<p>A sentinel probe proves <em>one</em> failure mode is absent. Each probe tags which of these it covers, and — per the instrument-not-blind rule — which it is <em>blind</em> to, logged as future antibodies:</p>
+<pre>hollow · stale · wrong-tenant · wrong-recipient · incomplete · delayed · side-effect · wrong-but-nonempty</pre>
+<p>Example: <code>deep_search_lore</code> covers <code>hollow</code>; it is blind to <code>stale</code> (old corpus), <code>wrong-tenant</code> (auth scoped wrong), and <code>wrong-but-nonempty</code> (a plausible wrong answer). Those blind spots are named, not hidden — this is why the headline claim is <em>immune memory</em>, not general immunity.</p>
+
+<h4 id="probe-integrity">Probe measurement-integrity — the deepest round-2 finding</h4>
+<p>Round 2's best catch (Tesla r2 #1, Carnot r2 #2/#4): round 1 purified the <em>diagnosis</em> inputs (structured-only) but left the <em>probes themselves</em> reading the same poisoned corpus the incidents describe. <strong>Cleaning the doctor's ears does nothing if the stethoscope is bugged.</strong> An attacker who plants the sentinel string in lore makes <code>deep_search_lore</code> <em>pass</em> while the tool is hollow on every real query; one who strips it forces a false failure and a remediation. So two rules are now merge-grade:</p>
+<ul>
+<li><strong>Sentinels are structurally unreachable from any user-writable store.</strong> A probe's expected answer lives in a fixture-isolated index, an HMAC-sealed golden doc, or an out-of-band file — never "a string we hope stays rare" in the same corpus users and bridges write to. If the corpus can contain the sentinel, the corpus can forge the reading.</li>
+<li><strong>Invariants assert identity, not non-emptiness.</strong> <code>events &gt; 0</code> is too weak — a wrong-tenant or obsolete calendar satisfies it (Carnot: "the sink cannot tell the heat came from the right furnace merely by observing that it is warm"). Probe a pinned fixture UID / expected calendar ETag / account-path metadata, so the invariant distinguishes <em>right</em> from merely <em>non-empty</em>.</li>
+<li><strong>Post-action verification must be stronger than the triggering probe.</strong> Re-running the same blind probe can certify a narrow sentinel while a broader semantic failure (wrong tenant, obsolete path) persists — <em>healer-induced drift wearing a green check</em>. Write remediations verify with an identity/tenant check whose coverage exceeds the probe that fired them.</li>
+</ul>
+
+<ul>
+<li><strong>Honest health = failure <em>rate</em>, not last-success.</strong> A probe asks "what fraction is hollow <em>right now</em>?", not "did the last call eventually succeed?" (incident #8's blind spot).</li>
+<li><strong>Config truth is scoped by node.</strong> River's <em>own</em> config is the in-process env — sufficient to catch the metered drift (River reads its own auth mode). <em>Other</em> containers' state (mautrix-signal) needs the constrained side-car (see <a href="#risks">Risks</a>); Layer 0/1 never assert on a node they can't authentically read, to avoid "escalate healthy prod into remediated wrong."</li>
+</ul>
+
+<h3 id="layer2">Layer 2 — Agentic diagnosis + remediation (River as his own doctor), on a pinned trust boundary</h3>
+<p>When a probe trips, River wakes a <em>bounded</em> self-heal session and picks a remediation <strong>from an allowlisted action set</strong>. Two things are now pinned that the first draft left porous:</p>
+
+<h4>The diagnosis context is structured-only (Carnot + Kelvin + Tesla: injection needs no user text, only contaminated truth)</h4>
+<p>The first draft contradicted itself ("failing probe <em>plus context</em>" vs "<em>only</em> deterministic probe results"). Resolved: the diagnosis context is a <strong>whitelist of structured, non-string fields</strong> — probe <code>id</code> (enum), <code>failureClass</code> (enum), invariant <code>expected</code>-vs-<code>actual</code> as booleans/enums/counts, and timestamps. <strong>No free text from tool outputs, RAG store, calendar payloads, room names, bridge metadata, or logs enters the prompt.</strong> This matters because probe <em>outputs</em> traverse the same poisoned corpus the incidents describe: an attacker who writes lore or a calendar title could otherwise own the sentinel string and, through it, steer which allowlisted hand fires.</p>
+
+<h4>The action set — and why the allowlist is not enough on its own</h4>
+<pre>enum Action {
+  reVendorClis,               // re-run vendor script + re-verify manifest; NOT auto until PR3
+  repointConfig(key, value),  // key AND value both from a precomputed last-known-good map
+  restartConnection(name),    // named bridge/MCP reconnect (in-process, low blast radius)
+  clearCorruptHistory,        // already exists in the sync loop
+  restartContainer(name),     // ⚠ side-car only — never in-process Docker socket; see Risks
+  escalateOnly,               // fail-closed default for anything unrecognised
+}</pre>
+<p><strong>Bounded keys do not bound values.</strong> <code>repointConfig</code> can redirect auth, calendars, room allowlists, or webhooks — a "friendly name" over a high-power write. So its <em>value</em> comes from a <strong>precomputed desired-state map</strong> (a checked-in <code>key → known-good-value</code> table), never a value the LLM infers. That map is itself a <strong>security object</strong>, not just a config file (Carnot/Kelvin r2): it is environment-bound (refuses to apply if the running env doesn't match), owned/reviewed, monotonically versioned, and integrity-checked (deploy-time hash/signature) — otherwise it becomes healer-induced drift with a pedigree, "yesterday's truth applied with confidence." A stale map is a <em>bad value with a certificate</em>. Every write action is <strong>reversible</strong>: pre-action snapshot → act → post-action verify (re-run the probe) → auto-rollback + escalate if the probe still fails. A mis-diagnosed repoint that lands a wrong-but-valid URL would otherwise create a <em>new</em> class — <em>healer-induced drift</em>, worse than the original because it arrives with notify-backstop confidence.</p>
+
+<h4>Budget, cooldown, and a <em>global</em> thrash-breaker (Tesla: the breaker must guard the chord, not one frequency)</h4>
+<p>The #110 rails (single-action CAS latch, notify-backstop, per-probe circuit-breaker) are reused as the policy layer, extended with the controls infra-remediation needs:</p>
+<ul>
+<li><strong>Global energy budget</strong> — a max number of remediations per rolling window across <em>all</em> probes, a per-action cooldown, exponential backoff, and a hard max-restarts/day. One upstream outage trips many antibodies; without a global cap they'd drain the action budget in a burst.</li>
+<li><strong>Correlation suppression is deterministic, never LLM-inferred</strong> — probes sharing a root cause (auth down → deep_search + calendar + RAG all trip) are grouped by a hand-authored, versioned <code>dependsOn</code> tag on the <code>Probe</code> rows (or an upstream-health singleton), so the healer acts once on the cause. If the dependency is ambiguous, it fails closed to per-probe handling — an LLM grouping symptoms would re-open actuation on uncertain inference through a side door (Carnot/Tesla r2).</li>
+<li><strong>Global thrash-breaker</strong> — beyond the per-probe "N failed self-heals → pause", a cross-probe breaker halts <em>all</em> autonomous action when the aggregate heal-rate crosses a threshold, because <code>reVendorClis</code> fixing <code>deep_search</code> can break the auth probe, and six remediations queued behind one CAS latch each perturb the substrate the others measure.</li>
+<li><strong>Restart-durable breaker state.</strong> The breaker counters persist in <code>bot_metadata</code> and are read <em>before</em> the first post-boot heal — because remediation <em>includes</em> restarts, an in-memory counter would reset every crash-loop cycle and thrash forever.</li>
+<li><strong>Fail-closed on the unknown</strong> — an unrecognised failure or out-of-allowlist fix resolves to <code>escalateOnly</code>.</li>
+</ul>
+
+<h3 id="immune-memory">The immune memory (why it compounds — and how it avoids autoimmunity)</h3>
+<blockquote>Because the antibody library is declarative, every future break becomes a <em>one-row</em> addition: new scar → new <code>Probe</code> → River never takes <em>that shape</em> of wound silently again. It is a regression suite for production reality that lives inside River. For a golem who inspects his own inscription, immune memory is the data structure.</blockquote>
+<p><strong>But monotonic growth is a liability without a lifecycle</strong> (Kelvin: "an immune system that attacks healthy tissue is autoimmune disease"; Tesla: the registry becomes "a growing shunt load"). Every probe therefore carries: an <strong>owner</strong>, a <strong>sentinel version pinned to the data it depends on</strong> (so a corpus change retires the sentinel, not fires it), an <strong>expiry / recalibration date</strong>, and a <strong>flake-quarantine</strong> path (a probe with a rising false-alarm rate is auto-parked and flagged, not left to fill <code>/health</code> with <code>degraded</code>).</p>
+
+<h2 id="antibodies">The antibody library (each scar → a probe)</h2>
+<p>Seeded from the incident catalogue. Autonomy is per-row and defaults conservative; <em>all</em> rows start <code>detectOnly</code> — including <code>deep_search</code>, corrected from the first draft where it wrongly led with <code>auto</code> (auto re-vendor is the highest-mutation remediation in the library and must not lead on a sensing-only PR). Rows are promoted to auto only after the <a href="#backtest">backtest</a> + a PR3 cage-match.</p>
+<table>
+<tr><th>Scar (incident)</th><th>Probe (deterministic)</th><th>Invariant</th><th>Remediation</th><th class="cls">side-effect</th></tr>
+<tr><td>Metered / OAuth drift (8 days)</td><td>read live auth mode (in-process)</td><td><code>auth == OAuth</code></td><td>re-inject token + restart (side-car); else escalate</td><td class="cls">pureRead</td></tr>
+<tr><td><code>deep_search</code> hollow (11 commits)</td><td><code>deep_search(FIXTURE_Q)</code></td><td>contains sentinel</td><td><code>reVendorClis</code> (detectOnly→auto after PR3)</td><td class="cls">pureRead</td></tr>
+<tr><td>Calendar wrong path (weeks)</td><td>calendar retriever</td><td>pinned fixture UID / expected calendar ETag <span class="cls">(identity, not count; degraded-readiness, not boot-block)</span></td><td><code>repointConfig(CALENDAR_URL, lastKnownGood)</code></td><td class="cls">pureRead</td></tr>
+<tr><td>Bridge deaf (5 days)</td><td><code>messages_processed</code> delta vs <em>named quiet baseline</em></td><td>growing when baseline says active</td><td>escalate (root cause upstream)</td><td class="cls">pureRead</td></tr>
+<tr><td>Signal send-socket nil (33 min)</td><td>probe <em>both</em> sockets (side-car)</td><td>send-socket alive</td><td><code>restartContainer</code> via side-car</td><td class="cls">pureRead</td></tr>
+<tr><td>Room not on allowlist</td><td>read <code>drop_reasons</code></td><td>no <code>not_mentioned</code> spike in should-respond room</td><td><code>repointConfig(ALWAYS_RESPOND, lastKnownGood)</code></td><td class="cls">pureRead</td></tr>
+<tr><td>RAG dead (VOYAGE unset)</td><td>retrieval probe, fixture query</td><td>returns &gt; 0</td><td>escalate (needs #5 local-embedder)</td><td class="cls">pureRead</td></tr>
+</table>
+<p>This library <strong>subsumes</strong> task&nbsp;<strong>#17</strong> (post-deploy smoke test = the ProbeRegistry run once at deploy) and task&nbsp;<strong>#6</strong> (websocket auto-heal = one antibody + one side-car remediation), and <em>rides</em> task&nbsp;<strong>#16</strong> (heartbeat) — with the partition caveat in <a href="#shared-cavity">shared-cavity</a>.</p>
+
+<h2 id="backtest">The backtest (falsifier) — positive <em>and</em> negative, both as merge gates</h2>
+<p>Replaying the 24 incidents proves <em>sensitivity</em> on archaeology — and "a backtest over imprecise memories can certify folklore" (Carnot). So the gate is two-sided and equal:</p>
+<table>
+<tr><th>Gate</th><th>What it proves</th></tr>
+<tr><td><strong>Positive replay</strong> — each catalogued incident's fixture trips its probe</td><td>sensitivity (the sense fires on real failure)</td></tr>
+<tr><td><strong>Negative / steady-state matrix</strong> — quiet room, empty-but-legit calendar, intentional OAuth-off maintenance, cold-start warm-up</td><td>specificity (the sense does <em>not</em> fire on health) — <strong>equal merge gate</strong></td></tr>
+<tr><td><strong>Synthetic fault injection + mutation</strong> — inject the fault directly rather than trust the memory; mutate the probe to confirm it can fail</td><td>the probe measures what it claims, independent of the archaeology's accuracy</td></tr>
+</table>
+<blockquote>Instrument-not-blind discipline is enforced as a gate: a probe that cannot name a healthy-baseline it stays silent on does not ship. False-positive rate is a first-class release metric, not a footnote.</blockquote>
+
+<h2 id="invariants">Intended invariants (once built)</h2>
+<p class="cls">Relabelled from "Guarantees (as built)" — nothing is built; these are the properties the implementation must hold.</p>
+<ul>
+<li><strong>Detection is deterministic; only diagnosis/repair is agentic</strong>, and the agentic context is structured-only (no attacker-influenceable strings).</li>
+<li><strong>Uncertain reads may only degrade, never block or actuate</strong> (the <a href="#impedance">impedance match</a>). Boot never fails on a semantic check.</li>
+<li><strong>Every write action is bounded-provenance + reversible + budgeted</strong>: allowlisted key <em>and</em> value, pre-snapshot, post-verify, auto-rollback, under a global energy budget with a cross-probe thrash-breaker.</li>
+<li><strong>The immune system cannot invoke the crash arc.</strong> The self-check tick is isolated from the PR&nbsp;#99 health signal (see <a href="#shared-cavity">below</a>) so its own overhead never reads as <code>degraded</code>.</li>
+<li><strong>Sensing ships and is backtested — positively and negatively — before hands are wired.</strong></li>
+</ul>
+
+<h2 id="shared-cavity">Two coupling risks the reviewers surfaced</h2>
+<ul>
+<li><span class="sev-high">High — the self-restart feedback loop (Tesla).</span> The self-check tick shares River's process and <code>/health</code> surface with PR&nbsp;#99's crash healer. A slow or piled-up tick can push <code>/health</code> to <code>degraded</code> → Docker restarts the container → the defense system invoked the offense's kill switch on itself. <strong>Fix:</strong> run probes off the health-critical path with hard timeouts, and explicitly exclude self-check latency/failure from the poll-stale / processing-stuck signals. The immune system's health is reported on a <em>separate</em> channel that never feeds the restart reflex.</li>
+<li><span class="sev-high">High — offense/defense on one coil (Tesla).</span> Riding the #16 heartbeat means a slow probe can delay or starve the night-loop payload on the same tick. <strong>Fix:</strong> the heartbeat host must partition the two payloads with backpressure — a stalled probe cannot consume the offense budget, and vice-versa. Until #16 exists, the interim 60s-scheduler host gets the same per-job hard-timeout (the coverage scout found it has none today).</li>
+</ul>
+
+<h2 id="designed-not-built">Designed, not built</h2>
+<div class="verdict revise"><strong>Status:</strong> the entire document is a design. <em>No probe, registry, boot assertion, remediation action, budget, or backtest harness exists yet.</em> The evidence base is two scout reports produced this session; the incident catalogue is archaeology.</div>
+<ul>
+<li><strong>The ProbeRegistry &amp; every antibody</strong> — concept only; sentinel queries, invariants, timeouts, and healthy baselines unwritten.</li>
+<li><strong>The two-tier boot layer</strong> — the split is designed; the exact hard-invariant set is TBD.</li>
+<li><strong>The allowlisted action set + last-known-good value map + reversibility harness</strong> — named, not implemented. <code>restartContainer</code> has an unsolved capability question (below).</li>
+<li><strong>#110-rails compatibility for infra remediation</strong> — the rails were built for Community Spark; a compatibility analysis (what resource is latched, where CAS state lives, restart-idempotency, notify-backstop-failure behaviour) is required before reuse is asserted, not assumed.</li>
+<li><strong>The negative-fixture backtest harness</strong> — the plan; fixtures don't exist.</li>
+</ul>
+
+<h2 id="risks">Risks &amp; Limitations</h2>
+<ul>
+<li><span class="sev-high">High (BLOCKING for autonomy)</span> — <strong>Agent with world-acting hands on a partly-poisoned corpus.</strong> River's inputs and its probe <em>outputs</em> both traverse an attacker-influenceable relay mesh + lore store. Mitigation is a merge prerequisite: structured-only diagnosis context, closed action allowlist, last-known-good values, reversibility, and notify-backstop on every act. Cage-match by law.</li>
+<li><span class="sev-high">High (BLOCKING for <code>restartContainer</code>)</span> — <strong>No safe container-restart primitive today.</strong> Mounting the Docker socket into River's container is a container-escape-equivalent and an automatic reject (Kelvin). Options: a constrained side-car accepting only a fixed <code>restart &lt;named-container&gt;</code> set over an authenticated local channel, or leaving container-restart <code>escalateOnly</code> permanently. Until resolved, #6's auto-heal stays detect-and-escalate.</li>
+<li><span class="sev-high">High</span> — <strong>Healer-induced drift.</strong> A confident wrong remediation (mis-diagnosed repoint) is worse than the original failure. Guarded by last-known-good values + post-action verify + auto-rollback; every act is logged/notified — never silent.</li>
+<li><span class="sev-high">High</span> — <strong>The immune system tripping the crash arc / starving the night-loop.</strong> See <a href="#shared-cavity">coupling risks</a>; both are merge prerequisites, not follow-ups.</li>
+<li><span class="sev-med">Med</span> — <strong>Probe side-effects.</strong> Guarded by the read-only-by-default side-effect contract + sandbox targets for any write/send/paid probe + a global kill-switch for the whole tick.</li>
+<li><span class="sev-med">Med</span> — <strong>Sentinel/antibody rot.</strong> Guarded by the <a href="#immune-memory">lifecycle</a> (versioned sentinels, expiry, flake-quarantine, ownership).</li>
+<li><span class="sev-med">Med</span> — <strong>Backtest over archaeology.</strong> Guarded by the <a href="#backtest">negative-fixture + fault-injection</a> gates; the histogram <em>shape</em> is robust even where individual rows are imprecise.</li>
+<li><span class="sev-med">Med</span> — <strong>Alert storms.</strong> Escalation carries dedupe windows, severity mapping, dependency grouping, and explicit states (<code>unknown</code>/<code>degraded</code>/<code>failed</code>/<code>recovering</code>) — not a raw per-trip page.</li>
+<li><span class="sev-low">Low</span> — <strong>Coverage over-confidence.</strong> The per-probe <a href="#taxonomy">taxonomy</a> makes "what we do NOT cover" explicit so the antibody library is never mistaken for general immunity.</li>
+</ul>
+
+<h2 id="plan">Phased build plan</h2>
+<p>Build order is forced by sense-before-act. Three PRs, each independently shippable, each cage-matched. Each PR names its acceptance criteria as testable assertions (ATDD source).</p>
+<table>
+<tr><th>PR</th><th>Scope</th><th>Acceptance gate (testable)</th></tr>
+<tr><td><strong>PR1 — Sensing spine</strong></td><td>ProbeRegistry + two-tier boot layer + per-probe <code>/health</code> surface (on a channel isolated from the crash signal) + escalation with dedupe/severity. 3–4 <code>pureRead</code> probes. <strong>Detect + escalate only.</strong></td><td>positive replay of the 3–4 incidents trips their probes; the <em>negative matrix</em> (quiet room, empty-but-legit calendar, OAuth-off) does <em>not</em> trip them; a slow probe does not push <code>/health</code> to <code>degraded</code></td></tr>
+<tr><td><strong>PR2 — Antibody library</strong></td><td>Remaining catalogued incidents as probes; lifecycle (versioning/expiry/quarantine); ride #16 (partitioned) or the 60s scheduler with hard per-job timeout.</td><td>full 24-incident positive replay + full negative matrix; every probe declares side-effect class + healthy baseline</td></tr>
+<tr><td><strong>PR3 — Agentic hands</strong></td><td>Allowlisted actions + last-known-good value map + reversibility harness + global energy budget + cross-probe thrash-breaker + restart-durable breaker state. Per-probe autonomy promotion. <code>restartContainer</code> only if the side-car capability is resolved.</td><td>cage-match <strong>by law</strong>; injection test (poisoned sentinel cannot select a remediation); rollback test (post-verify failure reverts + escalates); budget test (correlated outage acts once)</td></tr>
+</table>
+
+<h2 id="round2-open">Round-2 open items → build-time acceptance criteria</h2>
+<p>Round 2 surfaced items that are operational/implementation constraints rather than design-shape changes. They are captured here as <strong>named acceptance criteria for the relevant PR</strong> — not silently deferred (a known compromise you haven't named is a liability, not a tradeoff).</p>
+<table>
+<tr><th>Item (reviewer)</th><th>Gate / PR</th></tr>
+<tr><td><strong>Restart side-car threat model</strong> (Carnot r2 #5, Kelvin) — a new privileged actuator needs caller identity, command schema, nonce/replay protection, rate-limits independent of River, durable audit <em>outside</em> River, and defined behavior when River is compromised-but-locally-authenticated.</td><td>PR3 prerequisite; until it exists, <code>restartContainer</code> stays <code>escalateOnly</code></td></tr>
+<tr><td><strong>#110-rails compatibility analysis</strong> (Carnot r2 #4) — what resource is latched, where CAS state lives, restart-idempotency, notify-backstop-failure behavior — as a concrete artifact, not an assertion.</td><td>PR3 prerequisite artifact</td></tr>
+<tr><td><strong>Flake-quarantine must not become immunosuppression</strong> (Carnot r2 #8, Kelvin) — a quarantined probe is the only detector for its scar; define who is paged, whether the capability stays <code>degraded</code>, and a max quarantine duration + refresh SLA.</td><td>PR2 (lifecycle)</td></tr>
+<tr><td><strong>Sentinel-retirement immunodeficiency window</strong> (Tesla r2 #5) — between a corpus change retiring a sentinel and the new probe shipping, the scar is uncovered; set an antibody-refresh SLA.</td><td>PR2 (lifecycle)</td></tr>
+<tr><td><strong><code>unknown</code>-degradation policy</strong> (Tesla r2 #8) — a slow probe degrades to <code>unknown</code>; define escalation/dedupe so N silent unknowns aren't worse than one loud failure.</td><td>PR1 (escalation)</td></tr>
+<tr><td><strong>PR1 slow-probe must not starve existing scheduler jobs</strong> (Tesla r2 #7) — the interim 60s host has no per-job timeout today; PR1 acceptance must test offense-starvation, not just <code>/health</code> isolation.</td><td>PR1 acceptance</td></tr>
+<tr><td><strong>Trusted room-identity source</strong> (Carnot r2 #11) — the allowlist probe must key on fixture room IDs / trusted provenance, not relay-provided display names.</td><td>PR2 (antibody)</td></tr>
+<tr><td><strong>Histogram is multi-label</strong> (Carnot r2 #10) — counts sum &gt; 24; label as multi-label so coverage metrics aren't built on a non-conserved quantity.</td><td>doc (noted in §<a href="#diagnosis">diagnosis</a>)</td></tr>
+</table>
+<blockquote>Reviewer trajectory: round 1 found 8 findings; round 2 confirmed 7 fixed and found deeper gaps in the space the fixes opened (the classic "first fix reveals the second bug"). The design is accepted as a sound basis to build from with these items as explicit gates; <strong>PR3 autonomy stays blocked until the health-surface partitioning, desired-state-map integrity, side-car threat model, probe measurement-integrity, and action-specific verification are concrete, tested acceptance criteria</strong> — not paragraphs of confidence.</blockquote>
+
+<h2 id="verification">Verification</h2>
+<p>What has actually been tested: <strong>nothing — this is a design.</strong> The two evidence artifacts (24-incident catalogue, current-coverage map) were produced by read-only exploration this session and are the design's ground truth, not a test of the design. The design was adversarially reviewed by four model families over <em>two</em> cage-match rounds (PR&nbsp;#118, 2026-07-08): round 1 found 8 structural findings, all folded in; round 2 graded 7 of 8 genuinely fixed and surfaced deeper gaps, folded in or captured as <a href="#round2-open">build-time acceptance criteria</a>. Per the verification discipline: the immune system is <em>specified and twice-cage-matched on paper</em>, not scaffolded and not proven. The first gate that clears anything is PR1's positive-plus-negative backtest — and PR3 (agentic hands) stays blocked behind the named acceptance criteria. This is a design; the next honest word is written by the first test, not by this document.</p>
+
+</main>
+</body>
+</html>
